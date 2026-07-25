@@ -1,0 +1,453 @@
+/* ─── Secret Chat — In-App Page ─── */
+
+.secret-chat-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  min-height: 0;
+  height: calc(100vh - 72px);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.secret-chat-loading {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  height: 100%;
+  background: var(--canvas);
+  color: var(--muted);
+}
+
+.secret-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.secret-chat-back-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  transition: border-color .18s ease, color .18s ease;
+}
+
+.secret-chat-back-btn:hover {
+  border-color: var(--violet);
+  color: var(--violet);
+}
+
+.secret-chat-meta {
+  flex: 1;
+}
+
+.secret-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secret-chat-title-row svg {
+  color: var(--violet);
+}
+
+.secret-chat-title-row strong {
+  font-size: 14px;
+}
+
+.secret-chat-sender-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.secret-chat-sender-input {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 11px;
+  padding: 2px 4px;
+  max-width: 140px;
+  outline: none;
+  transition: border-color .18s ease;
+}
+
+.secret-chat-sender-input:focus {
+  border-color: var(--violet);
+}
+
+.secret-chat-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.secret-chat-url-preview {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.secret-chat-copy-btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 12px;
+  color: var(--ink);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  transition: border-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.secret-chat-copy-btn:hover {
+  border-color: var(--violet);
+  color: var(--violet);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 15%, transparent);
+}
+
+.secret-chat-copy-btn.copied {
+  border-color: #3fb950;
+  color: #3fb950;
+}
+
+.secret-chat-messages {
+  overflow: auto;
+  padding: 18px 22px;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.secret-chat-empty {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 60px;
+}
+
+.secret-chat-empty svg {
+  opacity: 0.3;
+  margin-bottom: 12px;
+}
+
+.secret-chat-empty p {
+  font-size: 14px;
+  margin: 0;
+}
+
+.secret-chat-empty small {
+  font-size: 11px;
+  margin: 6px 0 0;
+  display: block;
+}
+
+.secret-chat-msg-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.secret-chat-msg-wrap.self {
+  align-items: flex-end;
+}
+
+.secret-chat-msg-wrap.other {
+  align-items: flex-start;
+}
+
+.secret-chat-msg-sender {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+
+.secret-chat-msg-bubble {
+  max-width: 72%;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.secret-chat-msg-bubble.self {
+  border-radius: 16px 4px 16px 16px;
+  background: linear-gradient(135deg, var(--violet-dark), var(--violet));
+  color: #fff;
+}
+
+.secret-chat-msg-bubble.other {
+  border-radius: 4px 16px 16px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.secret-chat-composer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  display: flex;
+  gap: 10px;
+}
+
+.secret-chat-input {
+  flex: 1;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color .18s ease;
+}
+
+.secret-chat-input:focus {
+  border-color: var(--violet);
+}
+
+.secret-chat-send-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 15px;
+  color: #fff;
+  display: grid;
+  place-items: center;
+  transition: opacity .18s ease;
+}
+
+.secret-chat-send-btn.active {
+  background: linear-gradient(135deg, var(--violet-dark), var(--violet));
+  cursor: pointer;
+}
+
+.secret-chat-send-btn.active:hover {
+  opacity: .85;
+}
+
+.secret-chat-send-btn.disabled {
+  background: var(--line);
+  cursor: default;
+}
+
+/* ─── Secret Chat — Standalone (shared link visitors) ─── */
+
+.scs-loading {
+  display: grid;
+  place-items: center;
+  height: 100vh;
+  background: var(--canvas);
+  color: var(--muted);
+}
+
+.scs-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--line);
+  border-top-color: var(--violet);
+  border-radius: 50%;
+  animation: scs-spin .7s linear infinite;
+}
+
+@keyframes scs-spin {
+  to { transform: rotate(360deg); }
+}
+
+.scs-error {
+  text-align: center;
+  color: var(--muted);
+}
+
+.scs-error svg {
+  opacity: 0.3;
+  margin-bottom: 10px;
+}
+
+.scs-error p {
+  font-size: 14px;
+  margin: 0;
+}
+
+.scs {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.scs-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.scs-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scs-header-icon {
+  color: var(--violet);
+}
+
+.scs-header-left strong {
+  font-size: 15px;
+}
+
+.scs-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.scs-name-edit {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 12px;
+  padding: 2px 4px;
+  max-width: 120px;
+  outline: none;
+  transition: border-color .18s ease;
+}
+
+.scs-name-edit:focus {
+  border-color: var(--violet);
+}
+
+.scs-messages {
+  overflow: auto;
+  padding: 20px 24px;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.scs-empty {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 60px;
+}
+
+.scs-empty svg {
+  opacity: 0.25;
+  margin-bottom: 10px;
+}
+
+.scs-empty p {
+  font-size: 14px;
+  margin: 0;
+}
+
+.scs-empty small {
+  font-size: 11px;
+  margin: 5px 0 0;
+  display: block;
+}
+
+.scs-msg {
+  display: flex;
+  flex-direction: column;
+}
+
+.scs-msg.self {
+  align-items: flex-end;
+}
+
+.scs-msg.other {
+  align-items: flex-start;
+}
+
+.scs-msg-meta {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+
+.scs-msg-bubble {
+  max-width: 70%;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.scs-msg-bubble.self {
+  border-radius: 16px 4px 16px 16px;
+  background: linear-gradient(135deg, var(--violet-dark), var(--violet));
+  color: #fff;
+}
+
+.scs-msg-bubble.other {
+  border-radius: 4px 16px 16px 16px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+
+.scs-composer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--paper);
+  display: flex;
+  gap: 10px;
+}
+
+.scs-input {
+  flex: 1;
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 11px 14px;
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color .18s ease;
+}
+
+.scs-input:focus {
+  border-color: var(--violet);
+}
+
+.scs-send {
+  border: 0;
+  border-radius: 10px;
+  padding: 11px 15px;
+  background: var(--line);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: default;
+  transition: background .18s ease;
+}
+
+.scs-send.active {
+  background: linear-gradient(135deg, var(--violet-dark), var(--violet));
+  cursor: pointer;
+}
+
+.scs-send.active:hover {
+  opacity: .85;
+}

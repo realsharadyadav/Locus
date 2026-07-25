@@ -1,0 +1,21 @@
+{
+  "name": "locus",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": ".venv/bin/uvicorn backend.app.main:app --reload --port 8000",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vite": "4.5.14",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest",
+    "react-markdown": "9.0.1",
+    "remark-gfm": "4.0.0"
+  },
+  "devDependencies": {}
+}

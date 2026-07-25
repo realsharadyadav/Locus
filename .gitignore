@@ -1,0 +1,21 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+.venv/
+*.db
+*.db-journal
+*.sqlite3
+backend/uploads/
+backend/chroma/
+backend/diagnostics/jobs/
+__pycache__/
+.pytest_cache/
+*.log
+tmp/
+.claude/settings.local.json
+Just for taking refrence - dont write any code in this/
+khoj_reference_policy.md

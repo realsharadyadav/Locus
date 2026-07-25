@@ -1,0 +1,8 @@
+BRAND_NAME = "Locus"
+BRAND_ASSISTANT = "Locus AI"
+BRAND_TAGLINE = "Your knowledge, one question away."
+USER_AGENT = "Locus/1.0"
+CHROMA_COLLECTION = "locus_chunks"
+LEGACY_CHROMA_COLLECTION = "mindmap_chunks"
+VECTOR_INDEX_FILENAME = "locus_vector_index.sqlite3"
+LEGACY_VECTOR_INDEX_FILENAME = "mindmap_vector_index.sqlite3"

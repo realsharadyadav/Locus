@@ -1,0 +1,2901 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import {
+  Activity, AlertTriangle, ArrowLeft, ArrowRight, BarChart3, BookOpen, BrainCircuit, Check, CircleCheck,
+  Code2, Compass, Copy, Cpu, Database, FileText, Folder, History, Home, Info, KeyRound, Layers3,
+  LockKeyhole, Maximize2, Menu, Minimize2, MoonStar, PanelLeftClose, PanelLeftOpen, PenLine, Plus, Radio, Search, Send, Settings2, ShieldCheck,
+  RotateCcw, SlidersHorizontal, Sparkles, Square, Terminal, Trash2, Upload,
+  WandSparkles, X, Zap, ChevronDown, ChevronRight, Globe, FilePlus2,
+} from 'lucide-react';
+import './styles.css';
+import { api } from './api';
+import { CommandPalette } from './components/CommandPalette';
+import { ConfirmModal } from './components/ConfirmModal';
+import { ToastStack } from './components/Toast';
+import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, secretChatApi } from './secret-chat';
+import TicketAnalysisPage from './pages/TicketAnalysisPage';
+import { BRAND, assistantLabel, readStorage, readSessionFlag, storageKey, writeSessionFlag, writeStorage } from './brand';
+import { displayTime, parseServerTime, resizeTextarea, STORE_COLORS } from './utils';
+
+function Logo() {
+  return (
+    <div className="logo">
+      <svg className="logo-mark" viewBox="0 0 25 25" width="25" height="25" aria-hidden="true">
+        <circle className="logo-ring-outer" cx="12.5" cy="12.5" r="10" fill="none" strokeWidth="2" />
+        <circle className="logo-ring-inner" cx="12.5" cy="12.5" r="5.6" fill="none" strokeWidth="2" />
+        <circle className="logo-dot" cx="12.5" cy="12.5" r="2.4" />
+      </svg>
+      <span>{BRAND.name}</span>
+    </div>
+  );
+}
+
+const tip = text => ({ 'data-tooltip': text, 'aria-description': text });
+
+function Sidebar({
+  page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact,
+  chats = [], files = [], jobs = [], onOpenChat, onOpenFile, onOpenSecretChat,
+  onNewChat, onDeleteChat, activeChat, historyCollapsed, setHistoryCollapsed,
+}) {
+  const nav = [
+    ['home', Home, 'Home'],
+    ['hub', Folder, 'Library'],
+    ['explore', Compass, 'Ask'],
+    ['ticket-analysis', BarChart3, 'Patterns'],
+    ['secret-chat', LockKeyhole, 'Private'],
+  ];
+  const runningCount = jobs.filter(j => ['queued', 'running'].includes(j.status)).length;
+  const failedCount = jobs.filter(j => j.status === 'failed').length;
+
+  const sidebarChats = chats.slice(0, 20);
+  const formatChatTime = (ts) => {
+    const d = new Date(ts.replace(' ', 'T') + 'Z');
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+    return `${Math.floor(diffHours / 24)}d`;
+  };
+
+  return (
+    <>
+      <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${compact ? 'compact' : ''} ${page === 'explore' ? 'sidebar-explore' : ''}`}>
+        <div className="side-top">
+          <Logo />
+          <button
+            className="sidebar-mode-toggle icon-button"
+            onClick={toggleCompact}
+            aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+            {...tip(compact ? 'Expand the main app navigation and show labels.' : 'Collapse the main navigation into an icon rail to create more workspace.')}
+          >
+            {compact ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+          </button>
+          <button className="mobile-close icon-button" onClick={close} aria-label="Close navigation">
+            <X size={18} />
+          </button>
+        </div>
+        <nav>
+          {nav.map(([id, Icon, label]) => (
+            <button
+              key={id}
+              className={page === id ? 'active' : ''}
+              onClick={() => {
+                if (id === 'secret-chat') {
+                  onOpenSecretChat?.();
+                } else {
+                  setPage(id);
+                  close();
+                }
+              }}
+              {...tip(compact ? label : undefined)}
+            >
+              <Icon size={18} />
+              <span>{label}</span>
+              {id === 'hub' && <span className="nav-count">{fileCount}</span>}
+              {id === 'explore' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
+            </button>
+          ))}
+        </nav>
+
+        {page === 'explore' && !compact && (
+          <div className="sidebar-chat-section">
+            <div className="sidebar-chat-head">
+              <span className="kicker">CHATS</span>
+              <span className="sidebar-chat-count">{chats.length}</span>
+              <div className="sidebar-chat-pulse">
+                <span>{runningCount > 0 && <i className="sidebar-chat-running">{runningCount} running</i>}</span>
+                {failedCount > 0 && <span className="sidebar-chat-failed">{failedCount} failed</span>}
+              </div>
+            </div>
+            <div className="sidebar-chat-list">
+              {sidebarChats.map(chat => {
+                const latestJob = jobs.find(j => j.conversation_id === chat.id);
+                const inProgress = ['queued', 'running'].includes(latestJob?.status);
+                const ready = latestJob?.status === 'completed' && !latestJob.seen;
+                const failed = latestJob?.status === 'failed';
+                return (
+                  <button
+                    key={chat.id}
+                    className={`sidebar-chat-item ${activeChat === chat.id ? 'active' : ''} ${inProgress ? 'in-progress' : ''} ${ready ? 'ready' : ''} ${failed ? 'failed' : ''}`}
+                    onClick={() => { onOpenChat?.(chat.id); close(); }}
+                    title={chat.title}
+                  >
+                    <span className="sidebar-chat-name">
+                      <span>{chat.title}</span>
+                      {inProgress && <i className="chat-dot progress" />}
+                      {ready && <i className="chat-dot ready" />}
+                      {failed && <i className="chat-dot failed" />}
+                    </span>
+                    <span className="sidebar-chat-time">{formatChatTime(chat.updated_at)}</span>
+                  </button>
+                );
+              })}
+              {!chats.length && <span className="sidebar-chat-empty">No chats yet</span>}
+            </div>
+            <button className="sidebar-new-chat" onClick={() => { onNewChat?.(); close(); }}>
+              <Plus size={13} /> New conversation
+            </button>
+          </div>
+        )}
+
+        {page === 'explore' && compact && (
+          <button
+            className="sidebar-compact-new-chat"
+            onClick={() => { onNewChat?.(); close(); }}
+            {...tip('New conversation')}
+          >
+            <Plus size={16} />
+          </button>
+        )}
+
+        <div className="sidebar-footer">
+          <button
+            className={`sidebar-settings-btn ${page === 'settings' ? 'active' : ''}`}
+            onClick={() => { setPage('settings'); close(); }}
+            {...tip(compact ? 'Settings' : undefined)}
+          >
+            <Settings2 size={17} />
+            <span>Settings</span>
+          </button>
+        </div>
+      </aside>
+      {mobileOpen && <button className="scrim" aria-label="Close navigation" onClick={close} />}
+    </>
+  );
+}
+
+function Header({ query, setQuery, openMenu, openCreate, openCommand, page, theme, toggleTheme }) {
+  return (
+    <header>
+      <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
+        <Menu size={20} />
+      </button>
+      <button className="global-search" onClick={openCommand} aria-label="Open search">
+        <Search size={17} />
+        <span>{query || 'Search everything you know...'}</span>
+        <kbd>⌘ K</kbd>
+      </button>
+      <button
+        className="theme-toggle icon-button"
+        onClick={toggleTheme}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+        {...tip(theme === 'dark' ? 'Switch to the brighter light theme.' : 'Switch to the calm GitHub-style dark theme.')}
+      >
+        <MoonStar size={17} />
+        <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+      </button>
+      {page === 'hub' && (
+        <button className="new-button" onClick={openCreate}>
+          <Plus size={17} /> New store
+        </button>
+      )}
+    </header>
+  );
+}
+
+function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
+  if (loading) {
+    return (
+      <div className="page home-page">
+        <div className="loading-grid">
+          {[1, 2, 3].map(item => <div key={item} className="skeleton-card" />)}
+        </div>
+      </div>
+    );
+  }
+
+  const empty = !files.length;
+
+  return (
+    <div className="page home-page">
+      <section className="home-hero">
+        <div className="welcome-mark"><Sparkles size={24} /></div>
+        <span className="kicker">YOUR SECOND BRAIN</span>
+        <h1>{empty ? `Welcome to ${BRAND.name}` : 'Welcome back'}</h1>
+        <p>{empty ? 'Upload files to a store, then ask a question.' : 'Your knowledge is ready to explore.'}</p>
+      </section>
+
+      <section className="stat-grid">
+        <article><strong>{stores.length}</strong><span>Stores</span></article>
+        <article><strong>{files.length}</strong><span>Files</span></article>
+        <article><strong>{chats.length}</strong><span>Chats</span></article>
+      </section>
+
+      <section className="quick-actions">
+        <button onClick={() => onNavigate('hub', { create: true })}><Folder size={16} /> Create store</button>
+        <button onClick={() => onNavigate('hub')}><Upload size={16} /> Upload files</button>
+        <button onClick={() => onNavigate('explore')}><Compass size={16} /> Ask a question</button>
+      </section>
+
+      {empty ? (
+        <section className="onboarding-card">
+          <h2>Get started in two steps</h2>
+          <ol>
+            <li>Create a store in Library and upload your documents.</li>
+            <li>Open Ask and ask questions grounded in those files.</li>
+          </ol>
+        </section>
+      ) : (
+        <section className="home-panels">
+          <div className="panel">
+            <div className="panel-head"><h2>Recent files</h2></div>
+            {files.slice(0, 5).map(file => (
+              <button key={file.id} className="panel-row" onClick={() => onNavigate('hub', { storeId: file.store_id })}>
+                <FileText size={15} />
+                <span>
+                  <strong>{file.name}</strong>
+                  <small>{fileMetaLine(file)}</small>
+                </span>
+                <small>{displayTime(file.created_at)}</small>
+              </button>
+            ))}
+          </div>
+          <div className="panel">
+            <div className="panel-head"><h2>Recent chats</h2></div>
+            {!chats.length && <p className="panel-empty">No chats yet. Start one in Explore.</p>}
+            {chats.slice(0, 5).map(chat => (
+              <button key={chat.id} className="panel-row" onClick={() => onOpenChat(chat.id)}>
+                <Compass size={15} />
+                <span>{chat.title}</span>
+                <small>{displayTime(chat.updated_at)}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function formatElapsedTime(totalSeconds) {
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${minutes}m`;
+  if (minutes) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
+
+function formatFileSize(bytes = 0) {
+  const size = Number(bytes) || 0;
+  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+  if (size >= 1024) return `${(size / 1024).toFixed(size >= 10 * 1024 ? 0 : 1)} KB`;
+  return `${size} B`;
+}
+
+function fileMetaLine(file) {
+  if (!file) return 'No metadata';
+  const chunks = Number(file.embedding_chunks || 0);
+  const chunkLabel = chunks === 1 ? '1 chunk' : `${chunks} chunks`;
+  return `${formatFileSize(file.size)} · ${chunkLabel}`;
+}
+
+function embeddingMeta(file) {
+  const status = file.embedding_status || 'pending';
+  const chunks = file.embedding_chunks || 0;
+  const backend = file.embedding_backend || 'local';
+  const model = file.embedding_model || 'local-hash-embedding-v1';
+  const labels = {
+    embedded: `${chunks} chunks indexed`,
+    indexing: 'Embedding now',
+    pending: 'Waiting to index',
+    empty: 'No searchable text',
+    failed: 'Index failed',
+  };
+  return {
+    status,
+    backend,
+    model,
+    label: labels[status] || 'Index pending',
+    detail: status === 'embedded' ? `${backend} · ${model}` : (file.embedding_error || model),
+  };
+}
+
+const PROVIDER_LABELS = { ollama: 'Ollama', groq: 'Groq', openai: 'OpenAI', gemini: 'Gemini' };
+const DEFAULT_PROVIDER_MODELS = { ollama: 'llama3.2:latest', groq: 'openai/gpt-oss-20b', openai: 'gpt-5.4-mini', gemini: 'gemini-2.5-flash' };
+const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
+const ACTIVE_CHAT_STORAGE_KEY = storageKey('explore-active-chat');
+const APP_DATA_CACHE_KEY = storageKey('last-data');
+const APP_PAGES = ['home', 'hub', 'explore', 'ticket-analysis', 'secret-chat', 'settings'];
+const normalizePageId = pageId => {
+  if (pageId === 'ticketinsight' || pageId === 'ticket-analysis-lab') return 'ticket-analysis';
+  return pageId;
+};
+
+function readSavedAiPreference() {
+  try {
+    return JSON.parse(readStorage('explore-ai', '{}'));
+  } catch {
+    return {};
+  }
+}
+
+function readCachedAppData() {
+  try {
+    return JSON.parse(readStorage('last-data', '{}'));
+  } catch {
+    return {};
+  }
+}
+
+function modelProvider(model) {
+  if (model.includes('/') || model.startsWith('llama-3.')) return 'Groq';
+  if (model.startsWith('gpt-')) return 'OpenAI';
+  if (model.startsWith('gemini-')) return 'Google Gemini';
+  if (model.includes('cloud')) return 'Ollama Cloud';
+  return 'On-device';
+}
+
+function ModelControl({ config, provider, setProvider, model, setModel }) {
+  const providerIcons = { ollama: '🦙', groq: '⚡', openai: '🤖', gemini: '✨' };
+  const [openMenu, setOpenMenu] = useState(null);
+  const controlRef = useRef(null);
+  const fallbackModels = {
+    ollama: [],
+    groq: [],
+    openai: [],
+    gemini: [],
+  };
+  useEffect(() => {
+    const onPointerDown = event => {
+      if (controlRef.current && !controlRef.current.contains(event.target)) setOpenMenu(null);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, []);
+  const backendModels = config?.providers?.[provider] || [];
+  const presetModels = provider === config?.provider ? (config?.presets || []) : [];
+  const modelOptions = [...new Set([model, ...backendModels, ...presetModels, ...(fallbackModels[provider] || [])].filter(Boolean))];
+  const listedModel = modelOptions.includes(model) ? model : modelOptions[0] || DEFAULT_PROVIDER_MODELS[provider];
+  const changeProvider = nextProvider => {
+    const nextOptions = config?.providers?.[nextProvider] || [];
+    setProvider(nextProvider);
+    setModel(nextOptions[0] || (nextProvider === config?.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]));
+  };
+  return (
+    <div className="model-control" ref={controlRef} aria-label="Choose the AI provider and model used for answers">
+      <div className={`model-control-field mc-provider ${openMenu === 'provider' ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="mc-trigger"
+          onClick={() => setOpenMenu(openMenu === 'provider' ? null : 'provider')}
+          aria-expanded={openMenu === 'provider'}
+          aria-label="LLM provider"
+        >
+          <span className="mc-icon" aria-hidden="true">{providerIcons[provider]}</span>
+          <span className="mc-copy">
+            <span className="mc-label">Provider</span>
+            <span className="mc-value">{PROVIDER_LABELS[provider]}</span>
+          </span>
+          <svg className="mc-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        {openMenu === 'provider' && (
+          <div className="mc-menu" role="listbox" aria-label="LLM provider menu">
+            {Object.keys(config?.providers || DEFAULT_PROVIDER_MODELS).map(item => {
+              const active = item === provider;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className={`mc-option ${active ? 'active' : ''}`}
+                  onClick={() => {
+                    changeProvider(item);
+                    setOpenMenu(null);
+                  }}
+                  role="option"
+                  aria-selected={active}
+                >
+                  <span className="mc-option-icon" aria-hidden="true">{providerIcons[item]}</span>
+                  <span className="mc-option-text">
+                    <strong>{PROVIDER_LABELS[item]}</strong>
+                    <small>{item === 'ollama' ? 'Local models' : item === 'groq' ? 'Fast cloud' : item === 'openai' ? 'OpenAI' : 'Google Gemini'}</small>
+                  </span>
+                  {active && <span className="mc-option-check">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div className="mc-divider" />
+      <div className={`model-control-field mc-model ${openMenu === 'model' ? 'open' : ''}`}>
+        <button
+          type="button"
+          className="mc-trigger"
+          onClick={() => setOpenMenu(openMenu === 'model' ? null : 'model')}
+          aria-expanded={openMenu === 'model'}
+          aria-label={`${PROVIDER_LABELS[provider]} model presets`}
+        >
+          <span className="mc-copy">
+            <span className="mc-label">Model</span>
+            <span className="mc-value mc-value-model">{listedModel}</span>
+          </span>
+          <svg className="mc-chevron" width="10" height="6" viewBox="0 0 10 6" fill="none"><path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+        </button>
+        {openMenu === 'model' && (
+          <div className="mc-menu mc-menu-model" role="listbox" aria-label="Model presets menu">
+            {modelOptions.map(item => {
+              const active = item === listedModel;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  className={`mc-option mc-option-model ${active ? 'active' : ''}`}
+                  onClick={() => {
+                    setModel(item);
+                    setOpenMenu(null);
+                  }}
+                  role="option"
+                  aria-selected={active}
+                  title={item}
+                >
+                  <span className="mc-option-text">
+                    <strong>{item}</strong>
+                    <small>{active ? 'Selected model' : 'Available preset'}</small>
+                  </span>
+                  {active && <span className="mc-option-check">✓</span>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function jobFailureMessage(job) {
+  const error = job?.error || job?.detail || 'The answer could not be completed.';
+  const diagnosticId = job?.id ? `\n\nDiagnostic ID: ${job.id}` : '';
+  const lowered = error.toLowerCase();
+  if (job?.model?.startsWith('gemini-') && lowered.includes('quota')) {
+    const zeroLimit = lowered.includes('limit: 0');
+    return `Gemini quota exceeded for ${job.model}. ${zeroLimit ? 'Google reports that this project has no available quota for this model. Enable billing or quota in Google AI Studio, or select Gemini 2.5 Flash.' : 'Wait for the quota window to reset, increase your quota, or select another model.'}${diagnosticId}`;
+  }
+  if (lowered.includes('api key') || lowered.includes('authentication')) {
+    return `${modelProvider(job?.model || '')} authentication failed. Check the API key in .env and restart the backend.${diagnosticId}`;
+  }
+  return `${error}${diagnosticId}`;
+}
+
+const humanizePipelineDetail = (detail = '') => {
+  const text = String(detail || '').replace(/\s+/g, ' ').trim();
+  const lowered = text.toLowerCase();
+  if (!text) return 'Main pipeline start kar raha hoon.';
+  if (lowered.startsWith('auto-enabled')) return 'Search intent samajh gaya. Web research auto-on karke sources collect kar raha hoon.';
+  if (lowered.includes('planning up to')) return 'Pehle query plan bana raha hoon, taaki search random na ho.';
+  if (lowered.includes('round') && lowered.includes('follow-up')) return `Initial results weak hain, isliye next search angle try kar raha hoon: ${text}`;
+  if (lowered.includes('search') && lowered.includes(':')) return `Ab search chala raha hoon: ${text.split(':').slice(1).join(':').trim() || text}`;
+  if (lowered.startsWith('→')) return `Source mila: ${text.replace(/^→\s*/, '')}`;
+  if (lowered.includes('collected') && lowered.includes('unique sources')) return `Sources collect ho rahe hain: ${text}`;
+  if (lowered.includes('semantic retrieval')) return `Local files mein relevant chunks dhoondh raha hoon: ${text}`;
+  if (lowered.startsWith('searching')) return `Uploaded files scan kar raha hoon: ${text}`;
+  if (lowered.includes('analysis plan ready')) return `Plan ready hai. Ab evidence ke against answer build karunga.`;
+  if (lowered.includes('calling') && lowered.includes('understand')) return `Question ka intent samajh raha hoon aur answer structure bana raha hoon.`;
+  if (lowered.startsWith('preparing')) return `Ab draft compose kar raha hoon: ${text}`;
+  if (lowered.includes('synthesizing')) return `Sources ko merge karke final answer likh raha hoon.`;
+  if (lowered.includes('verify') || lowered.includes('quality')) return `Answer quality aur grounding check kar raha hoon.`;
+  if (lowered.includes('repair')) return `Kuch gap mila, answer refine kar raha hoon.`;
+  if (lowered.includes('answer ready') || lowered.includes('ready')) return `Answer ready kar diya.`;
+  if (lowered.includes('still') || lowered.includes('active')) return `Abhi kaam chal raha hai: ${text}`;
+  return text.length > 170 ? `${text.slice(0, 167)}...` : text;
+};
+
+const buildWorkingNotes = (events = [], pipeline = {}) => {
+  const notes = [];
+  const candidates = [
+    ...events.filter(event => event.detail).map(event => ({
+      id: `${event.at || ''}-${event.stage || ''}-${event.detail}`,
+      stage: event.stage || pipeline.stage || 'working',
+      text: humanizePipelineDetail(event.detail),
+      live: false,
+    })),
+  ];
+  if (pipeline.detail) {
+    candidates.push({
+      id: `current-${pipeline.stage}-${pipeline.detail}`,
+      stage: pipeline.stage || 'working',
+      text: humanizePipelineDetail(pipeline.detail),
+      live: true,
+    });
+  }
+  const seen = new Set();
+  for (const item of candidates.reverse()) {
+    const key = item.text.toLowerCase();
+    if (!item.text || seen.has(key)) continue;
+    seen.add(key);
+    notes.unshift(item);
+    if (notes.length >= 4) break;
+  }
+  return notes.length ? notes : [{ id: 'start', stage: 'starting', text: 'Samjha. Main request process kar raha hoon.', live: true }];
+};
+
+const directActivityToNote = item => {
+  const label = item?.label || '';
+  const detail = item?.detail || '';
+  if (/sending/i.test(label)) return `Request bhej diya: ${detail}`;
+  if (/connecting/i.test(label)) return `Model se connect kar raha hoon: ${detail}`;
+  if (/streaming/i.test(label)) return `Answer live aa raha hai: ${detail}`;
+  if (/saving/i.test(label)) return `Chat history save kar raha hoon.`;
+  if (/stopped/i.test(label)) return `Stopped. Yahin se model change karke ask again kar sakte ho.`;
+  return detail || label || 'Working...';
+};
+
+function PipelineActivity({ pipeline, model, provider, events, startedAt, reasoningMode, webSearch, fileCount, question }) {
+  const directModelChat = !webSearch && ((reasoningMode === 'light' && fileCount === 0) || reasoningMode === 'unrestricted');
+  const responseStages = [
+    ['understanding', 'Plan', BrainCircuit, 'Understanding intent'],
+    ['gathering', 'Gather', Database, 'Collecting evidence'],
+    ['drafting', 'Compose', PenLine, 'Building the answer'],
+  ];
+  const directStages = [
+    ['drafting', 'Chat', Cpu, 'Direct model chat'],
+  ];
+  const qualityStages = [
+    ['verifying', 'Verify', ShieldCheck, 'Checking quality'],
+    ['repairing', 'Refine', Sparkles, 'Resolving gaps'],
+  ];
+  const stages = directModelChat ? directStages : ['thinking', 'deep_summary'].includes(reasoningMode) ? [...responseStages, ...qualityStages] : responseStages;
+  const current = stages.findIndex(([id]) => id === pipeline.stage);
+  const activeIndex = Math.max(0, current);
+  const [elapsed, setElapsed] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const consoleRef = useRef(null);
+  const eventConfig = {
+    request: ['REQ', Code2],
+    llm_call: ['CALL', Cpu],
+    llm_result: ['RECV', Radio],
+    retrieval: ['READ', Database],
+    chunk: ['MAP', Layers3],
+    reduce: ['REDUCE', GitBranchIcon],
+    synthesis: ['MERGE', Sparkles],
+    quality: ['QA', ShieldCheck],
+    heartbeat: ['PING', Activity],
+    complete: ['DONE', CircleCheck],
+    error: ['ERR', X],
+    status: ['LOG', Terminal],
+    web: ['WEB', Search],
+    web_search: ['SRCH', Search],
+  };
+  const latestEvent = events[events.length - 1];
+  const visibleEvents = events.slice(-18);
+  const lastUpdateAge = latestEvent?.at
+    ? Math.max(0, Math.floor((Date.now() - parseServerTime(latestEvent.at)) / 1000))
+    : 0;
+  const progress = Math.max(8, ((activeIndex + .35) / stages.length) * 100);
+  const modeLabel = webSearch
+    ? reasoningMode === 'unrestricted' ? 'Unrestricted Web Research' : 'Web Research'
+    : directModelChat ? 'Direct chat' : reasoningMode === 'unrestricted' ? 'Unrestricted' : reasoningMode === 'ticket_analysis' ? 'Ticket Analysis' : reasoningMode === 'deep_summary' ? 'Deep Summary' : reasoningMode === 'thinking' ? 'Full library' : reasoningMode === 'web_research' ? 'Web Research' : 'Focused retrieval';
+  const llmHitKey = event => {
+    const preview = event.payload_preview || event.detail || '';
+    const normalizedPreview = preview.toLowerCase();
+    if (normalizedPreview.includes('still generating this step') || normalizedPreview.startsWith('evidence processing is active:')) return null;
+    if (event.type === 'llm_call') {
+      if (normalizedPreview.startsWith('preparing a ')) return null;
+      return `call:${event.at}:${event.method}:${preview}`;
+    }
+    if (event.type === 'chunk') {
+      const tag = event.tags?.find(item => /^chunk \d+\/\d+$/i.test(item));
+      return tag ? `chunk:${tag}` : `chunk:${event.method}:${preview}`;
+    }
+    if (['reduce', 'synthesis'].includes(event.type)) return `${event.type}:${event.method}:${event.response_preview || preview}`;
+    if (event.type === 'quality' && event.direction === 'outbound') return `quality:${event.method}:${preview}`;
+    return null;
+  };
+  const llmHits = new Set(events.map(llmHitKey).filter(Boolean)).size;
+  const modelSignals = events.filter(event => ['llm_call', 'llm_result', 'quality'].includes(event.type)).length;
+  const chunks = events.filter(event => ['chunk', 'reduce', 'synthesis'].includes(event.type)).length;
+  const heartbeats = events.filter(event => event.type === 'heartbeat').length;
+  const webSourceKeys = events
+    .filter(event => event.type === 'web')
+    .map(event => event.tags?.find(tag => /^https?:\/\//i.test(tag)) || event.detail)
+    .filter(Boolean);
+  const webSources = new Set(webSourceKeys).size;
+  const currentEvent = latestEvent || {};
+  const currentMethod = currentEvent.method || 'pipeline.tick()';
+  const requestPreview = currentEvent.payload_preview || events.find(event => event.type === 'request')?.payload_preview || question || pipeline.detail;
+  const responsePreview = currentEvent.response_preview || [...events].reverse().find(event => event.response_preview)?.response_preview || pipeline.detail;
+  const providerLabel = provider ? (PROVIDER_LABELS[provider] || provider) : modelProvider(model);
+  const compact = (value, fallback = 'Waiting for signal...') => {
+    const text = String(value || fallback).replace(/\s+/g, ' ').trim();
+    return text.length > 180 ? `${text.slice(0, 177)}...` : text;
+  };
+  const eventTime = value => {
+    const age = value ? Math.max(0, Math.floor((Date.now() - parseServerTime(value)) / 1000)) : 0;
+    return age < 2 ? 'now' : `${formatElapsedTime(age)} ago`;
+  };
+  const methodBadge = event => {
+    const source = `${event.http_method || ''} ${event.method || ''} ${(event.tags || []).join(' ')}`.toUpperCase();
+    const match = source.match(/\b(GET|POST|PUT|PATCH|DELETE)\b/);
+    return match?.[1] || null;
+  };
+  const workingNotes = buildWorkingNotes(events, pipeline);
+
+  useEffect(() => {
+    const update = () => setElapsed(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [startedAt]);
+
+  useEffect(() => {
+    consoleRef.current?.scrollTo({
+      top: consoleRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [events.length, latestEvent?.detail]);
+
+  if (!expanded) {
+    return (
+      <div className="chat-message assistant" aria-busy="true">
+        <div className="assistant-avatar pulse"><Sparkles size={15} /></div>
+        <div className="message-body">
+          <div className="message-head">
+            <span>{BRAND.name} · {model}</span>
+            <button className="dev-trace-toggle icon-button" onClick={() => setExpanded(true)} aria-label="Show developer trace" title="Show developer trace">
+              <Terminal size={13} />
+              <span>Trace</span>
+            </button>
+          </div>
+          <div className="thinking-container">
+            <div className="thinking-content">
+              <div className="thinking-header">
+                <div className="thinking-mode-badge">{modeLabel}</div>
+                <span className="thinking-elapsed">{formatElapsedTime(elapsed)}</span>
+                <span className="thinking-file-count">{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
+              </div>
+              <div className="working-notes" aria-label="Live working notes">
+                {workingNotes.map((note, index) => (
+                  <div className={`${index === workingNotes.length - 1 ? 'live' : ''}`} key={note.id}>
+                    <span>{index + 1}</span>
+                    <p>{note.text}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="thinking-animation" aria-hidden="true">
+                <span className="thinking-dot" />
+                <span className="thinking-dot" />
+                <span className="thinking-dot" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="chat-message assistant pipeline-message" aria-busy="true">
+      <div className="pipeline-card">
+        <div className="pipeline-head">
+          <div className="pipeline-core" aria-hidden="true">
+            <Terminal size={18} />
+          </div>
+          <div className="pipeline-heading">
+            <span className="pipeline-eyebrow">DEVELOPER TRACE</span>
+            <strong>{stages[activeIndex][3]}</strong>
+            <small>{compact(pipeline.detail)}</small>
+          </div>
+          <div className="pipeline-time"><strong>{formatElapsedTime(elapsed)}</strong><span>elapsed</span></div>
+        </div>
+
+        <div className="pipeline-operation">
+          <span className="operation-live"><i /> LIVE OPERATION</span>
+          <strong>{currentMethod}</strong>
+          <small>Updated {lastUpdateAge < 2 ? 'just now' : `${formatElapsedTime(lastUpdateAge)} ago`}</small>
+        </div>
+
+        <div className="pipeline-track">
+          {stages.map(([id, label, Icon], index) => (
+            <div className={`${index < current ? 'done' : ''} ${index === current ? 'active' : ''}`} key={id}>
+              <i>{index < current ? <Check size={11} /> : <Icon size={11} />}</i>
+              <span>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="pipeline-progress"><span style={{ width: `${progress}%` }} /></div>
+
+        <div className="pipeline-dev-grid">
+          <div className="pipeline-panel current-call">
+            <div className="panel-label"><Code2 size={12} /> Current call</div>
+            <code>{currentMethod}</code>
+            <div className="call-flow">
+              <span className={`direction ${currentEvent.direction || 'internal'}`}>{currentEvent.direction || 'internal'}</span>
+              <span>{currentEvent.stage || pipeline.stage}</span>
+              <span>{currentEvent.type || 'status'}</span>
+            </div>
+          </div>
+          <div className="pipeline-panel packet-panel">
+            <div className="panel-label"><ArrowRight size={12} /> Sending</div>
+            <p>{compact(requestPreview)}</p>
+          </div>
+          <div className="pipeline-panel packet-panel">
+            <div className="panel-label"><Radio size={12} /> Receiving</div>
+            <p>{compact(responsePreview)}</p>
+          </div>
+        </div>
+
+        <div className="pipeline-telemetry">
+          <span><Activity size={12} /><strong>{events.length}</strong> events</span>
+          <span title={`${modelSignals} total model-related signal${modelSignals === 1 ? '' : 's'}`}>
+            <Cpu size={12} /><strong>{llmHits}</strong> LLM {llmHits === 1 ? 'hit' : 'hits'}
+          </span>
+          <span><Layers3 size={12} /><strong>{chunks}</strong> evidence steps</span>
+          <span><Radio size={12} /><strong>{heartbeats}</strong> heartbeats</span>
+          <span><Search size={12} /><strong>{webSources}</strong> web sources</span>
+          <span><FileText size={12} /><strong>{fileCount}</strong> {fileCount === 1 ? 'file' : 'files'}</span>
+        </div>
+
+        <div className="pipeline-console">
+          <div className="console-head">
+            <span><Terminal size={13} /> Runtime console</span>
+            <small>{providerLabel} · {modeLabel} · {model}</small>
+            <button className="dev-trace-close" onClick={() => setExpanded(false)}>
+              <X size={14} /> Hide trace
+            </button>
+          </div>
+          <div className="console-feed" ref={consoleRef}>
+            {visibleEvents.map((event, index) => {
+              const isLatest = index === visibleEvents.length - 1;
+              const [label, Icon] = eventConfig[event.type] || eventConfig.status;
+              const httpMethod = methodBadge(event);
+              const eventTone = httpMethod ? `http-${httpMethod.toLowerCase()}` : event.type || 'status';
+              const webUrl = event.type === 'web' && event.tags?.[0]?.startsWith('http') ? event.tags[0] : null;
+              return (
+                <div className={`${isLatest ? 'live' : ''} event-${eventTone}`} key={`${event.stage}-${event.at}-${index}`}>
+                  <i>{isLatest ? <span className="event-pulse" /> : <Icon size={12} />}</i>
+                  <time>{eventTime(event.at)}</time>
+                  <b className={`console-badge ${eventTone}`}>{httpMethod || label}</b>
+                  <code>{event.method || 'pipeline.tick()'}</code>
+                  {webUrl ? (
+                    <a className="web-source-link" href={webUrl} target="_blank" rel="noopener noreferrer" title={webUrl}>
+                      {compact(event.detail.replace(/https?:\/\/[^\s]+/, '').trim(), 'Event received')}
+                    </a>
+                  ) : (
+                    <span>{compact(event.detail, 'Event received')}</span>
+                  )}
+                  {!!event.tags?.length && !webUrl && <em>{event.tags.slice(0, 3).join(' · ')}</em>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="pipeline-lower">
+          <div className="pipeline-meta">
+            <span>{providerLabel}</span>
+            <span>{modeLabel}</span>
+            <span>{fileCount} {fileCount === 1 ? 'file' : 'files'}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DirectStreamTrace({ activity = [], model, provider, text = '', streaming = false }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!activity.length) return null;
+  const providerLabel = provider ? (PROVIDER_LABELS[provider] || provider) : modelProvider(model || '');
+  const visibleActivity = activity.slice(-10);
+  const directNotes = visibleActivity.slice(-4).map((item, index) => ({
+    id: item.id || `${item.label}-${index}`,
+    text: directActivityToNote(item),
+    live: item.state === 'live',
+  }));
+  return (
+    <>
+      <div className="direct-working-notes" aria-label="Live working notes">
+        {directNotes.map((note, index) => (
+          <div className={`${note.live || index === directNotes.length - 1 && streaming ? 'live' : ''}`} key={note.id}>
+            <span>{index + 1}</span>
+            <p>{note.text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="direct-stream-trace" aria-label="Live answer activity">
+        {activity.slice(0, 4).map(item => (
+          <div className={`direct-stream-step ${item.state || 'pending'}`} key={item.id}>
+            <span aria-hidden="true" />
+            <div>
+              <strong>{item.label}</strong>
+              {item.detail && <small>{item.detail}</small>}
+            </div>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="dev-trace-toggle direct"
+          onClick={() => setExpanded(value => !value)}
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Hide developer trace' : 'Show developer trace'}
+          title={expanded ? 'Hide developer trace' : 'Show developer trace'}
+        >
+          <Terminal size={13} />
+          <span>Trace</span>
+        </button>
+      </div>
+      {expanded && (
+        <div className="direct-dev-panel">
+          <div className="console-head">
+            <span><Terminal size={13} /> Direct stream trace</span>
+            <small>{providerLabel} · {model}</small>
+            <button className="dev-trace-close" onClick={() => setExpanded(false)}>
+              <X size={14} /> Hide trace
+            </button>
+          </div>
+          <div className="direct-dev-grid">
+            <div>
+              <strong>Mode</strong>
+              <span>{streaming ? 'Streaming live' : 'Completed'}</span>
+            </div>
+            <div>
+              <strong>Output</strong>
+              <span>{text.length.toLocaleString()} chars</span>
+            </div>
+            <div>
+              <strong>Provider</strong>
+              <span>{providerLabel}</span>
+            </div>
+          </div>
+          <div className="console-feed direct-console-feed">
+            {visibleActivity.map(item => (
+              <div className={`${item.state === 'live' ? 'live' : ''} event-${item.state || 'status'}`} key={item.id}>
+                <i><Terminal size={11} /></i>
+                <time>{item.state || 'status'}</time>
+                <b className={`console-badge ${item.state === 'failed' ? 'error' : item.state === 'done' ? 'complete' : 'status'}`}>
+                  {item.state === 'failed' ? 'WARN' : item.state === 'done' ? 'DONE' : 'LIVE'}
+                </b>
+                <code>{item.label}</code>
+                <span>{item.detail || 'Waiting for signal'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function GitBranchIcon(props) {
+  return <Code2 {...props} />;
+}
+
+
+
+function HubPage({
+  query, files, stores, focusStoreId, clearFocusStore, openCreate,
+  uploadFile, requestDeleteFile, requestDeleteStore, toast,
+}) {
+  const [activeStore, setActiveStore] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadStage, setUploadStage] = useState(null);
+  const [dragging, setDragging] = useState(false);
+
+  useEffect(() => {
+    if (focusStoreId) {
+      const store = stores.find(item => item.id === focusStoreId);
+      if (store) setActiveStore(store);
+      clearFocusStore();
+    }
+  }, [focusStoreId, stores, clearFocusStore]);
+
+  const visibleStores = stores.filter(store =>
+    store.title.toLowerCase().includes(query.toLowerCase()) ||
+    store.description?.toLowerCase().includes(query.toLowerCase()),
+  );
+  const visibleFiles = files.filter(file =>
+    file.store_id === activeStore?.id &&
+    file.name.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  const handleUpload = async (fileList) => {
+    const file = fileList?.[0];
+    if (!file || !activeStore) return;
+    setUploading(true);
+    setUploadStage({
+      step: 0,
+      title: 'Receiving file',
+      detail: `${file.name} · ${formatFileSize(file.size)}`,
+    });
+    const timers = [
+      window.setTimeout(() => setUploadStage({ step: 1, title: 'Extracting text', detail: 'Reading pages, sheets, rows and code blocks' }), 500),
+      window.setTimeout(() => setUploadStage({ step: 2, title: 'Creating embeddings', detail: 'Model: local-hash-embedding-v1' }), 1200),
+      window.setTimeout(() => setUploadStage({ step: 3, title: 'Writing vector index', detail: 'Persisting chunks to local Chroma/SQLite store' }), 2200),
+    ];
+    try {
+      const uploaded = await uploadFile(activeStore.id, file);
+      const meta = embeddingMeta(uploaded || {});
+      setUploadStage({
+        step: 4,
+        title: meta.status === 'failed' ? 'Upload saved, index failed' : 'Ready for semantic search',
+        detail: `${meta.label} · ${meta.detail}`,
+      });
+      toast(meta.status === 'failed' ? 'File uploaded, indexing failed' : 'File uploaded and indexed', meta.status === 'failed' ? 'error' : 'success');
+    } catch (error) {
+      setUploadStage({ step: 4, title: 'Upload failed', detail: error.message });
+      toast(error.message, 'error');
+    } finally {
+      timers.forEach(timer => window.clearTimeout(timer));
+      window.setTimeout(() => setUploadStage(null), 1800);
+      setUploading(false);
+    }
+  };
+
+  if (activeStore) {
+    return (
+      <div className="page inner-page">
+        <button className="back-button" onClick={() => setActiveStore(null)}>
+          <ArrowLeft size={15} /> All stores
+        </button>
+        <div className="inner-title store-title">
+          <div>
+            <span className="kicker">STORE</span>
+            <h1>{activeStore.title}</h1>
+            <p>{activeStore.description || 'Files in this store are available to Explore.'}</p>
+          </div>
+          <label className={`new-button upload-button ${uploading ? 'disabled' : ''}`}>
+            <Upload size={16} />{uploading ? 'Uploading...' : 'Upload file'}
+            <input
+              type="file"
+              accept=".xlsx,.xlsm,.csv,.tsv,.txt,.md,.pdf,.docx,.json,.html,.css,.js,.jsx,.py"
+              onChange={event => handleUpload(event.target.files).finally(() => { event.target.value = ''; })}
+              disabled={uploading}
+            />
+          </label>
+        </div>
+
+        <div
+          className={`drop-zone ${dragging ? 'dragging' : ''} ${uploading ? 'processing' : ''}`}
+          onDragOver={event => { event.preventDefault(); setDragging(true); }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={event => {
+            event.preventDefault();
+            setDragging(false);
+            handleUpload(event.dataTransfer.files);
+          }}
+        >
+          <Upload size={18} />
+          <div>
+            <span>{uploadStage?.title || 'Drop files here to upload'}</span>
+            {uploadStage ? <small>{uploadStage.detail}</small> : <small>PDF, DOCX, XLSX, XLSM, CSV, TSV and text · up to 250 MB</small>}
+          </div>
+          {uploadStage && (
+            <div className="upload-pipeline" aria-live="polite">
+              {['Upload', 'Extract', 'Embed', 'Index', 'Ready'].map((label, index) => (
+                <span key={label} className={index <= uploadStage.step ? 'active' : ''}>
+                  <i>{index < uploadStage.step ? <Check size={10} /> : index + 1}</i>
+                  {label}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="simple-files">
+          {visibleFiles.map(file => {
+            const meta = embeddingMeta(file);
+            return (
+              <article key={file.id}>
+                <div className="file-icon"><FileText /></div>
+                <div>
+                  <h3>{file.name}</h3>
+                  <p>{fileMetaLine(file)} · {displayTime(file.created_at)}</p>
+                  <span className={`embedding-badge ${meta.status}`} title={meta.detail}>
+                    <Database size={11} /> {meta.label}
+                  </span>
+                </div>
+                <button
+                  className="icon-button delete-button"
+                  onClick={() => requestDeleteFile(file)}
+                  aria-label={`Delete ${file.name}`}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </article>
+            );
+          })}
+          {!visibleFiles.length && (
+            <div className="store-empty">
+              <Upload size={24} />
+              <h3>No files yet</h3>
+              <p>Upload a document or spreadsheet to make it available in Explore.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page inner-page">
+      <div className="inner-title">
+        <div>
+          <span className="kicker">LIBRARY</span>
+          <h1>Your stores</h1>
+          <p>Create a store, then add the files you want {BRAND.name} to understand.</p>
+          {query && <p className="filter-note">Showing stores matching “{query}”</p>}
+        </div>
+        <button className="new-button" onClick={openCreate}><Plus size={17} /> New store</button>
+      </div>
+      <div className="stores-grid">
+        {visibleStores.map(store => (
+          <article className="store-card" key={store.id}>
+            <button className="store-open" onClick={() => setActiveStore(store)}>
+              <span className={`store-folder ${store.color}`}><Folder size={23} /></span>
+              <span>
+                <strong>{store.title}</strong>
+                <small>{store.count} {store.count === 1 ? 'file' : 'files'}</small>
+              </span>
+            </button>
+            <button
+              className="store-delete icon-button"
+              onClick={() => requestDeleteStore(store)}
+              aria-label={`Delete ${store.title}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          </article>
+        ))}
+        <button className="store-card create-store" onClick={openCreate}>
+          <span className="store-folder"><Plus size={22} /></span>
+          <span><strong>Create a store</strong><small>Organize a new topic</small></span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CollapsibleSources({ sources, index, isExpanded, onToggle, onOpenStore, model, provider, llmHits = 0, webQueries = 0 }) {
+  const panelRef = useRef(null);
+  const webSources = sources.filter(source => source.store_id === 0);
+  const fileSources = sources.filter(source => source.store_id !== 0);
+  const sourceDomain = source => {
+    const candidates = [
+      source.url,
+      source.source_url,
+      source.link,
+      source.domain,
+      source.engine && String(source.engine).includes('.') ? source.engine : '',
+      source.name,
+    ].filter(Boolean);
+    const domainPattern = /(?:https?:\/\/)?(?:www\.)?([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:[/:?#]|$)/i;
+    for (const candidate of candidates) {
+      const value = String(candidate).trim();
+      if (!value) continue;
+      const match = value.match(domainPattern);
+      if (match?.[1]) return match[1].replace(/^www\./, '');
+    }
+    try {
+      return source.url ? new URL(source.url).hostname.replace(/^www\./, '') : '';
+    } catch {
+      return source.url?.replace(/^https?:\/\//, '').split('/')[0] || '';
+    }
+  };
+  const sourceHref = source => source.url || source.source_url || source.link || '';
+  const faviconUrl = source => {
+    const domain = sourceDomain(source);
+    return domain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32` : '';
+  };
+  const sourceInitial = source => (sourceDomain(source) || source.name || 'W')[0].toUpperCase();
+  const truncated = (text, max = 120) => text?.length > max ? text.slice(0, max) + '…' : text || '';
+
+  useEffect(() => {
+    if (isExpanded && panelRef.current) {
+      panelRef.current.focus();
+    }
+  }, [isExpanded]);
+
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleEsc = (e) => { if (e.key === 'Escape') onToggle(); };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [isExpanded, onToggle]);
+
+  const total = sources.length;
+  const displaySources = [...webSources, ...fileSources];
+  const maxAvatars = 8;
+
+  return (
+    <>
+      <div className="sources-bar">
+        <button className="sources-bar-btn" onClick={onToggle}>
+          <span className="sources-count">{total} source{total !== 1 ? 's' : ''}</span>
+          <span className="sources-avatars">
+            {displaySources.slice(0, maxAvatars).map((source, i) => (
+              source.store_id === 0 ? (
+                <span key={source.id || i} className="source-avatar web" title={sourceDomain(source)}>
+                  {faviconUrl(source) && (
+                    <img
+                      src={faviconUrl(source)}
+                      alt=""
+                      width="14"
+                      height="14"
+                      onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                    />
+                  )}
+                  <span className="source-avatar-fallback" style={{ display: faviconUrl(source) ? 'none' : 'flex' }}>{sourceInitial(source)}</span>
+                </span>
+              ) : (
+                <span key={source.id || i} className="source-avatar file" title={source.name}>
+                  <FileText size={10} />
+                </span>
+              )
+            ))}
+            {total > maxAvatars && <span className="source-avatar overflow">+{total - maxAvatars}</span>}
+          </span>
+          <ArrowRight size={14} className="sources-arrow" />
+        </button>
+      </div>
+
+      {isExpanded && (
+        <>
+          <div className="sources-panel-overlay" onClick={onToggle} />
+          <div className="sources-panel" ref={panelRef} tabIndex={-1}>
+            <div className="sources-panel-header">
+              <div>
+                <h3>References</h3>
+                <p>View all references for this response</p>
+              </div>
+              <button className="sources-panel-close" onClick={onToggle} aria-label="Close references">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="sources-panel-body">
+              {model && provider && (
+                <div className="sources-panel-section">
+                  <div className="sources-panel-section-head">
+                    <BrainCircuit size={13} />
+                    <span>LLM ({llmHits} hit{llmHits === 1 ? '' : 's'})</span>
+                  </div>
+                  <div className="sources-panel-card llm">
+                    <span className="sources-panel-favicon llm"><BrainCircuit size={14} /></span>
+                    <div className="sources-panel-card-body">
+                      <span className="sources-panel-card-domain">{PROVIDER_LABELS[provider] || provider}</span>
+                      <span className="sources-panel-card-title">{model}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {webSources.length > 0 && (
+                <div className="sources-panel-section">
+                  <div className="sources-panel-section-head">
+                    <Globe size={13} />
+                    <span>Web ({webQueries || webSources.length})</span>
+                  </div>
+                  {webSources.map((source, i) => {
+                    const href = sourceHref(source);
+                    const CardTag = href ? 'a' : 'div';
+                    return (
+                      <CardTag key={source.id || i} className="sources-panel-card web" href={href || undefined} target={href ? '_blank' : undefined} rel={href ? 'noopener noreferrer' : undefined}>
+                        <span className="sources-panel-favicon web">
+                          {faviconUrl(source) && (
+                            <img
+                              src={faviconUrl(source)}
+                              alt=""
+                              width="16"
+                              height="16"
+                              onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
+                            />
+                          )}
+                          <span className="sources-panel-favicon-fallback" style={{ display: faviconUrl(source) ? 'none' : 'flex' }}>{sourceInitial(source)}</span>
+                        </span>
+                        <div className="sources-panel-card-body">
+                          <span className="sources-panel-card-domain">{sourceDomain(source) || 'Web source'}</span>
+                          <span className="sources-panel-card-title">{source.name}</span>
+                          {source.excerpt && <span className="sources-panel-card-excerpt">{truncated(source.excerpt, 160)}</span>}
+                        </div>
+                      </CardTag>
+                    );
+                  })}
+                </div>
+              )}
+
+              {fileSources.length > 0 && (
+                <div className="sources-panel-section">
+                  <div className="sources-panel-section-head">
+                    <FileText size={13} />
+                    <span>Files ({fileSources.length})</span>
+                  </div>
+                  {fileSources.map((source, i) => (
+                    <button key={source.id || i} className="sources-panel-card file" onClick={() => onOpenStore(source.store_id)}>
+                      <span className="sources-panel-favicon file"><FileText size={13} /></span>
+                      <div className="sources-panel-card-body">
+                        <span className="sources-panel-card-domain">Local file</span>
+                        <span className="sources-panel-card-title">{source.name}</span>
+                        {source.excerpt && <span className="sources-panel-card-excerpt">{truncated(source.excerpt, 160)}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+const SLASH_COMMANDS = [
+  { id: 'light', label: '/light', desc: 'Fast direct chat — default mode', icon: Radio, color: '#7c6cff' },
+  { id: 'unrestricted', label: '/unrestricted', desc: 'Expert mode — direct, low-fluff answers', icon: Zap, color: '#ff6b6b' },
+  { id: 'thinking', label: '/thinking', desc: 'Deep analysis — inspects all selected content', icon: Sparkles, color: '#a78bfa' },
+  { id: 'deep_summary', label: '/deepsummary', desc: 'Complete section-by-section doc coverage', icon: BookOpen, color: '#60a5fa' },
+  { id: 'ticket_analysis', label: '/ticketanalysis', desc: 'Group incidents by problem pattern', icon: Database, color: '#34d399' },
+];
+
+const AUTO_WEB_SEARCH_PATTERNS = [
+  /\b(search|browse|look\s*up|google|find\s+(?:me\s+)?(?:latest|current|recent|news|online|web|internet))\b/i,
+  /\b(latest|current|recent|today|yesterday|this\s+week|this\s+month|news|breaking|updates?)\b/i,
+  /\b(youtube|video|videos)\b/i,
+  /\b(source|sources|citation|citations|link|links|url|website|webpage)\b/i,
+  // Sports
+  /\b(cricket|football|soccer|tennis|basketball|match|score|live\s+score|result|ipl|epl|nba|nfl)\b/i,
+  // Stock/Finance
+  /\b(stock|share|shares|nse|bse|sensex|nifty|mutual\s+fund|ipo|dividend|trading|portfolio)\b/i,
+  // Currency
+  /\b(currency|exchange\s+rate|forex|dollar|euro|pound|rupee|usd|eur|gbp|inr)\b/i,
+  // Flight
+  /\b(flight|airline|airport|pnr|boarding|departure|arrival|delayed)\b/i,
+  // Food
+  /\b(recipe|recipes|cook|cooking|restaurant|cafe|menu|ingredients)\b/i,
+  // Health
+  /\b(symptom|symptoms|treatment|medicine|diagnosis|disease|doctor|hospital)\b/i,
+  // Entertainment
+  /\b(movie|movies|film|cinema|series|netflix|concert|album|song|music)\b/i,
+  // Mixed-language current-query keywords
+  /\b(barish|barsaat|mausam|tapman|garmi|thand|sardi|toofan|aandhi|kohra|dhund)\b/i,
+  /\b(aaj|kal|abhi|taza|samachar|khabar|score|natija|result|bhav|kimat|dam)\b/i,
+  /\b(cricket|football|match|khel|maukka)\b/i,
+  /\b(stock|share|bazaar|bhav|nivesh|munafa)\b/i,
+  /\b(dollar|rupaye|exchange|currency|kitna)\b/i,
+  /\b(flight|hawai|pnr)\b/i,
+  /\b(recipe|pakwan|khaana|restaurant)\b/i,
+  /\b(bimari|dawa|ilaj|doctor|hospital|bukhar)\b/i,
+  /\b(movie|film|cinema|gaana|concert)\b/i,
+  /\b(hoga|hogi|hoga\s+kya|batao|dikhao|btao|konsa|kaunsa|kaisa|kaise)\b/i,
+  /\b(sasta|mehnga|kharid|accha|badhiya|sabse)\b/i,
+  /\b(comp(?:are|aire?)|vs\.?|versus|difference\s+between|contras?t)\b/i,
+  /\b(better|worse|best|worst|which\s+(?:one|is|should|do)|recommend(?:ed|ation)?|suggestion|pros?\s+and\s+cons?)\b/i,
+];
+
+const shouldAutoWebSearch = (text, mode = 'light') => {
+  if (['ticket_analysis', 'deep_summary'].includes(mode)) return false;
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  return Boolean(normalized) && AUTO_WEB_SEARCH_PATTERNS.some(pattern => pattern.test(normalized));
+};
+
+function ExplorePage({
+  files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat, requestDeleteAllChats,
+  focusActive, toggleFocusMode, refreshChats, refreshJobs, openMenu,
+}) {
+  const savedAiPreference = readSavedAiPreference();
+  const [question, setQuestion] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [activeChat, setActiveChat] = useState(null);
+  const [model, setModel] = useState(savedAiPreference.model || DEFAULT_PROVIDER_MODELS[savedAiPreference.provider] || DEFAULT_PROVIDER_MODELS.ollama);
+  const [provider, setProvider] = useState(savedAiPreference.provider || 'ollama');
+  const [llmConfig, setLlmConfig] = useState(null);
+  const [allowGeneralKnowledge, setAllowGeneralKnowledge] = useState(true);
+  const [reasoningMode, setReasoningMode] = useState(savedAiPreference.reasoning_mode === 'web_research' ? 'light' : (savedAiPreference.reasoning_mode || 'light'));
+  const [webSourceLimit] = useState(savedAiPreference.web_source_limit || 200);
+  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  const [selectFilesOpen, setSelectFilesOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+  const [copiedConvId, setCopiedConvId] = useState(false);
+  const [expandedSources, setExpandedSources] = useState({});
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(-1);
+  const [slashFilter, setSlashFilter] = useState('');
+  const [directStreaming, setDirectStreaming] = useState(false);
+  const [modePickerOpen, setModePickerOpen] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const threadRef = useRef(null);
+  const composerRef = useRef(null);
+  const loadedCompletedJob = useRef(null);
+  const aiPreferenceReady = useRef(false);
+  const revealTimerRef = useRef(null);
+  const directAbortRef = useRef(null);
+  const stopRequestedRef = useRef(false);
+  const modePickerRef = useRef(null);
+
+  useEffect(() => {
+    if (!modePickerOpen) return undefined;
+    const onPointerDown = event => {
+      if (modePickerRef.current && !modePickerRef.current.contains(event.target)) setModePickerOpen(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [modePickerOpen]);
+
+  const toggleSources = (messageIndex) => {
+    setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
+  };
+  const selectedCount = selectedFileIds === null ? files.length : selectedFileIds.length;
+  const activeJob = jobs.find(job => job.conversation_id === activeChat && ['queued', 'running'].includes(job.status));
+  const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
+  const thinking = Boolean(activeJob) || directStreaming;
+  const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
+  const runningCount = jobs.filter(job => ['queued', 'running'].includes(job.status)).length;
+  const failedCount = jobs.filter(job => job.status === 'failed').length;
+
+  const getReasoningMode = (text) => {
+    for (const cmd of SLASH_COMMANDS) {
+      const prefix = cmd.label + ' ';
+      const label = cmd.label;
+      if (text.startsWith(prefix) || text === label) return cmd.id;
+    }
+    return reasoningMode;
+  };
+
+  const previewReasoningMode = getReasoningMode(question.trim());
+  const autoWebSearchPreview = shouldAutoWebSearch(question.trim().replace(/^\/\w+\s*/, ''), previewReasoningMode);
+  const activeModeLabel = previewReasoningMode === 'light' ? 'Light'
+    : previewReasoningMode === 'unrestricted' ? 'Unrestricted'
+    : previewReasoningMode === 'thinking' ? 'Thinking'
+    : previewReasoningMode === 'deep_summary' ? 'Deep Summary'
+    : previewReasoningMode === 'ticket_analysis' ? 'Ticket Analysis'
+    : previewReasoningMode === 'web_research' ? 'Web Research'
+    : previewReasoningMode;
+  const displayedModeLabel = autoWebSearchPreview
+    ? `${activeModeLabel} + Auto Web`
+    : activeModeLabel;
+
+  useEffect(() => {
+    if (activeChat) {
+      window.localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, String(activeChat));
+    }
+  }, [activeChat]);
+
+  useEffect(() => {
+    Promise.all([
+      api.llmConfig(),
+      api.preference('explore_ai').catch(() => ({ value: {} })),
+    ]).then(([config, preference]) => {
+      setLlmConfig(config);
+      const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
+      const nextProvider = saved.provider || config.provider || 'ollama';
+      const nextModel = saved.model || (nextProvider === config.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]);
+      setProvider(nextProvider);
+      setModel(nextModel);
+      setReasoningMode(saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'));
+      aiPreferenceReady.current = true;
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!aiPreferenceReady.current) return undefined;
+    const payload = {
+      provider,
+      model,
+      reasoning_mode: reasoningMode,
+      web_source_limit: webSourceLimit,
+    };
+    window.localStorage.setItem(AI_PREFERENCE_STORAGE_KEY, JSON.stringify(payload));
+    const timer = window.setTimeout(() => {
+      api.updatePreference('explore_ai', payload).catch(() => {});
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [provider, model, reasoningMode, webSourceLimit]);
+
+  useEffect(() => {
+    setSelectedFileIds(current => current === null ? null : current.filter(id => files.some(file => file.id === id)));
+  }, [files]);
+
+  const toggleFile = id => {
+    setSelectedFileIds(current => {
+      const selected = current === null ? files.map(file => file.id) : current;
+      return selected.includes(id) ? selected.filter(fileId => fileId !== id) : [...selected, id];
+    });
+  };
+
+  const messageFromSaved = message => {
+    const rawSources = message.sources || [];
+    const meta = rawSources.find(s => s.meta);
+    return {
+      id: message.id,
+      role: message.role,
+      text: message.content,
+      sources: rawSources.filter(s => !s.meta),
+      llmHits: meta?.llm_hits || message.llm_hits || 0,
+      webQueries: meta?.web_queries || message.web_queries || 0,
+      model: message.model,
+      provider: message.provider,
+      createdAt: message.created_at,
+    };
+  };
+
+  const stopReveal = () => {
+    if (revealTimerRef.current) {
+      window.clearInterval(revealTimerRef.current);
+      revealTimerRef.current = null;
+    }
+  };
+
+  const revealAssistantMessage = saved => {
+    const restored = saved.map(messageFromSaved);
+    const assistantIndex = restored.findLastIndex(message => message.role === 'assistant' && message.text);
+    if (assistantIndex === -1) {
+      setMessages(restored);
+      return;
+    }
+    stopReveal();
+    const fullText = restored[assistantIndex].text;
+    const chunkSize = Math.max(6, Math.ceil(fullText.length / 220));
+    let visibleChars = 0;
+    setMessages(restored.map((message, index) => index === assistantIndex
+      ? { ...message, text: '', sources: [], streaming: true }
+      : message));
+    revealTimerRef.current = window.setInterval(() => {
+      visibleChars = Math.min(fullText.length, visibleChars + chunkSize);
+      setMessages(current => current.map((message, index) => index === assistantIndex
+        ? {
+            ...restored[assistantIndex],
+            text: fullText.slice(0, visibleChars),
+            sources: visibleChars >= fullText.length ? restored[assistantIndex].sources : [],
+            streaming: visibleChars < fullText.length,
+          }
+        : message));
+      if (visibleChars >= fullText.length) {
+        window.clearInterval(revealTimerRef.current);
+        revealTimerRef.current = null;
+      }
+    }, 16);
+  };
+
+  const openChat = async chat => {
+    stopReveal();
+    const saved = await api.chatMessages(chat.id);
+    const latestJob = jobs.find(job => job.conversation_id === chat.id);
+    setSelectedFileIds(latestJob?.file_ids ?? []);
+    setActiveChat(chat.id);
+    const restored = saved.map(messageFromSaved);
+    if (latestJob && !restored.some(message => message.role === 'user' && message.text === latestJob.question)) {
+      restored.push({ id: 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), role: 'user', text: latestJob.question });
+    }
+    if (latestJob?.status === 'failed') {
+      restored.push({ role: 'assistant', text: jobFailureMessage(latestJob), sources: [], error: true, jobId: latestJob.id });
+    }
+    loadedCompletedJob.current = latestJob?.id || null;
+    setMessages(restored);
+    jobs.filter(job => job.conversation_id === chat.id && job.status === 'completed' && !job.seen).forEach(job => markJobSeen(job.id));
+  };
+
+  useEffect(() => {
+    if (!initialChatId || !chats.length) return;
+    const chat = chats.find(item => item.id === initialChatId);
+    if (chat) openChat(chat);
+    clearInitialChat();
+  }, [initialChatId, chats]);
+
+  useEffect(() => {
+    if (initialChatId || activeChat || !chats.length) return;
+    const savedChatId = Number(readStorage('explore-active-chat'));
+    if (!savedChatId) return;
+    const chat = chats.find(item => item.id === savedChatId);
+    if (chat) openChat(chat);
+  }, [initialChatId, activeChat, chats]);
+
+  useEffect(() => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, thinking, activeJob?.detail, directStreaming]);
+
+  useEffect(() => {
+    const el = threadRef.current;
+    if (!el) return undefined;
+    const onScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setShowScrollToBottom(distanceFromBottom > 240);
+    };
+    el.addEventListener('scroll', onScroll);
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  const scrollToBottom = () => {
+    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
+  };
+
+  useEffect(() => () => {
+    stopReveal();
+  }, []);
+
+  useEffect(() => {
+    const finished = jobs.find(job => job.conversation_id === activeChat && ['completed', 'failed'].includes(job.status));
+    if (!finished || loadedCompletedJob.current === finished.id) return;
+    loadedCompletedJob.current = finished.id;
+    if (finished.status === 'failed') {
+      const reason = jobFailureMessage(finished);
+      setMessages(current => current.some(message => message.jobId === finished.id)
+        ? current
+        : [...current, { role: 'assistant', text: reason, sources: [], error: true, jobId: finished.id }]);
+      toast(reason, 'error');
+      return;
+    }
+    api.chatMessages(activeChat).then(saved => {
+      revealAssistantMessage(saved);
+      if (!finished.seen) markJobSeen(finished.id);
+    });
+  }, [jobs, activeChat, markJobSeen]);
+
+  const newChat = () => {
+    stopReveal();
+    setActiveChat(null);
+    window.localStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY);
+    setMessages([]);
+    setQuestion('');
+    setSelectedFileIds([]);
+  };
+
+  const stripSlashPrefix = (text) => {
+    for (const cmd of SLASH_COMMANDS) {
+      const prefix = cmd.label;
+      if (text === prefix) return '';
+      if (text.startsWith(prefix + ' ')) return text.slice(prefix.length + 1);
+    }
+    return text;
+  };
+
+  const ask = async (text) => {
+    stopReveal();
+    const value = text.trim();
+    if (!value) return;
+    const mode = getReasoningMode(value);
+    const cleanText = stripSlashPrefix(value);
+    if (!cleanText) { toast('Ask a question', 'error'); return; }
+    const effectiveWebSearch = shouldAutoWebSearch(cleanText, mode);
+    if (mode === 'ticket_analysis' && (selectedFileIds === null || selectedFileIds.length !== 1)) {
+      toast('Ticket Analysis requires exactly one selected ticket file', 'error');
+      setSelectFilesOpen(true);
+      return;
+    }
+    setQuestion('');
+    resizeTextarea(composerRef.current);
+    const canDirectStream = false;
+    if (canDirectStream) {
+      const streamId = crypto.randomUUID();
+      const controller = new AbortController();
+      let streamedChars = 0;
+      let sawFirstToken = false;
+      stopRequestedRef.current = false;
+      directAbortRef.current = controller;
+      const baseActivity = [
+        { id: 'request', label: 'Sending request', detail: `${PROVIDER_LABELS[provider] || provider} · ${model}`, state: 'live' },
+        { id: 'connect', label: 'Connecting model', detail: 'Waiting for first token', state: 'pending' },
+        { id: 'stream', label: 'Streaming answer', detail: 'Preparing response', state: 'pending' },
+        { id: 'save', label: 'Saving chat', detail: 'History will update after completion', state: 'pending' },
+      ];
+      setDirectStreaming(true);
+      setMessages(current => [
+        ...current,
+        { id: 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6), role: 'user', text: cleanText },
+        { role: 'assistant', text: '', sources: [], model, provider, streaming: true, streamId, activity: baseActivity },
+      ]);
+      try {
+        const result = await api.directChatStream(cleanText, activeChat, provider, model, allowGeneralKnowledge, mode, event => {
+          if (event.type === 'start') {
+            setActiveChat(event.conversation_id);
+            setMessages(current => current.map(message => message.streamId === streamId
+              ? {
+                  ...message,
+                  activity: baseActivity.map(item => item.id === 'request'
+                    ? { ...item, state: 'done', detail: 'Request accepted' }
+                    : item.id === 'connect'
+                      ? { ...item, state: 'live', detail: `Connected to ${PROVIDER_LABELS[event.provider] || event.provider || provider}` }
+                      : item),
+                }
+              : message));
+          }
+          if (event.type === 'token') {
+            streamedChars += event.text.length;
+            sawFirstToken = true;
+            setMessages(current => current.map(message => message.streamId === streamId
+              ? {
+                  ...message,
+                  text: `${message.text || ''}${event.text}`,
+                  streaming: true,
+                  activity: baseActivity.map(item => {
+                    if (item.id === 'request') return { ...item, state: 'done', detail: 'Request accepted' };
+                    if (item.id === 'connect') return { ...item, state: 'done', detail: 'First token received' };
+                    if (item.id === 'stream') return { ...item, state: 'live', detail: `${streamedChars.toLocaleString()} characters received` };
+                    return item;
+                  }),
+                }
+              : message));
+          }
+          if (event.type === 'result') {
+            setMessages(current => current.map(message => message.streamId === streamId
+              ? {
+                  ...message,
+                  text: event.data.answer,
+                  sources: (event.data.sources || []).filter(s => !s.meta),
+                  llmHits: event.data.llm_hits || 1,
+                  webQueries: event.data.web_queries || 0,
+                  model: event.data.model,
+                  provider,
+                  streaming: false,
+                  activity: [
+                    { id: 'request', label: 'Request sent', detail: 'Accepted by backend', state: 'done' },
+                    { id: 'connect', label: 'Model connected', detail: sawFirstToken ? 'Tokens streamed live' : 'Response completed', state: 'done' },
+                    { id: 'stream', label: 'Answer received', detail: `${event.data.answer.length.toLocaleString()} characters`, state: 'done' },
+                    { id: 'save', label: 'Saved to chat', detail: 'History is up to date', state: 'done' },
+                    ...(message.activity || []).filter(item => item.id.startsWith('diagnostic-')),
+                  ],
+                }
+              : message));
+          }
+          if (event.type === 'diagnostic') {
+            setMessages(current => current.map(message => message.streamId === streamId
+              ? {
+                  ...message,
+                  activity: [
+                    ...(message.activity || []),
+                    { id: `diagnostic-${Date.now()}`, label: 'Model constraint', detail: event.detail, state: 'failed' },
+                  ],
+                }
+              : message));
+          }
+        }, { signal: controller.signal });
+        setActiveChat(result.conversation_id);
+        const saved = await api.chatMessages(result.conversation_id);
+        setMessages(saved.map(messageFromSaved));
+        await refreshChats?.();
+      } catch (error) {
+        if (stopRequestedRef.current || error.name === 'AbortError') {
+          setMessages(current => current.map(message => message.streamId === streamId
+            ? {
+                ...message,
+                text: message.text || 'Stopped.',
+                streaming: false,
+                activity: [
+                  ...(message.activity || []).filter(item => item.state === 'done'),
+                  { id: 'stopped', label: 'Stopped', detail: 'Answer stopped by user', state: 'failed' },
+                ],
+              }
+            : message));
+          return;
+        }
+        setMessages(current => current.map(message => message.streamId === streamId
+          ? {
+              ...message,
+              text: message.text || error.message,
+              sources: [],
+              error: true,
+              streaming: false,
+              activity: [
+                { id: 'request', label: 'Stream stopped', detail: error.message, state: 'failed' },
+              ],
+            }
+          : message));
+        toast(error.message, 'error');
+      } finally {
+        setDirectStreaming(false);
+        directAbortRef.current = null;
+      }
+      return;
+    }
+      const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+      setMessages(current => [...current, { id: tempId, role: 'user', text: cleanText }]);
+      try {
+        const job = await createChatJob(cleanText, activeChat, provider, model, allowGeneralKnowledge, mode, selectedFileIds, webSourceLimit, effectiveWebSearch);
+        setActiveChat(job.conversation_id);
+      } catch (error) {
+        setMessages(current => [...current, { role: 'assistant', text: error.message, sources: [] }]);
+        toast(error.message, 'error');
+      }
+  };
+
+  const stopAnswer = async () => {
+    stopRequestedRef.current = true;
+    directAbortRef.current?.abort();
+    setDirectStreaming(false);
+    try {
+      if (activeJob) {
+        await api.cancelChatJob(activeJob.id);
+      } else if (activeChat) {
+        await api.stopChat(activeChat);
+      }
+      if (activeChat) {
+        const saved = await api.chatMessages(activeChat).catch(() => null);
+        if (saved) setMessages(saved.map(messageFromSaved));
+      }
+      await refreshJobs?.();
+      await refreshChats?.();
+    } catch (error) {
+      toast(error.message, 'error');
+      return;
+    }
+    setMessages(current => current.map(message => message.streaming
+      ? { ...message, text: message.text || 'Stopped.', streaming: false }
+      : message));
+    toast('Stopped. You can switch model and ask again.', 'success');
+  };
+
+  const truncateFromMessage = async (message) => {
+    if (!activeChat || !message.id) return null;
+    stopReveal();
+    const saved = await api.truncateChatFromMessage(activeChat, message.id);
+    setMessages(saved.map(messageFromSaved));
+    await Promise.all([refreshChats?.(), refreshJobs?.()]);
+    loadedCompletedJob.current = null;
+    return saved;
+  };
+
+  const editMessage = async (message) => {
+    if (thinking || message.role !== 'user') return;
+    try {
+      if (message.id && !String(message.id).startsWith('temp-')) {
+        await truncateFromMessage(message);
+      }
+      setQuestion(message.text);
+      window.setTimeout(() => {
+        composerRef.current?.focus();
+        resizeTextarea(composerRef.current);
+      }, 0);
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  const askAgain = async (message, index) => {
+    if (thinking) return;
+    const promptMessage = message.role === 'user'
+      ? message
+      : [...messages.slice(0, index)].reverse().find(item => item.role === 'user');
+    if (!promptMessage) return;
+    try {
+      if (promptMessage.id && !String(promptMessage.id).startsWith('temp-')) {
+        await truncateFromMessage(promptMessage);
+      }
+      await ask(promptMessage.text);
+    } catch (error) {
+      toast(error.message, 'error');
+    }
+  };
+
+  const applySlashCommand = (cmd) => {
+    setQuestion(cmd.label + ' ');
+    setReasoningMode(cmd.id);
+    setSlashOpen(false);
+    setSlashIndex(-1);
+    composerRef.current?.focus();
+  };
+
+  const handleComposerInput = (event) => {
+    const val = event.target.value;
+    setQuestion(val);
+    resizeTextarea(event.target);
+    if (val.match(/^\/(\w*)$/) && val.length > 0) {
+      const partial = val.slice(1).toLowerCase();
+      const matches = SLASH_COMMANDS.filter(c => c.label.slice(1).toLowerCase().startsWith(partial));
+      if (matches.length > 0) {
+        setSlashFilter(partial);
+        setSlashOpen(true);
+        setSlashIndex(0);
+        return;
+      }
+    }
+    setSlashOpen(false);
+    setSlashIndex(-1);
+  };
+
+  const handleComposerKeyDown = (event) => {
+    if (slashOpen) {
+      const matches = SLASH_COMMANDS.filter(c => c.label.slice(1).toLowerCase().startsWith(slashFilter));
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        setSlashIndex(i => Math.min(i + 1, matches.length - 1));
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        setSlashIndex(i => Math.max(i - 1, 0));
+        return;
+      }
+      if (event.key === 'Enter' || event.key === 'Tab') {
+        event.preventDefault();
+        if (matches[slashIndex]) { applySlashCommand(matches[slashIndex]); }
+        return;
+      }
+      if (event.key === 'Escape') {
+        setSlashOpen(false);
+        setSlashIndex(-1);
+        return;
+      }
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      ask(question);
+    }
+  };
+
+  const matchedCommands = slashOpen ? SLASH_COMMANDS.filter(c => c.label.slice(1).toLowerCase().startsWith(slashFilter)) : [];
+
+  const openUpload = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.pdf,.csv,.xlsx,.xls,.md,.txt';
+    input.multiple = true;
+    input.onchange = async (e) => {
+      const fileList = Array.from(e.target.files);
+      if (!fileList.length) return;
+      const storeId = stores[0]?.id;
+      if (!storeId) { toast('Create a store in Library first', 'error'); return; }
+      let count = 0;
+      for (const file of fileList) {
+        try {
+          const uploaded = await api.uploadFile(storeId, file);
+          const fid = uploaded?.id || uploaded?.file?.id;
+          if (fid) {
+            setSelectedFileIds(cur => cur ? [...cur, fid] : [fid]);
+            count++;
+          }
+        } catch { /* skip failed */ }
+      }
+      if (count) toast(`Uploaded ${count} file${count > 1 ? 's' : ''}`, 'success');
+      else toast('Upload failed', 'error');
+    };
+    input.click();
+  };
+
+  const copyAnswer = async (text, index) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    toast('Answer copied', 'success');
+    window.setTimeout(() => setCopiedIndex(null), 1500);
+  };
+
+  const copyConversationId = async () => {
+    if (!activeChat) return;
+    await navigator.clipboard.writeText(String(activeChat));
+    setCopiedConvId(true);
+    toast('Conversation ID copied', 'success');
+    window.setTimeout(() => setCopiedConvId(false), 1500);
+  };
+
+  const detachFile = (id) => {
+    setSelectedFileIds(cur => cur ? cur.filter(fid => fid !== id) : []);
+  };
+
+  return (
+    <div className="explore-shell">
+      <div className="chat-page">
+        <div className="chat-top">
+          <div className="chat-top-left">
+            <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
+              <Menu size={20} />
+            </button>
+            <span className="workspace-label"><i /> ASK</span>
+            <div className="chat-top-info">
+              {activeChat && (
+                <button
+                  className="copy-conv-id-button"
+                  onClick={copyConversationId}
+                  aria-label="Copy conversation ID"
+                  title={`Copy conversation #${activeChat}`}
+                  {...tip('Copy this conversation\'s ID so you can refer to it elsewhere.')}
+                >
+                  {copiedConvId ? <Check size={14} /> : <Copy size={14} />}
+                  <span>{activeChat}</span>
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="chat-top-right">
+            {!!chats.length && (
+              <button className="delete-all-chats explore-delete-all" disabled={hasActiveJobs} title={hasActiveJobs ? 'Wait for active answers to finish' : 'Delete all chats'} onClick={() => requestDeleteAllChats(newChat)}>
+                <Trash2 size={12} />
+              </button>
+            )}
+            <button
+              className={`focus-mode-button ${focusActive ? 'active' : ''}`}
+              onClick={toggleFocusMode}
+              aria-label={focusActive ? 'Show all panels' : 'Focus mode'}
+              {...tip(focusActive ? 'Exit focus mode and restore sidebar.' : 'Hide sidebar for focused work.')}
+            >
+              {focusActive ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+            <div className="desktop-controls">
+              <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
+            </div>
+          </div>
+        </div>
+
+        <div
+          ref={threadRef}
+          className={`chat-thread ${messages.length ? 'has-messages' : ''}`}
+          aria-live="polite"
+          aria-relevant="additions"
+        >
+          {!messages.length && (
+            <div className="chat-empty">
+              <div className="chat-orb"><Sparkles size={29} /></div>
+              <h2>What do you want to ask?</h2>
+              <p>Ask directly, attach files, or switch modes when the question needs deeper work.</p>
+              {stores.length > 0 && (
+                <div className="quick-start-chips">
+                  {stores.slice(0, 3).map(store => (
+                    <button
+                      key={store.id}
+                      type="button"
+                      className="quick-start-chip"
+                      onClick={() => {
+                        setQuestion(`What can you tell me about ${store.title}?`);
+                        window.setTimeout(() => { composerRef.current?.focus(); resizeTextarea(composerRef.current); }, 0);
+                      }}
+                    >
+                      <Folder size={12} /> Ask about {store.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="slash-hints">
+                {SLASH_COMMANDS.map(cmd => {
+                  const Icon = cmd.icon;
+                  return (
+                    <button type="button" key={cmd.id} className="slash-hint" onClick={() => applySlashCommand(cmd)}>
+                      <Icon size={13} style={{ color: cmd.color }} />
+                      <span className="slash-hint-key">{cmd.label}</span>
+                      <span className="slash-hint-desc">{cmd.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {messages.map((message, index) => (
+            <div className={`chat-message ${message.role} ${message.error ? 'error' : ''}`} key={message.id || message.streamId || index}>
+              {message.role === 'assistant' && <div className="assistant-avatar"><Sparkles size={15} /></div>}
+              <div className="message-body">
+                <div className="message-head">
+                  <span>{message.role === 'assistant' ? assistantLabel(message.model, message.provider, PROVIDER_LABELS) : 'You'}</span>
+                  <div className="message-actions">
+                    {message.id && (
+                      <>
+                        {message.role === 'user' && (
+                          <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => editMessage(message)} aria-label="Edit question" title="Edit question">
+                            <PenLine size={13} />
+                          </button>
+                        )}
+                        {(message.role === 'user' || message.error) && (
+                          <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => askAgain(message, index)} aria-label="Ask again" title="Ask again with current model">
+                            <RotateCcw size={13} />
+                          </button>
+                        )}
+                        <button className="copy-button icon-button" type="button" onClick={() => copyAnswer(message.text, index)} aria-label="Copy query" title="Copy query">
+                          {copiedIndex === index ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {message.role === 'assistant' ? (
+                  <>
+                    <DirectStreamTrace activity={message.activity} model={message.model} provider={message.provider} text={message.text} streaming={message.streaming} />
+                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text || ' '}</ReactMarkdown></div>
+                  </>
+                ) : (
+                  <p>{message.text}</p>
+                )}
+{message.sources?.length > 0 && (
+                    <CollapsibleSources
+                      sources={message.sources}
+                      index={index}
+                      isExpanded={expandedSources[index]}
+                      onToggle={() => toggleSources(index)}
+                      onOpenStore={onOpenStore}
+                      model={message.model}
+                      provider={message.provider}
+                      llmHits={message.llmHits}
+                      webQueries={message.webQueries}
+                    />
+                  )}
+              </div>
+            </div>
+          ))}
+          {activeJob && (
+            <PipelineActivity
+              pipeline={{ stage: activeJob.stage, detail: activeJob.detail }}
+              model={activeJob.model}
+              provider={activeJob.provider}
+              events={activeJob.events || []}
+              startedAt={parseServerTime(activeJob.created_at)}
+              reasoningMode={activeJob.reasoning_mode}
+              webSearch={activeJob.web_search}
+              fileCount={activeJob.file_ids === null ? files.length : (activeJob.file_ids?.length ?? selectedCount)}
+              question={activeJob.question}
+            />
+          )}
+        </div>
+
+        {showScrollToBottom && (
+          <button type="button" className="scroll-to-bottom-btn" onClick={scrollToBottom} aria-label="Scroll to latest message">
+            <ChevronDown size={14} /> New messages
+          </button>
+        )}
+
+        <form
+          className="chat-composer"
+          onSubmit={event => { event.preventDefault(); ask(question); }}
+        >
+          {slashOpen && matchedCommands.length > 0 && (
+            <div className="slash-popup">
+              {matchedCommands.map((cmd, i) => {
+                const Icon = cmd.icon;
+                return (
+                  <button
+                    type="button"
+                    className={`slash-item ${i === slashIndex ? 'selected' : ''}`}
+                    key={cmd.id}
+                    onMouseDown={e => { e.preventDefault(); applySlashCommand(cmd); }}
+                    onMouseEnter={() => setSlashIndex(i)}
+                  >
+                    <Icon size={14} style={{ color: cmd.color }} />
+                    <div className="slash-info">
+                      <span className="slash-name">{cmd.label}</span>
+                      <span className="slash-desc">{cmd.desc}</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <div className="composer-tools">
+            <div className="composer-tools-group">
+              <div className={`mode-picker ${modePickerOpen ? 'open' : ''}`} ref={modePickerRef}>
+                <button
+                  type="button"
+                  className={`composer-tool-btn mode-picker-trigger mode-${previewReasoningMode}`}
+                  onClick={() => setModePickerOpen(v => !v)}
+                  aria-expanded={modePickerOpen}
+                  aria-label="Choose reasoning mode"
+                >
+                  {(() => { const Icon = (SLASH_COMMANDS.find(c => c.id === previewReasoningMode)?.icon) || Radio; return <Icon size={13} />; })()}
+                  <span>{displayedModeLabel}</span>
+                  <ChevronDown size={11} />
+                </button>
+                {modePickerOpen && (
+                  <div className="mode-picker-menu" role="listbox" aria-label="Reasoning mode menu">
+                    {SLASH_COMMANDS.map(cmd => {
+                      const Icon = cmd.icon;
+                      const active = cmd.id === reasoningMode;
+                      return (
+                        <button
+                          type="button"
+                          key={cmd.id}
+                          className={`mode-picker-option ${active ? 'active' : ''}`}
+                          onClick={() => { setReasoningMode(cmd.id); setModePickerOpen(false); }}
+                          role="option"
+                          aria-selected={active}
+                        >
+                          <Icon size={14} style={{ color: cmd.color }} />
+                          <span className="mode-picker-option-text">
+                            <strong>{cmd.label.slice(1)}</strong>
+                            <small>{cmd.desc}</small>
+                          </span>
+                          {active && <Check size={13} />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              <button type="button" className="composer-tool-btn" onClick={() => setSelectFilesOpen(true)}>
+                <FileText size={13} />
+                <span>{selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''}` : 'Select files'}</span>
+              </button>
+              <button type="button" className="composer-tool-btn" onClick={openUpload}>
+                <FilePlus2 size={13} />
+                <span>Upload</span>
+              </button>
+            </div>
+            <div className="composer-tools-divider" />
+            <div className="composer-tools-group">
+              <button
+                type="button"
+                className={`composer-tool-btn ${allowGeneralKnowledge ? 'active' : ''}`}
+                onClick={() => setAllowGeneralKnowledge(v => !v)}
+                {...tip('Allow the model to use general knowledge beyond your files')}
+              >
+                <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
+                <span>LLM Knowledge</span>
+              </button>
+            </div>
+          </div>
+          <div className="composer-input-row">
+            <div className="input-wrap">
+              <textarea
+                ref={composerRef}
+                rows="1"
+                value={question}
+                onChange={handleComposerInput}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="Ask or type / for commands..."
+              />
+            </div>
+            {thinking ? (
+              <button type="button" className="stop-answer-button" onClick={stopAnswer} aria-label="Stop answer" title="Stop answer">
+                <Square size={15} />
+              </button>
+            ) : (
+              <button type="submit" disabled={!question.trim()} aria-label="Send question"><Send size={17} /></button>
+            )}
+          </div>
+          <div className="composer-meta">
+            <div>
+              {autoWebSearchPreview && (
+                <span className="composer-meta-web"><Globe size={10} /> Will also search the web</span>
+              )}
+            </div>
+            <small><kbd>Enter</kbd> to send · <kbd>Shift Enter</kbd> for a new line</small>
+          </div>
+        </form>
+      </div>
+
+      {/* Select Files Modal */}
+      {selectFilesOpen && (
+        <div className="modal-overlay" onMouseDown={e => e.target === e.currentTarget && setSelectFilesOpen(false)}>
+          <div className="modal file-select-modal">
+            <div className="modal-header">
+              <h3>Select Files</h3>
+              <button type="button" className="modal-close-btn" onClick={() => setSelectFilesOpen(false)}><X size={18} /></button>
+            </div>
+            <div className="file-select-list">
+              {files.length === 0 && <p className="file-select-empty">No files uploaded yet. Upload files in Library first.</p>}
+              {stores.map(store => {
+                const storeFiles = files.filter(f => f.store_id === store.id);
+                if (!storeFiles.length) return null;
+                const allSelected = storeFiles.every(f => selectedFileIds?.includes(f.id));
+                return (
+                  <div className="file-select-store" key={store.id}>
+                    <div className="file-select-store-head">
+                      <Folder size={14} />
+                      <strong>{store.title}</strong>
+                      <button
+                        type="button"
+                        className="file-select-store-toggle"
+                        onClick={() => {
+                          const ids = storeFiles.map(f => f.id);
+                          const current = selectedFileIds || [];
+                          if (allSelected) setSelectedFileIds(current.filter(id => !ids.includes(id)));
+                          else setSelectedFileIds([...new Set([...current, ...ids])]);
+                        }}
+                      >
+                        {allSelected ? 'Deselect all' : 'Select all'}
+                      </button>
+                    </div>
+                    {storeFiles.map(file => {
+                      const checked = selectedFileIds?.includes(file.id) || false;
+                      return (
+                        <label key={file.id} className={`file-select-row ${checked ? 'checked' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleFile(file.id)}
+                          />
+                          <span className="file-select-check" />
+                          <FileText size={13} />
+                          <span className="file-select-name">
+                            <strong>{file.name}</strong>
+                            <small>{fileMetaLine(file)}</small>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="modal-footer">
+              <span className="file-select-count">{selectedFileIds?.length || 0} files selected</span>
+              <button type="button" className="btn-primary" onClick={() => setSelectFilesOpen(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PROVIDER_META = {
+  ollama: { icon: '🦙', blurb: 'Local models, no API key needed', envHint: 'Runs against OLLAMA_URL — start Ollama and pull a model.' },
+  groq: { icon: '⚡', blurb: 'Fast cloud inference', envHint: 'Set GROQ_API_KEY in your .env file.' },
+  openai: { icon: '🤖', blurb: 'OpenAI models', envHint: 'Set OPENAI_API_KEY in your .env file.' },
+  gemini: { icon: '✨', blurb: 'Google Gemini models', envHint: 'Set GEMINI_API_KEY in your .env file.' },
+};
+
+const REASONING_MODE_META = [
+  { id: 'light', label: 'Light', icon: Radio, desc: 'Fast direct chat — default mode' },
+  { id: 'unrestricted', label: 'Unrestricted', icon: Zap, desc: 'Expert mode — direct, low-fluff answers' },
+  { id: 'thinking', label: 'Thinking', icon: Sparkles, desc: 'Deep analysis — inspects all selected content' },
+  { id: 'deep_summary', label: 'Deep Summary', icon: BookOpen, desc: 'Complete section-by-section doc coverage' },
+  { id: 'ticket_analysis', label: 'Ticket Analysis', icon: Database, desc: 'Group incidents by problem pattern' },
+];
+
+function SettingsPage({ toast }) {
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [customModel, setCustomModel] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.llmConfig(), api.preference('explore_ai').catch(() => ({ value: {} }))])
+      .then(([llmConfig, preference]) => {
+        if (cancelled) return;
+        setConfig(llmConfig);
+        const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
+        setDraft({
+          provider: saved.provider || llmConfig.provider || 'ollama',
+          model: saved.model || llmConfig.model || '',
+          reasoning_mode: saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'),
+          web_source_limit: saved.web_source_limit || 200,
+        });
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading || !draft) {
+    return (
+      <div className="page settings-page">
+        <div className="loading-grid">
+          {[1, 2].map(item => <div key={item} className="skeleton-card" />)}
+        </div>
+      </div>
+    );
+  }
+
+  const providers = ['ollama', 'groq', 'openai', 'gemini'];
+  const providerModels = provider => config?.providers?.[provider] || [];
+  const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
+
+  const selectProvider = (provider) => {
+    const options = providerModels(provider);
+    setDraft(current => ({ ...current, provider, model: options[0] || DEFAULT_PROVIDER_MODELS[provider] || '' }));
+    setCustomModel('');
+  };
+
+  const selectModel = (model) => {
+    setDraft(current => ({ ...current, model }));
+    setCustomModel('');
+  };
+
+  const applyCustomModel = () => {
+    const value = customModel.trim();
+    if (!value) return;
+    setDraft(current => ({ ...current, model: value }));
+  };
+
+  const selectReasoningMode = (mode) => {
+    setDraft(current => ({ ...current, reasoning_mode: mode }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.updatePreference('explore_ai', draft);
+      writeStorage('explore-ai', JSON.stringify(draft));
+      toast('Default provider, model, and mode saved', 'success');
+    } catch (error) {
+      toast(error.message || 'Could not save settings', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="page settings-page">
+      <div className="inner-title">
+        <div>
+          <span className="kicker">SETTINGS</span>
+          <h1>Providers & models</h1>
+          <p>Choose what {BRAND.name} uses by default for new conversations.</p>
+        </div>
+      </div>
+
+      <section className="settings-section">
+        <h3>Default provider</h3>
+        <div className="settings-provider-grid">
+          {providers.map(provider => {
+            const meta = PROVIDER_META[provider];
+            const ready = providerReady(provider);
+            const active = draft.provider === provider;
+            return (
+              <button
+                key={provider}
+                type="button"
+                className={`settings-provider-card ${active ? 'active' : ''}`}
+                onClick={() => selectProvider(provider)}
+              >
+                <span className="settings-provider-icon">{meta.icon}</span>
+                <span className="settings-provider-info">
+                  <strong>{PROVIDER_LABELS[provider]}</strong>
+                  <small>{meta.blurb}</small>
+                </span>
+                <span className={`settings-provider-status ${ready ? 'ready' : 'idle'}`}>
+                  {ready ? <CircleCheck size={13} /> : <AlertTriangle size={13} />}
+                  {ready ? `${providerModels(provider).length} model${providerModels(provider).length === 1 ? '' : 's'}` : 'Not connected'}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {!providerReady(draft.provider) && (
+          <div className="settings-hint">
+            <Info size={14} />
+            <span>{PROVIDER_META[draft.provider].envHint}</span>
+          </div>
+        )}
+
+        <h3>Default model</h3>
+        <div className="settings-model-list">
+          {providerModels(draft.provider).length === 0 && (
+            <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
+          )}
+          {providerModels(draft.provider).map(item => (
+            <button
+              key={item}
+              type="button"
+              className={`settings-model-chip ${draft.model === item ? 'active' : ''}`}
+              onClick={() => selectModel(item)}
+              title={item}
+            >
+              {item}
+              {draft.model === item && <Check size={12} />}
+            </button>
+          ))}
+        </div>
+        <div className="settings-custom-model">
+          <input
+            type="text"
+            placeholder="Or type a custom model ID..."
+            value={customModel}
+            onChange={e => setCustomModel(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCustomModel(); } }}
+          />
+          <button type="button" onClick={applyCustomModel} disabled={!customModel.trim()}>Use</button>
+        </div>
+        <div className="settings-current-model">
+          <KeyRound size={13} />
+          <span>Current default: <strong>{PROVIDER_LABELS[draft.provider]} / {draft.model || 'none selected'}</strong></span>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h3>Default reasoning mode</h3>
+        <div className="settings-mode-grid">
+          {REASONING_MODE_META.map(mode => {
+            const Icon = mode.icon;
+            const active = draft.reasoning_mode === mode.id;
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                className={`settings-mode-card ${active ? 'active' : ''}`}
+                onClick={() => selectReasoningMode(mode.id)}
+              >
+                <Icon size={16} />
+                <span>
+                  <strong>{mode.label}</strong>
+                  <small>{mode.desc}</small>
+                </span>
+                {active && <Check size={14} className="settings-mode-check" />}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="settings-save-bar">
+        <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+          {saving ? 'Saving...' : 'Save defaults'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function CreateStoreModal({ open, close, onCreate }) {
+  const [form, setForm] = useState({ title: '', description: '', color: 'violet' });
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setForm({ title: '', description: '', color: 'violet' });
+      setError('');
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    try {
+      await onCreate(form);
+      close();
+    } catch (exception) {
+      setError(exception.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="modal-wrap" onMouseDown={event => event.target === event.currentTarget && close()}>
+      <div className="modal">
+        <button className="modal-close icon-button" onClick={close} aria-label="Close">
+          <X size={18} />
+        </button>
+        <div className="modal-symbol"><Folder /></div>
+        <span className="kicker">NEW STORE</span>
+        <h2>Create a home for your files</h2>
+        <p>Group related files so your knowledge stays organized.</p>
+        <form onSubmit={submit} className="capture-form">
+          <input
+            required
+            autoFocus
+            placeholder="Store name"
+            value={form.title}
+            onChange={event => setForm({ ...form, title: event.target.value })}
+          />
+          <textarea
+            placeholder="Short description (optional)"
+            value={form.description}
+            onChange={event => setForm({ ...form, description: event.target.value })}
+          />
+          <div className="color-picker">
+            {STORE_COLORS.map(color => (
+              <button
+                key={color}
+                type="button"
+                className={`color-option ${color} ${form.color === color ? 'selected' : ''}`}
+                onClick={() => setForm({ ...form, color })}
+                aria-label={`${color} color`}
+              />
+            ))}
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <button className="save-button" disabled={saving}>
+            {saving ? 'Creating...' : 'Create store'} <ArrowRight size={16} />
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [page, setPage] = useState('home');
+  const [query, setQuery] = useState('');
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCompact, setSidebarCompact] = useState(false);
+  const [historyCollapsed, setHistoryCollapsed] = useState(false);
+  const [filePanelCollapsed, setFilePanelCollapsed] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const { token: secretChatToken, isSharedLink, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute();
+  const [files, setFiles] = useState([]);
+  const [collections, setCollections] = useState([]);
+  const [chats, setChats] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState('');
+  const [toasts, setToasts] = useState([]);
+  const [confirm, setConfirm] = useState(null);
+  const [hubFocusStoreId, setHubFocusStoreId] = useState(null);
+  const [exploreChatId, setExploreChatId] = useState(null);
+  const [theme, setTheme] = useState(() => readStorage('theme') || 'dark');
+
+  const toast = (message, type = 'success') => {
+    const id = crypto.randomUUID();
+    setToasts(current => [...current, { id, message, type }]);
+  };
+
+  const dismissToast = id => setToasts(current => current.filter(item => item.id !== id));
+
+  const refreshChats = async () => {
+    const nextChats = await api.chats();
+    setChats(nextChats);
+  };
+
+  const refreshJobs = async () => {
+    const nextJobs = await api.chatJobs();
+    setJobs(nextJobs);
+    return nextJobs;
+  };
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [nextFiles, nextCollections, nextChats, nextJobs, layoutPreference] = await Promise.all([
+        api.files(), api.collections(), api.chats(), api.chatJobs(), api.preference('layout'),
+      ]);
+      const savedLayout = layoutPreference.value || {};
+      setFiles(nextFiles);
+      setCollections(nextCollections);
+      setChats(nextChats);
+      setJobs(nextJobs);
+      window.localStorage.setItem(APP_DATA_CACHE_KEY, JSON.stringify({
+        files: nextFiles,
+        collections: nextCollections,
+        chats: nextChats,
+        jobs: nextJobs,
+      }));
+      setSidebarCompact(Boolean(savedLayout.sidebar_compact));
+      setHistoryCollapsed(Boolean(savedLayout.history_collapsed));
+      setFilePanelCollapsed(Boolean(savedLayout.file_panel_collapsed));
+      const savedPage = normalizePageId(savedLayout.page);
+      if (APP_PAGES.includes(savedPage)) setPage(savedPage);
+      setPreferencesLoaded(true);
+      setApiError('');
+    } catch {
+      const cached = readCachedAppData();
+      if (cached.files || cached.collections || cached.chats || cached.jobs) {
+        setFiles(cached.files || []);
+        setCollections(cached.collections || []);
+        setChats(cached.chats || []);
+        setJobs(cached.jobs || []);
+      }
+      setApiError('Backend is offline. Start it with npm run dev:api');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return undefined;
+    const timer = window.setTimeout(() => {
+      api.updatePreference('layout', {
+        page,
+        sidebar_compact: sidebarCompact,
+        history_collapsed: historyCollapsed,
+        file_panel_collapsed: filePanelCollapsed,
+      }).catch(() => {
+        // Layout saving is best-effort; the offline banner covers backend health.
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [preferencesLoaded, page, sidebarCompact, historyCollapsed, filePanelCollapsed]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    writeStorage('theme', theme);
+    const themeColor = theme === 'dark' ? '#0d1217' : '#f5f3ee';
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', themeColor);
+  }, [theme]);
+
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const nextJobs = await refreshJobs();
+        if (nextJobs.some(job => ['queued', 'running'].includes(job.status))) await refreshChats();
+      } catch {
+        // The main offline banner handles connectivity; polling resumes automatically.
+      }
+    };
+    const timer = window.setInterval(poll, 1500);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setCommandOpen(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (secretChatToken) setPage('secret-chat');
+  }, [secretChatToken]);
+
+  useEffect(() => {
+    if (secretChatToken) return;
+    if (!preferencesLoaded) return;
+    const path = window.location.pathname;
+    const pageFromUrl = normalizePageId(path === '/' ? 'home' : path.replace(/^\//, ''));
+    if (APP_PAGES.includes(pageFromUrl) && pageFromUrl !== 'secret-chat') {
+      setPage(pageFromUrl);
+    }
+    const onPopState = () => {
+      const p = window.location.pathname;
+      const next = normalizePageId(p === '/' ? 'home' : p.replace(/^\//, ''));
+      if (APP_PAGES.includes(next) && next !== 'secret-chat') setPage(next);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [secretChatToken, preferencesLoaded]);
+
+  const navigate = (nextPage, options = {}) => {
+    const resolvedPage = normalizePageId(nextPage);
+    setPage(resolvedPage);
+    if (options.storeId) setHubFocusStoreId(options.storeId);
+    if (options.create) setCreateOpen(true);
+    const path = resolvedPage === 'home' ? '/' : `/${resolvedPage}`;
+    window.history.pushState({}, '', path);
+  };
+
+  const handleCommandSelect = (item) => {
+    if (item.type === 'page') navigate(item.id);
+    if (item.type === 'store') navigate('hub', { storeId: item.id });
+    if (item.type === 'file') navigate('hub', { storeId: item.storeId });
+    if (item.type === 'chat') {
+      navigate('explore');
+      setExploreChatId(item.id);
+    }
+  };
+
+  const create = async payload => {
+    await api.createCollection(payload);
+    await loadData();
+    toast('Store created');
+  };
+
+  const uploadFile = async (storeId, file) => {
+    const uploaded = await api.uploadFile(storeId, file);
+    await loadData();
+    return uploaded;
+  };
+
+  const deleteFile = async id => {
+    await api.deleteFile(id);
+    await loadData();
+    toast('File deleted');
+  };
+
+  const deleteStore = async id => {
+    await api.deleteCollection(id);
+    await loadData();
+    toast('Store deleted');
+  };
+
+  const deleteChat = async id => {
+    await api.deleteChat(id);
+    await loadData();
+    toast('Chat deleted');
+  };
+
+  const deleteAllChats = async () => {
+    await api.deleteAllChats();
+    setChats([]);
+    setJobs([]);
+    setExploreChatId(null);
+    toast('All chats deleted');
+  };
+
+  const createChatJob = async (...args) => {
+    const job = await api.createChatJob(...args);
+    setJobs(current => [job, ...current.filter(item => item.id !== job.id)]);
+    await refreshChats();
+    return job;
+  };
+
+  const markJobSeen = async id => {
+    setJobs(current => current.map(job => job.id === id ? { ...job, seen: true } : job));
+    try {
+      await api.markChatJobSeen(id);
+    } catch {
+      setJobs(current => current.map(job => job.id === id ? { ...job, seen: false } : job));
+    }
+  };
+
+  const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
+  const toggleTheme = () => setTheme(current => current === 'dark' ? 'light' : 'dark');
+  const focusActive = sidebarCompact && historyCollapsed && filePanelCollapsed;
+
+  const openSecretChat = async () => {
+    try {
+      await openSecretChatRoute(secretChatApi.create);
+      setMobileOpen(false);
+    } catch {}
+  };
+  const toggleFocusMode = () => {
+    const nextFocus = !focusActive;
+    navigate('explore');
+    setSidebarCompact(nextFocus);
+    setHistoryCollapsed(nextFocus);
+    setFilePanelCollapsed(nextFocus);
+    setMobileOpen(false);
+  };
+
+  if (isSharedLink && page === 'secret-chat' && secretChatToken) {
+    return <SecretChatStandalone token={secretChatToken} />;
+  }
+
+  return (
+    <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'explore' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''}`}>
+      <Sidebar
+        page={page}
+        setPage={(id) => navigate(id)}
+        mobileOpen={mobileOpen}
+        close={() => setMobileOpen(false)}
+        fileCount={files.length}
+        readyCount={readyCount}
+        compact={sidebarCompact}
+        toggleCompact={() => setSidebarCompact(value => !value)}
+        chats={chats}
+        files={files}
+        jobs={jobs}
+        activeChat={exploreChatId}
+        historyCollapsed={historyCollapsed}
+        setHistoryCollapsed={setHistoryCollapsed}
+        onOpenChat={chatId => {
+          navigate('explore');
+          setExploreChatId(chatId);
+        }}
+        onOpenFile={file => navigate('hub', { storeId: file.store_id })}
+        onOpenSecretChat={openSecretChat}
+        onNewChat={() => {
+          setExploreChatId(null);
+          navigate('explore');
+        }}
+        onDeleteChat={deleteChat}
+      />
+      <main>
+        {!['explore', 'ticket-analysis'].includes(page) && (
+          <Header
+            query={query}
+            setQuery={setQuery}
+            openMenu={() => setMobileOpen(true)}
+            openCreate={() => setCreateOpen(true)}
+            openCommand={() => setCommandOpen(true)}
+            page={page}
+            theme={theme}
+            toggleTheme={toggleTheme}
+          />
+        )}
+        {apiError && (
+          <button className="api-banner" onClick={loadData}>{apiError} · Retry</button>
+        )}
+        {page === 'home' && (
+          <HomePage
+            stores={collections}
+            files={files}
+            chats={chats}
+            loading={loading}
+            onNavigate={navigate}
+            onOpenChat={id => { navigate('explore'); setExploreChatId(id); }}
+          />
+        )}
+        {page === 'hub' && (
+          <HubPage
+            query={query}
+            files={files}
+            stores={collections}
+            focusStoreId={hubFocusStoreId}
+            clearFocusStore={() => setHubFocusStoreId(null)}
+            openCreate={() => setCreateOpen(true)}
+            uploadFile={uploadFile}
+            requestDeleteFile={file => setConfirm({
+              title: 'Delete file?',
+              message: `“${file.name}” will be removed from this store.`,
+              onConfirm: () => deleteFile(file.id),
+            })}
+            requestDeleteStore={store => setConfirm({
+              title: 'Delete store?',
+              message: `“${store.title}” and all its files will be permanently removed.`,
+              onConfirm: () => deleteStore(store.id),
+            })}
+            toast={toast}
+          />
+        )}
+        {page === 'explore' && (
+          <ExplorePage
+            files={files}
+            stores={collections}
+            chats={chats}
+            jobs={jobs}
+            createChatJob={createChatJob}
+            refreshChats={refreshChats}
+            markJobSeen={markJobSeen}
+            initialChatId={exploreChatId}
+            clearInitialChat={() => setExploreChatId(null)}
+            onOpenStore={storeId => navigate('hub', { storeId })}
+            toast={toast}
+            requestDeleteChat={(chat, onDeleted) => setConfirm({
+              title: 'Delete chat?',
+              message: `"${chat.title}" will be permanently removed.`,
+              onConfirm: async () => {
+                await deleteChat(chat.id);
+                if (exploreChatId === chat.id) setExploreChatId(null);
+                onDeleted?.();
+              },
+            })}
+            requestDeleteAllChats={onDeleted => setConfirm({
+              title: 'Delete all chats?',
+              message: `All ${chats.length} conversations and their answers will be permanently removed.`,
+              confirmLabel: 'Delete all',
+              onConfirm: async () => {
+                await deleteAllChats();
+                onDeleted?.();
+              },
+            })}
+            focusActive={focusActive}
+            toggleFocusMode={toggleFocusMode}
+            refreshJobs={refreshJobs}
+            openMenu={() => setMobileOpen(true)}
+          />
+        )}
+        {page === 'ticket-analysis' && (
+          <TicketAnalysisPage files={files} />
+        )}
+        {page === 'secret-chat' && secretChatToken && (
+          <SecretChatPage
+            token={secretChatToken}
+            onBack={() => {
+              setPage('home');
+              closeSecretChatRoute();
+            }}
+          />
+        )}
+        {page === 'settings' && <SettingsPage toast={toast} />}
+      </main>
+
+      <CreateStoreModal open={createOpen} close={() => setCreateOpen(false)} onCreate={create} />
+      <ConfirmModal config={confirm} close={() => setConfirm(null)} />
+      <CommandPalette
+        open={commandOpen}
+        close={() => { setCommandOpen(false); setQuery(''); }}
+        query={query}
+        setQuery={setQuery}
+        stores={collections}
+        files={files}
+        chats={chats}
+        onSelect={handleCommandSelect}
+      />
+      <ToastStack toasts={toasts} dismiss={dismissToast} />
+    </div>
+  );
+}
+
+createRoot(document.getElementById('root')).render(<App />);
