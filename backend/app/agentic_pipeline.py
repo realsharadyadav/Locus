@@ -623,9 +623,15 @@ def _planned_web_answer(
     queries = plan.search_queries or [plan.user_goal or question]
     collected: list[EvidenceItem] = []
     seen = set()
-    progress("gathering", f"Fetch Agent: running {len(queries)} planned quer{'y' if len(queries) == 1 else 'ies'}")
-    for query in queries[:6]:
-        query_limit = max(3, source_limit // max(1, len(queries[:6])))
+    # Each query here runs a full nested web_research pipeline (its own search
+    # rounds + LLM calls), so this scales modestly with source_limit rather than
+    # a flat 6 — a 200-source deep-research plan gets more planned queries, but
+    # capped well below source_limit to avoid an explosion of nested pipelines.
+    max_queries = max(6, min(12, source_limit // 15))
+    selected_queries = queries[:max_queries]
+    progress("gathering", f"Fetch Agent: running {len(selected_queries)} planned quer{'y' if len(selected_queries) == 1 else 'ies'}")
+    for query in selected_queries:
+        query_limit = max(3, source_limit // max(1, len(selected_queries)))
         if web_research_fn:
             result = web_research_fn(query, model, progress, query_limit, None, answer_mode)
         else:
@@ -686,7 +692,7 @@ def _validate_evidence_with_llm(plan: AgentPlan, sources: list[EvidenceItem], mo
             if 0 <= index < len(sources):
                 accepted.append(sources[index])
         diagnostic_event("agentic_pipeline.evidence_validation", route=plan.route, accepted=len(accepted), total=len(sources), reason=data.get("reason", ""))
-        return accepted[:15]
+        return accepted[:plan.source_limit]
     except Exception as exception:
         diagnostic_event("agentic_pipeline.evidence_validation_failed", route=plan.route, error=str(exception))
         return _fallback_evidence_filter(plan, sources)
@@ -698,7 +704,7 @@ def _fallback_evidence_filter(plan: AgentPlan, sources: list[EvidenceItem]) -> l
         terms.extend(re.findall(r"[A-Za-z0-9₹]+", value.lower()))
     terms = [term for term in terms if len(term) >= 3 and term not in {"best", "under", "higher", "range", "latest"}]
     if not terms:
-        return sources[:15]
+        return sources[:plan.source_limit]
     ranked = []
     for source in sources:
         haystack = f"{source.title} {source.snippet}".lower()
@@ -706,7 +712,7 @@ def _fallback_evidence_filter(plan: AgentPlan, sources: list[EvidenceItem]) -> l
         if score:
             ranked.append((score, source))
     ranked.sort(key=lambda item: item[0], reverse=True)
-    return [source for _, source in ranked[:15]]
+    return [source for _, source in ranked[:plan.source_limit]]
 
 
 def _compose_planned_answer(plan: AgentPlan, question: str, sources: list[EvidenceItem], model: str, progress: Progress, history: list[tuple[str, str]] | None) -> str:

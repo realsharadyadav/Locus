@@ -104,6 +104,9 @@ class ChatSource(BaseModel):
     meta: bool = False
     llm_hits: int = 0
     web_queries: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class ChatResponse(BaseModel):
@@ -113,6 +116,9 @@ class ChatResponse(BaseModel):
     conversation_id: int
     llm_hits: int = 0
     web_queries: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
 
 
 class ChatSessionRead(BaseModel):
@@ -137,6 +143,9 @@ class ChatMessageRead(BaseModel):
     provider: str | None = None
     llm_hits: int = 0
     web_queries: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
     created_at: datetime
 
 
@@ -155,6 +164,11 @@ class ChatJobRead(BaseModel):
     web_search: bool = False
     file_ids: list[int] | None = None
     events: list[dict] = []
+    llm_hits: int = 0
+    web_queries: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
     result: dict | None = None
     error: str | None = None
     seen: bool

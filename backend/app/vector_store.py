@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import importlib.util
 import json
 import math
 import re
@@ -25,7 +26,13 @@ from .config import (
 
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}")
-EMBEDDING_MODEL = "local-hash-embedding-v1"
+HASH_EMBEDDING_MODEL = "local-hash-embedding-v1"
+FASTEMBED_MODEL_NAME = "BAAI/bge-small-en-v1.5"
+_FASTEMBED_INSTALLED = importlib.util.find_spec("fastembed") is not None
+EMBEDDING_MODEL = f"fastembed:{FASTEMBED_MODEL_NAME}" if _FASTEMBED_INSTALLED else HASH_EMBEDDING_MODEL
+
+_fastembed_model = None
+_fastembed_load_failed = False
 
 
 @dataclass(frozen=True)
@@ -55,15 +62,70 @@ def _tokens(text: str) -> list[str]:
     return [token.lower() for token in TOKEN_PATTERN.findall(text)]
 
 
-def embed_text(text: str) -> list[float]:
+def _normalize(vector: list[float]) -> list[float]:
+    magnitude = math.sqrt(sum(value * value for value in vector)) or 1.0
+    return [value / magnitude for value in vector]
+
+
+def _hash_embed(text: str) -> list[float]:
+    """Deterministic hashing-trick vector. No semantic meaning — only literal
+    token overlap. Used only when fastembed is unavailable or fails to load."""
     vector = [0.0] * EMBEDDING_DIMENSIONS
     for token in _tokens(text):
         digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
         index = int.from_bytes(digest[:4], "big") % EMBEDDING_DIMENSIONS
         sign = 1.0 if digest[4] % 2 == 0 else -1.0
         vector[index] += sign
-    magnitude = math.sqrt(sum(value * value for value in vector)) or 1.0
-    return [value / magnitude for value in vector]
+    return _normalize(vector)
+
+
+def _get_fastembed_model():
+    global _fastembed_model, _fastembed_load_failed
+    if not _FASTEMBED_INSTALLED or _fastembed_load_failed:
+        return None
+    if _fastembed_model is None:
+        try:
+            from fastembed import TextEmbedding
+            _fastembed_model = TextEmbedding(model_name=FASTEMBED_MODEL_NAME)
+        except Exception:
+            _fastembed_load_failed = True
+            return None
+    return _fastembed_model
+
+
+def active_embedding_model() -> str:
+    """The embedding scheme actually usable right now, verified by loading the
+    model rather than just checking whether the package is installed."""
+    return EMBEDDING_MODEL if _get_fastembed_model() is not None else HASH_EMBEDDING_MODEL
+
+
+def embed_passages(texts: list[str]) -> list[list[float]]:
+    """Embed document/chunk text for indexing. Batches through fastembed when
+    available; falls back to the hashing trick otherwise."""
+    if not texts:
+        return []
+    model = _get_fastembed_model()
+    if model is not None:
+        try:
+            return [_normalize(list(vector)) for vector in model.passage_embed(texts)]
+        except Exception:
+            pass
+    return [_hash_embed(text) for text in texts]
+
+
+def embed_query(text: str) -> list[float]:
+    """Embed a search query, using the asymmetric query prefix bge models expect."""
+    model = _get_fastembed_model()
+    if model is not None:
+        try:
+            return _normalize(list(next(iter(model.query_embed([text])))))
+        except Exception:
+            pass
+    return _hash_embed(text)
+
+
+def embed_text(text: str) -> list[float]:
+    return embed_passages([text])[0] if text else _hash_embed(text)
 
 
 def chunk_text(text: str, *, chunk_chars: int = SEMANTIC_CHUNK_CHARS, overlap: int = SEMANTIC_CHUNK_OVERLAP) -> list[str]:
@@ -154,11 +216,12 @@ def index_file(file_id: int, store_id: int, name: str, text: str) -> int:
 
 def index_file_with_status(file_id: int, store_id: int, name: str, text: str) -> IndexResult:
     chunks = chunk_text(text)
+    model_used = active_embedding_model()
     try:
         collection = _collection()
         collection.delete(where={"file_id": file_id})
         if not chunks:
-            return IndexResult(chunks=0, backend="chroma", status="empty")
+            return IndexResult(chunks=0, backend="chroma", model=model_used, status="empty")
         ids = [f"file-{file_id}-chunk-{index}" for index in range(len(chunks))]
         metadatas = [
             {"file_id": file_id, "store_id": store_id, "name": name, "chunk_index": index}
@@ -167,10 +230,10 @@ def index_file_with_status(file_id: int, store_id: int, name: str, text: str) ->
         collection.add(
             ids=ids,
             documents=chunks,
-            embeddings=[embed_text(chunk) for chunk in chunks],
+            embeddings=embed_passages(chunks),
             metadatas=metadatas,
         )
-        return IndexResult(chunks=len(chunks), backend="chroma")
+        return IndexResult(chunks=len(chunks), backend="chroma", model=model_used)
     except VectorStoreUnavailable:
         pass
     except Exception:
@@ -178,7 +241,8 @@ def index_file_with_status(file_id: int, store_id: int, name: str, text: str) ->
     with _sqlite_connection() as connection:
         connection.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
         if not chunks:
-            return IndexResult(chunks=0, backend="sqlite", status="empty")
+            return IndexResult(chunks=0, backend="sqlite", model=model_used, status="empty")
+        chunk_embeddings = embed_passages(chunks)
         connection.executemany(
             """
             INSERT INTO chunks (id, file_id, store_id, name, chunk_index, document, embedding)
@@ -192,12 +256,12 @@ def index_file_with_status(file_id: int, store_id: int, name: str, text: str) ->
                     name,
                     index,
                     chunk,
-                    json.dumps(embed_text(chunk), separators=(",", ":")),
+                    json.dumps(embedding, separators=(",", ":")),
                 )
-                for index, chunk in enumerate(chunks)
+                for index, (chunk, embedding) in enumerate(zip(chunks, chunk_embeddings))
             ],
         )
-        return IndexResult(chunks=len(chunks), backend="sqlite")
+        return IndexResult(chunks=len(chunks), backend="sqlite", model=model_used)
 
 
 def index_files(files: Iterable) -> int:
@@ -213,7 +277,7 @@ def index_files(files: Iterable) -> int:
 def search(query: str, *, file_ids: list[int] | None = None, top_k: int = SEMANTIC_TOP_K) -> list[SemanticHit]:
     if file_ids == []:
         return []
-    query_embedding = embed_text(query)
+    query_embedding = embed_query(query)
     try:
         collection = _collection()
         where = None

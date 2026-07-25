@@ -32,18 +32,18 @@ from .config import (
 )
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
-from .web_research import web_research
+from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import LLMProviderError, answer_planned_question, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, verify_response
+from .llm import LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
 from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
 from .ticket_taxonomy_data import DEFAULT_TAXONOMY, DEFAULT_TAXONOMY_V2, TaxonomyRule
-from .vector_store import EMBEDDING_MODEL, delete_file_embeddings, index_file_with_status, search as semantic_search
+from .vector_store import EMBEDDING_MODEL, active_embedding_model, delete_file_embeddings, index_file_with_status, search as semantic_search
 
 
 class ChatJobCancelled(RuntimeError):
@@ -133,6 +133,16 @@ def _ensure_schema_columns():
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN web_search BOOLEAN NOT NULL DEFAULT 0"))
         if "provider" not in chat_message_columns:
             connection.execute(text("ALTER TABLE chat_messages ADD COLUMN provider VARCHAR(20)"))
+        if "llm_hits" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN llm_hits INTEGER NOT NULL DEFAULT 0"))
+        if "web_queries" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN web_queries INTEGER NOT NULL DEFAULT 0"))
+        if "prompt_tokens" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0"))
+        if "completion_tokens" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0"))
+        if "total_tokens" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0"))
 
 
 def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:
@@ -379,8 +389,10 @@ async def lifespan(_: FastAPI):
             if extension in TABULAR_EXTENSIONS and "Profile version: 3" not in stored_file.extracted_text and stored_path.exists():
                 stored_file.extracted_text = extract_text_from_path(stored_file.name, stored_path)
         db.commit()
+        current_embedding_model = active_embedding_model()
         for stored_file in db.scalars(select(StoredFile)).all():
-            if stored_file.embedding_status in {"", "pending", "failed", "indexing"} or (stored_file.embedding_status == "embedded" and not stored_file.embedding_chunks):
+            stale_embedding = stored_file.embedding_status == "embedded" and stored_file.embedding_model != current_embedding_model
+            if stored_file.embedding_status in {"", "pending", "failed", "indexing"} or (stored_file.embedding_status == "embedded" and not stored_file.embedding_chunks) or stale_embedding:
                 _index_stored_file(db, stored_file)
     yield
 
@@ -429,7 +441,12 @@ def llm_config():
             if response.status_code == 200:
                 openai_models = sorted(
                     item["id"] for item in response.json().get("data", [])
-                    if isinstance(item, dict) and str(item.get("id", "")).startswith("gpt-")
+                    if isinstance(item, dict)
+                    and str(item.get("id", "")).startswith(("gpt-", "o1", "o3", "o4", "chatgpt-"))
+                    and not any(
+                        excluded in str(item.get("id", "")).lower()
+                        for excluded in ("embedding", "whisper", "tts", "dall-e", "moderation", "davinci", "babbage", "computer-use")
+                    )
                 )
         except Exception:
             openai_models = []
@@ -465,6 +482,7 @@ def llm_config():
         "presets": GROQ_MODEL_PRESETS if provider == "groq" else provider_models[provider],
         "fallback_presets": {"openai": OPENAI_MODEL_FALLBACKS, "gemini": GEMINI_MODEL_FALLBACKS},
         "using_fallback_models": using_fallback,
+        "model_meta": build_model_meta(provider_models),
     }
 
 
@@ -876,11 +894,46 @@ def delete_ticket_analysis_history(result_id: int, db: Session = Depends(get_db)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _sources_with_meta(sources, llm_hits=0, web_queries=0):
-    """Append a metadata entry to sources so the frontend can extract llm_hits and web_queries."""
+def _sources_with_meta(sources, llm_hits=0, web_queries=0, prompt_tokens=0, completion_tokens=0, total_tokens=0):
+    """Append a metadata entry to sources so the frontend can extract llm_hits, web_queries, and token usage."""
     source_dicts = [s.model_dump() if isinstance(s, ChatSource) else s for s in sources]
-    source_dicts.append({"meta": True, "llm_hits": llm_hits, "web_queries": web_queries})
+    source_dicts.append({
+        "meta": True,
+        "llm_hits": llm_hits,
+        "web_queries": web_queries,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+    })
     return source_dicts
+
+
+def _attach_usage_metrics(db: Session, conversation_id: int, usage: dict | None, web_queries: int | None = None) -> dict:
+    """Overwrite the assistant message's LLM-call/token/search counts with the real tracked values for this request."""
+    metrics = {
+        "llm_hits": (usage or {}).get("calls", 0),
+        "prompt_tokens": (usage or {}).get("prompt_tokens", 0),
+        "completion_tokens": (usage or {}).get("completion_tokens", 0),
+        "total_tokens": (usage or {}).get("total_tokens", 0),
+        "web_queries": web_queries or 0,
+    }
+    message = db.scalars(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == conversation_id, ChatMessage.role == "assistant")
+        .order_by(ChatMessage.id.desc())
+        .limit(1)
+    ).first()
+    if not message:
+        return metrics
+    sources = []
+    for source in (message.sources or []):
+        if isinstance(source, dict) and source.get("meta"):
+            source = {**source, **metrics}
+        sources.append(source)
+    message.sources = sources
+    db.add(message)
+    db.commit()
+    return metrics
 
 
 def _message_read(message: ChatMessage) -> ChatMessageRead:
@@ -896,6 +949,9 @@ def _message_read(message: ChatMessage) -> ChatMessageRead:
         provider=message.provider,
         llm_hits=int(meta.get("llm_hits") or 0),
         web_queries=int(meta.get("web_queries") or 0),
+        prompt_tokens=int(meta.get("prompt_tokens") or 0),
+        completion_tokens=int(meta.get("completion_tokens") or 0),
+        total_tokens=int(meta.get("total_tokens") or 0),
         created_at=message.created_at,
     )
 
@@ -1413,42 +1469,43 @@ def chat_direct_stream(payload: ChatRequest):
                 db.commit()
                 yield json.dumps({"type": "start", "conversation_id": session.id, "model": payload.model, "provider": payload.provider}) + "\n"
                 answer_parts = []
-                token_stream, used_model = stream_answer(
-                    payload.question,
-                    [],
-                    history,
-                    payload.model,
-                    payload.allow_general_knowledge,
-                    payload.reasoning_mode,
-                    guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
-                    provider=payload.provider,
-                )
-                for token in token_stream:
-                    if stream_cancel_event and stream_cancel_event.is_set():
-                        raise ChatJobCancelled("Chat was deleted; direct stream cancelled")
-                    answer_parts.append(token)
-                    yield json.dumps({"type": "token", "text": token}) + "\n"
-                answer = clean_final_answer("".join(answer_parts))
-                if not answer:
-                    raise RuntimeError("The model returned an empty answer.")
-                if payload.reasoning_mode == "unrestricted" and is_refusal(answer):
-                    yield json.dumps({"type": "token", "text": "\n\n_[Model initially refused. Running jailbreak pipeline…]_\n\n"}) + "\n"
-                    answer, used_model = generate_unrestricted_answer(
+                with token_usage_tracker() as usage:
+                    token_stream, used_model = stream_answer(
                         payload.question,
                         [],
                         history,
                         payload.model,
+                        payload.allow_general_knowledge,
+                        payload.reasoning_mode,
+                        guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
+                        provider=payload.provider,
                     )
-                else:
-                    diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
-                    if diagnostic:
-                        yield json.dumps({"type": "diagnostic", "level": "warning", "detail": diagnostic}) + "\n"
-                llm_hits = 1
+                    for token in token_stream:
+                        if stream_cancel_event and stream_cancel_event.is_set():
+                            raise ChatJobCancelled("Chat was deleted; direct stream cancelled")
+                        answer_parts.append(token)
+                        yield json.dumps({"type": "token", "text": token}) + "\n"
+                    answer = clean_final_answer("".join(answer_parts))
+                    if not answer:
+                        raise RuntimeError("The model returned an empty answer.")
+                    if payload.reasoning_mode == "unrestricted" and is_refusal(answer):
+                        yield json.dumps({"type": "token", "text": "\n\n_[Model initially refused. Running jailbreak pipeline…]_\n\n"}) + "\n"
+                        answer, used_model = generate_unrestricted_answer(
+                            payload.question,
+                            [],
+                            history,
+                            payload.model,
+                        )
+                    else:
+                        diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
+                        if diagnostic:
+                            yield json.dumps({"type": "diagnostic", "level": "warning", "detail": diagnostic}) + "\n"
+                llm_hits = usage["calls"]
                 web_queries = 0
-                db.add(ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits, web_queries), model=used_model, provider=payload.provider))
+                db.add(ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits, web_queries, usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]), model=used_model, provider=payload.provider))
                 session.updated_at = datetime.now(timezone.utc)
                 db.commit()
-                result = ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries)
+                result = ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries, prompt_tokens=usage["prompt_tokens"], completion_tokens=usage["completion_tokens"], total_tokens=usage["total_tokens"])
                 yield json.dumps({"type": "result", "data": result.model_dump(mode="json")}) + "\n"
             except ChatJobCancelled:
                 return
@@ -1596,11 +1653,22 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
     _update_chat_job(job_id, status="running", stage="starting", detail="Answer pipeline started")
     stopped = Event()
     progress = {"stage": "starting", "detail": "Answer pipeline started", "ticks": 0}
+    token_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+    search_usage: dict = {"queries": 0}
 
     def notify(stage: str, detail: str):
         ensure_not_cancelled()
         progress.update(stage=stage, detail=detail, ticks=0)
-        _update_chat_job(job_id, stage=stage, detail=detail)
+        _update_chat_job(
+            job_id,
+            stage=stage,
+            detail=detail,
+            llm_hits=token_usage["calls"],
+            web_queries=search_usage["queries"],
+            prompt_tokens=token_usage["prompt_tokens"],
+            completion_tokens=token_usage["completion_tokens"],
+            total_tokens=token_usage["total_tokens"],
+        )
 
     def heartbeat():
         while not stopped.wait(10):
@@ -1619,7 +1687,16 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
                 detail = f"Quality pass is still active: {progress['detail']}"
             else:
                 detail = f"Pipeline is active: {progress['detail']}"
-            _update_chat_job(job_id, stage=stage, detail=detail)
+            _update_chat_job(
+                job_id,
+                stage=stage,
+                detail=detail,
+                llm_hits=token_usage["calls"],
+                web_queries=search_usage["queries"],
+                prompt_tokens=token_usage["prompt_tokens"],
+                completion_tokens=token_usage["completion_tokens"],
+                total_tokens=token_usage["total_tokens"],
+            )
 
     Thread(target=heartbeat, daemon=True).start()
     completed_calls: dict = {}
@@ -1631,9 +1708,15 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
         diagnostic_event("pipeline.attempt_started", attempt=total_attempts, cached_llm_calls=completed_before_attempt)
         try:
             ensure_not_cancelled()
-            with llm_call_cache(completed_calls):
+            with llm_call_cache(completed_calls), token_usage_tracker(token_usage), web_search_tracker(search_usage):
                 with SessionLocal() as db:
                     result = _call_process_chat(payload, db, notify, cancellation.is_set)
+                    metrics = _attach_usage_metrics(db, result.conversation_id, token_usage, search_usage["queries"])
+                    result.llm_hits = metrics["llm_hits"]
+                    result.web_queries = metrics["web_queries"]
+                    result.prompt_tokens = metrics["prompt_tokens"]
+                    result.completion_tokens = metrics["completion_tokens"]
+                    result.total_tokens = metrics["total_tokens"]
             ensure_not_cancelled()
             stopped.set()
             _update_chat_job(
@@ -1642,6 +1725,11 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
                 stage="complete",
                 detail="Answer ready",
                 result=result.model_dump(mode="json"),
+                llm_hits=result.llm_hits,
+                web_queries=result.web_queries,
+                prompt_tokens=result.prompt_tokens,
+                completion_tokens=result.completion_tokens,
+                total_tokens=result.total_tokens,
                 error=None,
             )
             diagnostic_event("job.succeeded", attempts=total_attempts, completed_llm_calls=len(completed_calls))

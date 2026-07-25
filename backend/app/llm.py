@@ -22,6 +22,7 @@ LLM_MAX_RETRY_AFTER_SECONDS = float(os.getenv("LLM_MAX_RETRY_AFTER_SECONDS", "30
 _ACTIVE_CALL_CACHE: ContextVar[dict | None] = ContextVar("locus_llm_call_cache", default=None)
 _ACTIVE_PROVIDER: ContextVar[str | None] = ContextVar("locus_llm_provider", default=None)
 _GROQ_RATE_STATE: ContextVar[dict | None] = ContextVar("locus_groq_rate_state", default=None)
+_TOKEN_USAGE: ContextVar[dict | None] = ContextVar("locus_token_usage", default=None)
 
 ANSWER_LANGUAGE_INSTRUCTION = (
     "Always answer in English only. If the user writes in another language or mixes languages, "
@@ -152,7 +153,9 @@ class LiteLLMGatewayClient:
         content = _litellm_content(response)
         if not content:
             raise RuntimeError(f"{self.provider.title()} returned an empty answer through LiteLLM.")
-        diagnostic_event("llm.response", provider=self.provider, gateway="litellm", model=self.model, elapsed_ms=round((perf_counter() - started) * 1000, 1), output_chars=len(content))
+        usage = getattr(response, "usage", None)
+        _record_token_usage(usage)
+        diagnostic_event("llm.response", provider=self.provider, gateway="litellm", model=self.model, elapsed_ms=round((perf_counter() - started) * 1000, 1), output_chars=len(content), prompt_tokens=getattr(usage, "prompt_tokens", None), completion_tokens=getattr(usage, "completion_tokens", None))
         return content
 
     def stream(self, messages, temperature=None, max_tokens=None):
@@ -166,9 +169,11 @@ class LiteLLMGatewayClient:
                 temperature=temperature if temperature is not None else 0.2,
                 max_tokens=max_tokens,
                 stream=True,
+                stream_options={"include_usage": True},
                 **_litellm_kwargs(self.provider, self.model),
             )
             for chunk in response:
+                _record_token_usage(getattr(chunk, "usage", None))
                 try:
                     token = chunk.choices[0].delta.content or ""
                 except (AttributeError, IndexError, TypeError):
@@ -403,6 +408,46 @@ def list_groq_models() -> tuple[list[str], bool]:
         return list(GROQ_MODEL_PRESETS), True
 
 
+_FREE_GEMINI_NAME_HINTS = ("flash",)
+
+
+def _model_is_free(provider: str, model: str) -> bool:
+    # Ollama runs locally and Groq's public API is free to use (rate-limited), so both are
+    # always free. Gemini's free AI Studio tier centers on the Flash family; Pro models are
+    # effectively paid-tier. OpenAI's API always bills per token.
+    if provider in {"ollama", "groq"}:
+        return True
+    if provider == "gemini":
+        return any(hint in model.lower() for hint in _FREE_GEMINI_NAME_HINTS)
+    return False
+
+
+def _model_context_length(provider: str, model: str) -> int | None:
+    if provider == "ollama":
+        return OLLAMA_NUM_CTX
+    try:
+        litellm = _load_litellm()
+        entry = litellm.model_cost.get(_litellm_model(provider, model)) or litellm.model_cost.get(model)
+    except RuntimeError:
+        entry = None
+    if not entry:
+        return None
+    return entry.get("max_input_tokens") or entry.get("max_tokens")
+
+
+def build_model_meta(provider_models: dict[str, list[str]]) -> dict[str, dict]:
+    meta: dict[str, dict] = {}
+    for provider, models in provider_models.items():
+        for model in models:
+            if model in meta:
+                continue
+            meta[model] = {
+                "context_length": _model_context_length(provider, model),
+                "free": _model_is_free(provider, model),
+            }
+    return meta
+
+
 @contextmanager
 def llm_call_cache(cache: dict):
     token = _ACTIVE_CALL_CACHE.set(cache)
@@ -410,6 +455,26 @@ def llm_call_cache(cache: dict):
         yield cache
     finally:
         _ACTIVE_CALL_CACHE.reset(token)
+
+
+def _record_token_usage(usage) -> None:
+    tracker = _TOKEN_USAGE.get()
+    if tracker is None or usage is None:
+        return
+    tracker["prompt_tokens"] += int(getattr(usage, "prompt_tokens", 0) or 0)
+    tracker["completion_tokens"] += int(getattr(usage, "completion_tokens", 0) or 0)
+    tracker["total_tokens"] += int(getattr(usage, "total_tokens", 0) or 0)
+    tracker["calls"] += 1
+
+
+@contextmanager
+def token_usage_tracker(tracker: dict | None = None):
+    tracker = tracker if tracker is not None else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
+    token = _TOKEN_USAGE.set(tracker)
+    try:
+        yield tracker
+    finally:
+        _TOKEN_USAGE.reset(token)
 
 
 @contextmanager
@@ -426,7 +491,11 @@ def llm_provider_context(provider: str):
 def _context_budget(model: str) -> int:
     # Character budgets leave ample room for instructions, history, and model output.
     if _ACTIVE_PROVIDER.get() == "groq":
-        return max(8_000, int(os.getenv("GROQ_CONTEXT_CHAR_BUDGET", "12000")))
+        # Every current Groq-hosted model (llama-3.1/3.3, gpt-oss-20b/120b, qwen3.6-27b)
+        # has a 131,072-token context window. 60k chars (~20k tokens) matches the
+        # openai/gemini budget below while staying under typical Groq per-minute
+        # token limits; proactive rate-limit throttling handles the rest.
+        return max(8_000, int(os.getenv("GROQ_CONTEXT_CHAR_BUDGET", "60000")))
     if model.startswith(("gpt-", "gemini-")):
         return 80_000
     return 40_000 if model.endswith(":cloud") else max(10_000, OLLAMA_NUM_CTX)

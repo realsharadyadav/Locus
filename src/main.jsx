@@ -1,13 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, BarChart3, BookOpen, BrainCircuit, Check, CircleCheck,
   Code2, Compass, Copy, Cpu, Database, FileText, Folder, History, Home, Info, KeyRound, Layers3,
-  LockKeyhole, Maximize2, Menu, Minimize2, MoonStar, PanelLeftClose, PanelLeftOpen, PenLine, Plus, Radio, Search, Send, Settings2, ShieldCheck,
-  RotateCcw, SlidersHorizontal, Sparkles, Square, Terminal, Trash2, Upload,
+  LockKeyhole, Menu, MoonStar, PanelLeftClose, PanelLeftOpen, PenLine, Plus, Radio, Search, Send, Settings2, ShieldCheck,
+  RotateCcw, SlidersHorizontal, Sparkles, Square, Terminal, Trash2, Upload, Download,
   WandSparkles, X, Zap, ChevronDown, ChevronRight, Globe, FilePlus2,
+  LayoutDashboard, Library, MessagesSquare, ChartNoAxesCombined, Fingerprint, Sun, Moon,
 } from 'lucide-react';
 import './styles.css';
 import { api } from './api';
@@ -22,7 +23,8 @@ import { displayTime, parseServerTime, resizeTextarea, STORE_COLORS } from './ut
 function Logo() {
   return (
     <div className="logo">
-      <svg className="logo-mark" viewBox="0 0 25 25" width="25" height="25" aria-hidden="true">
+      <svg className="logo-mark" viewBox="0 0 25 25" width="34" height="34" aria-hidden="true">
+        <circle className="logo-ping" cx="12.5" cy="12.5" r="9" fill="none" strokeWidth="1.4" />
         <circle className="logo-ring-outer" cx="12.5" cy="12.5" r="10" fill="none" strokeWidth="2" />
         <circle className="logo-ring-inner" cx="12.5" cy="12.5" r="5.6" fill="none" strokeWidth="2" />
         <circle className="logo-dot" cx="12.5" cy="12.5" r="2.4" />
@@ -34,133 +36,158 @@ function Logo() {
 
 const tip = text => ({ 'data-tooltip': text, 'aria-description': text });
 
+const NAV_SECTIONS = [
+  {
+    label: 'Workspace',
+    items: [
+      { id: 'home', Icon: LayoutDashboard, label: 'Home', accent: '166 84% 55%' },
+      { id: 'hub', Icon: Library, label: 'Library', accent: '38 94% 60%' },
+      { id: 'explore', Icon: MessagesSquare, label: 'Ask', accent: '255 88% 74%' },
+    ],
+  },
+  {
+    label: 'Signals',
+    items: [
+      { id: 'ticket-analysis', Icon: ChartNoAxesCombined, label: 'Patterns', accent: '205 92% 62%' },
+      { id: 'secret-chat', Icon: Fingerprint, label: 'Private', accent: '341 85% 66%' },
+    ],
+  },
+];
+
 function Sidebar({
   page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact,
-  chats = [], files = [], jobs = [], onOpenChat, onOpenFile, onOpenSecretChat,
-  onNewChat, onDeleteChat, activeChat, historyCollapsed, setHistoryCollapsed,
+  files = [], onOpenFile, onOpenSecretChat, onNewChat, historyCollapsed, setHistoryCollapsed,
+  theme, setTheme,
 }) {
-  const nav = [
-    ['home', Home, 'Home'],
-    ['hub', Folder, 'Library'],
-    ['explore', Compass, 'Ask'],
-    ['ticket-analysis', BarChart3, 'Patterns'],
-    ['secret-chat', LockKeyhole, 'Private'],
-  ];
-  const runningCount = jobs.filter(j => ['queued', 'running'].includes(j.status)).length;
-  const failedCount = jobs.filter(j => j.status === 'failed').length;
+  const railRef = useRef(null);
+  const [marker, setMarker] = useState(null);
 
-  const sidebarChats = chats.slice(0, 20);
-  const formatChatTime = (ts) => {
-    const d = new Date(ts.replace(' ', 'T') + 'Z');
-    const now = new Date();
-    const diffMs = now - d;
-    const diffMins = Math.floor(diffMs / 60000);
-    if (diffMins < 1) return 'now';
-    if (diffMins < 60) return `${diffMins}m`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours}h`;
-    return `${Math.floor(diffHours / 24)}d`;
-  };
+  // Measure the active nav button so a single indicator can glide between items
+  // instead of each button popping its own highlight.
+  useLayoutEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const measure = () => {
+      const active = rail.querySelector('.nav-item.active');
+      if (!active) { setMarker(null); return; }
+      setMarker({
+        top: active.offsetTop,
+        height: active.offsetHeight,
+        accent: active.style.getPropertyValue('--nav-accent'),
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(rail);
+    return () => observer.disconnect();
+  }, [page, compact]);
 
   return (
     <>
       <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${compact ? 'compact' : ''} ${page === 'explore' ? 'sidebar-explore' : ''}`}>
         <div className="side-top">
           <Logo />
-          <button
-            className="sidebar-mode-toggle icon-button"
-            onClick={toggleCompact}
-            aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
-            {...tip(compact ? 'Expand the main app navigation and show labels.' : 'Collapse the main navigation into an icon rail to create more workspace.')}
-          >
-            {compact ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          </button>
           <button className="mobile-close icon-button" onClick={close} aria-label="Close navigation">
             <X size={18} />
           </button>
         </div>
-        <nav>
-          {nav.map(([id, Icon, label]) => (
-            <button
-              key={id}
-              className={page === id ? 'active' : ''}
-              onClick={() => {
-                if (id === 'secret-chat') {
-                  onOpenSecretChat?.();
-                } else {
-                  setPage(id);
-                  close();
-                }
-              }}
-              {...tip(compact ? label : undefined)}
-            >
-              <Icon size={18} />
-              <span>{label}</span>
-              {id === 'hub' && <span className="nav-count">{fileCount}</span>}
-              {id === 'explore' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
-            </button>
+        <nav ref={railRef} className="nav-rail">
+          <span
+            className={`nav-marker ${marker ? 'visible' : ''}`}
+            aria-hidden="true"
+            style={marker ? {
+              transform: `translateY(${marker.top}px)`,
+              height: `${marker.height}px`,
+              '--nav-accent': marker.accent,
+            } : undefined}
+          />
+          {NAV_SECTIONS.map((section, sectionIndex) => (
+            <div className="nav-group" key={section.label}>
+              <span className="nav-group-label">{section.label}</span>
+              {section.items.map(({ id, Icon, label, accent }, itemIndex) => (
+                <button
+                  key={id}
+                  className={`nav-item ${page === id ? 'active' : ''}`}
+                  style={{ '--nav-accent': accent, '--nav-order': sectionIndex * 3 + itemIndex }}
+                  onClick={() => {
+                    if (id === 'secret-chat') {
+                      onOpenSecretChat?.();
+                    } else {
+                      setPage(id);
+                      close();
+                    }
+                  }}
+                >
+                  <span className="nav-icon">
+                    <Icon size={18} strokeWidth={1.9} />
+                  </span>
+                  <span className="nav-label">{label}</span>
+                  {id === 'hub' && <span className="nav-count">{fileCount}</span>}
+                  {id === 'explore' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
-        {page === 'explore' && !compact && (
-          <div className="sidebar-chat-section">
-            <div className="sidebar-chat-head">
-              <span className="kicker">CHATS</span>
-              <span className="sidebar-chat-count">{chats.length}</span>
-              <div className="sidebar-chat-pulse">
-                <span>{runningCount > 0 && <i className="sidebar-chat-running">{runningCount} running</i>}</span>
-                {failedCount > 0 && <span className="sidebar-chat-failed">{failedCount} failed</span>}
-              </div>
-            </div>
-            <div className="sidebar-chat-list">
-              {sidebarChats.map(chat => {
-                const latestJob = jobs.find(j => j.conversation_id === chat.id);
-                const inProgress = ['queued', 'running'].includes(latestJob?.status);
-                const ready = latestJob?.status === 'completed' && !latestJob.seen;
-                const failed = latestJob?.status === 'failed';
-                return (
-                  <button
-                    key={chat.id}
-                    className={`sidebar-chat-item ${activeChat === chat.id ? 'active' : ''} ${inProgress ? 'in-progress' : ''} ${ready ? 'ready' : ''} ${failed ? 'failed' : ''}`}
-                    onClick={() => { onOpenChat?.(chat.id); close(); }}
-                    title={chat.title}
-                  >
-                    <span className="sidebar-chat-name">
-                      <span>{chat.title}</span>
-                      {inProgress && <i className="chat-dot progress" />}
-                      {ready && <i className="chat-dot ready" />}
-                      {failed && <i className="chat-dot failed" />}
-                    </span>
-                    <span className="sidebar-chat-time">{formatChatTime(chat.updated_at)}</span>
-                  </button>
-                );
-              })}
-              {!chats.length && <span className="sidebar-chat-empty">No chats yet</span>}
-            </div>
-            <button className="sidebar-new-chat" onClick={() => { onNewChat?.(); close(); }}>
-              <Plus size={13} /> New conversation
-            </button>
-          </div>
-        )}
-
-        {page === 'explore' && compact && (
-          <button
-            className="sidebar-compact-new-chat"
-            onClick={() => { onNewChat?.(); close(); }}
-            {...tip('New conversation')}
-          >
-            <Plus size={16} />
-          </button>
-        )}
-
         <div className="sidebar-footer">
           <button
-            className={`sidebar-settings-btn ${page === 'settings' ? 'active' : ''}`}
-            onClick={() => { setPage('settings'); close(); }}
-            {...tip(compact ? 'Settings' : undefined)}
+            className="sidebar-collapse-btn nav-item"
+            style={{ '--nav-accent': '220 12% 66%' }}
+            onClick={toggleCompact}
+            aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <Settings2 size={17} />
-            <span>Settings</span>
+            <span className="nav-icon">
+              {compact ? <PanelLeftOpen size={17} strokeWidth={1.9} /> : <PanelLeftClose size={17} strokeWidth={1.9} />}
+            </span>
+            <span className="nav-label">Collapse</span>
+          </button>
+          {compact ? (
+            <button
+              className="theme-nav-toggle nav-item"
+              style={{ '--nav-accent': theme === 'dark' ? '45 96% 62%' : '235 70% 66%' }}
+              onClick={() => setTheme?.(theme === 'dark' ? 'light' : 'dark')}
+              aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            >
+              <span className="nav-icon">
+                <span className="theme-nav-glyphs" data-theme-state={theme}>
+                  <Sun size={18} strokeWidth={1.9} />
+                  <Moon size={18} strokeWidth={1.9} />
+                </span>
+              </span>
+            </button>
+          ) : (
+            <div className="theme-switch" role="group" aria-label="Colour theme">
+              <span className="theme-switch-thumb" data-theme-state={theme} aria-hidden="true" />
+              <button
+                type="button"
+                className={theme === 'light' ? 'active' : ''}
+                onClick={() => setTheme?.('light')}
+                aria-pressed={theme === 'light'}
+              >
+                <Sun size={15} strokeWidth={2} />
+                <span>Bright</span>
+              </button>
+              <button
+                type="button"
+                className={theme === 'dark' ? 'active' : ''}
+                onClick={() => setTheme?.('dark')}
+                aria-pressed={theme === 'dark'}
+              >
+                <Moon size={15} strokeWidth={2} />
+                <span>Dark</span>
+              </button>
+            </div>
+          )}
+          <button
+            className={`sidebar-settings-btn nav-item ${page === 'settings' ? 'active' : ''}`}
+            style={{ '--nav-accent': '220 12% 66%' }}
+            onClick={() => { setPage('settings'); close(); }}
+          >
+            <span className="nav-icon">
+              <Settings2 size={17} strokeWidth={1.9} />
+            </span>
+            <span className="nav-label">Settings</span>
           </button>
         </div>
       </aside>
@@ -169,7 +196,7 @@ function Sidebar({
   );
 }
 
-function Header({ query, setQuery, openMenu, openCreate, openCommand, page, theme, toggleTheme }) {
+function Header({ query, setQuery, openMenu, openCreate, openCommand, page }) {
   return (
     <header>
       <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
@@ -179,15 +206,6 @@ function Header({ query, setQuery, openMenu, openCreate, openCommand, page, them
         <Search size={17} />
         <span>{query || 'Search everything you know...'}</span>
         <kbd>⌘ K</kbd>
-      </button>
-      <button
-        className="theme-toggle icon-button"
-        onClick={toggleTheme}
-        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-        {...tip(theme === 'dark' ? 'Switch to the brighter light theme.' : 'Switch to the calm GitHub-style dark theme.')}
-      >
-        <MoonStar size={17} />
-        <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
       </button>
       {page === 'hub' && (
         <button className="new-button" onClick={openCreate}>
@@ -353,10 +371,20 @@ function modelProvider(model) {
   return 'On-device';
 }
 
+function formatContextLength(value) {
+  if (!value) return null;
+  if (value >= 1000000) return `${(value / 1000000).toFixed(value % 1000000 === 0 ? 0 : 1)}M ctx`;
+  if (value >= 1000) return `${Math.round(value / 1000)}K ctx`;
+  return `${value} ctx`;
+}
+
 function ModelControl({ config, provider, setProvider, model, setModel }) {
   const providerIcons = { ollama: '🦙', groq: '⚡', openai: '🤖', gemini: '✨' };
   const [openMenu, setOpenMenu] = useState(null);
+  const [modelQuery, setModelQuery] = useState('');
+  const [freeOnly, setFreeOnly] = useState(false);
   const controlRef = useRef(null);
+  const modelSearchRef = useRef(null);
   const fallbackModels = {
     ollama: [],
     groq: [],
@@ -370,9 +398,20 @@ function ModelControl({ config, provider, setProvider, model, setModel }) {
     window.addEventListener('mousedown', onPointerDown);
     return () => window.removeEventListener('mousedown', onPointerDown);
   }, []);
+  useEffect(() => {
+    if (openMenu === 'model') modelSearchRef.current?.focus();
+    else { setModelQuery(''); setFreeOnly(false); }
+  }, [openMenu]);
   const backendModels = config?.providers?.[provider] || [];
   const presetModels = provider === config?.provider ? (config?.presets || []) : [];
   const modelOptions = [...new Set([model, ...backendModels, ...presetModels, ...(fallbackModels[provider] || [])].filter(Boolean))];
+  const modelMeta = config?.model_meta || {};
+  const isFreeModel = item => !!modelMeta[item]?.free;
+  const contextOf = item => modelMeta[item]?.context_length || 0;
+  const visibleModelOptions = modelOptions
+    .filter(item => (freeOnly ? isFreeModel(item) : true))
+    .filter(item => (modelQuery.trim() ? item.toLowerCase().includes(modelQuery.trim().toLowerCase()) : true))
+    .sort((a, b) => contextOf(b) - contextOf(a));
   const listedModel = modelOptions.includes(model) ? model : modelOptions[0] || DEFAULT_PROVIDER_MODELS[provider];
   const changeProvider = nextProvider => {
     const nextOptions = config?.providers?.[nextProvider] || [];
@@ -441,8 +480,32 @@ function ModelControl({ config, provider, setProvider, model, setModel }) {
         </button>
         {openMenu === 'model' && (
           <div className="mc-menu mc-menu-model" role="listbox" aria-label="Model presets menu">
-            {modelOptions.map(item => {
+            <div className="mc-model-search">
+              <Search size={12} className="mc-model-search-icon" />
+              <input
+                ref={modelSearchRef}
+                type="text"
+                placeholder="Search models..."
+                value={modelQuery}
+                onChange={e => setModelQuery(e.target.value)}
+                onKeyDown={e => e.stopPropagation()}
+              />
+              <button
+                type="button"
+                className={`mc-free-toggle ${freeOnly ? 'active' : ''}`}
+                onClick={() => setFreeOnly(current => !current)}
+                aria-pressed={freeOnly}
+                title="Show only free models"
+              >
+                Free only
+              </button>
+            </div>
+            {visibleModelOptions.length === 0 && (
+              <div className="mc-model-empty">No models match your search.</div>
+            )}
+            {visibleModelOptions.map(item => {
               const active = item === listedModel;
+              const contextLabel = formatContextLength(contextOf(item));
               return (
                 <button
                   key={item}
@@ -458,8 +521,12 @@ function ModelControl({ config, provider, setProvider, model, setModel }) {
                 >
                   <span className="mc-option-text">
                     <strong>{item}</strong>
-                    <small>{active ? 'Selected model' : 'Available preset'}</small>
+                    <small>
+                      {active ? 'Selected model' : 'Available preset'}
+                      {contextLabel ? ` · ${contextLabel}` : ''}
+                    </small>
                   </span>
+                  {isFreeModel(item) && <span className="mc-free-tag">Free</span>}
                   {active && <span className="mc-option-check">✓</span>}
                 </button>
               );
@@ -488,23 +555,23 @@ function jobFailureMessage(job) {
 const humanizePipelineDetail = (detail = '') => {
   const text = String(detail || '').replace(/\s+/g, ' ').trim();
   const lowered = text.toLowerCase();
-  if (!text) return 'Main pipeline start kar raha hoon.';
-  if (lowered.startsWith('auto-enabled')) return 'Search intent samajh gaya. Web research auto-on karke sources collect kar raha hoon.';
-  if (lowered.includes('planning up to')) return 'Pehle query plan bana raha hoon, taaki search random na ho.';
-  if (lowered.includes('round') && lowered.includes('follow-up')) return `Initial results weak hain, isliye next search angle try kar raha hoon: ${text}`;
-  if (lowered.includes('search') && lowered.includes(':')) return `Ab search chala raha hoon: ${text.split(':').slice(1).join(':').trim() || text}`;
-  if (lowered.startsWith('→')) return `Source mila: ${text.replace(/^→\s*/, '')}`;
-  if (lowered.includes('collected') && lowered.includes('unique sources')) return `Sources collect ho rahe hain: ${text}`;
-  if (lowered.includes('semantic retrieval')) return `Local files mein relevant chunks dhoondh raha hoon: ${text}`;
-  if (lowered.startsWith('searching')) return `Uploaded files scan kar raha hoon: ${text}`;
-  if (lowered.includes('analysis plan ready')) return `Plan ready hai. Ab evidence ke against answer build karunga.`;
-  if (lowered.includes('calling') && lowered.includes('understand')) return `Question ka intent samajh raha hoon aur answer structure bana raha hoon.`;
-  if (lowered.startsWith('preparing')) return `Ab draft compose kar raha hoon: ${text}`;
-  if (lowered.includes('synthesizing')) return `Sources ko merge karke final answer likh raha hoon.`;
-  if (lowered.includes('verify') || lowered.includes('quality')) return `Answer quality aur grounding check kar raha hoon.`;
-  if (lowered.includes('repair')) return `Kuch gap mila, answer refine kar raha hoon.`;
-  if (lowered.includes('answer ready') || lowered.includes('ready')) return `Answer ready kar diya.`;
-  if (lowered.includes('still') || lowered.includes('active')) return `Abhi kaam chal raha hai: ${text}`;
+  if (!text) return 'Starting the pipeline.';
+  if (lowered.startsWith('auto-enabled')) return 'Search intent detected. Auto-enabling web research and collecting sources.';
+  if (lowered.includes('planning up to')) return 'Planning the query first, so the search is not random.';
+  if (lowered.includes('round') && lowered.includes('follow-up')) return `Initial results were weak, trying the next search angle: ${text}`;
+  if (lowered.includes('search') && lowered.includes(':')) return `Running search: ${text.split(':').slice(1).join(':').trim() || text}`;
+  if (lowered.startsWith('→')) return `Found source: ${text.replace(/^→\s*/, '')}`;
+  if (lowered.includes('collected') && lowered.includes('unique sources')) return `Collecting sources: ${text}`;
+  if (lowered.includes('semantic retrieval')) return `Searching local files for relevant chunks: ${text}`;
+  if (lowered.startsWith('searching')) return `Scanning uploaded files: ${text}`;
+  if (lowered.includes('analysis plan ready')) return `Plan is ready. Building the answer against the evidence now.`;
+  if (lowered.includes('calling') && lowered.includes('understand')) return `Understanding the question's intent and building the answer structure.`;
+  if (lowered.startsWith('preparing')) return `Composing the draft: ${text}`;
+  if (lowered.includes('synthesizing')) return `Merging sources and writing the final answer.`;
+  if (lowered.includes('verify') || lowered.includes('quality')) return `Checking answer quality and grounding.`;
+  if (lowered.includes('repair')) return `Found a gap, refining the answer.`;
+  if (lowered.includes('answer ready') || lowered.includes('ready')) return `Answer is ready.`;
+  if (lowered.includes('still') || lowered.includes('active')) return `Still working: ${text}`;
   return text.length > 170 ? `${text.slice(0, 167)}...` : text;
 };
 
@@ -534,21 +601,21 @@ const buildWorkingNotes = (events = [], pipeline = {}) => {
     notes.unshift(item);
     if (notes.length >= 4) break;
   }
-  return notes.length ? notes : [{ id: 'start', stage: 'starting', text: 'Samjha. Main request process kar raha hoon.', live: true }];
+  return notes.length ? notes : [{ id: 'start', stage: 'starting', text: 'Got it. Processing the request.', live: true }];
 };
 
 const directActivityToNote = item => {
   const label = item?.label || '';
   const detail = item?.detail || '';
-  if (/sending/i.test(label)) return `Request bhej diya: ${detail}`;
-  if (/connecting/i.test(label)) return `Model se connect kar raha hoon: ${detail}`;
-  if (/streaming/i.test(label)) return `Answer live aa raha hai: ${detail}`;
-  if (/saving/i.test(label)) return `Chat history save kar raha hoon.`;
-  if (/stopped/i.test(label)) return `Stopped. Yahin se model change karke ask again kar sakte ho.`;
+  if (/sending/i.test(label)) return `Request sent: ${detail}`;
+  if (/connecting/i.test(label)) return `Connecting to the model: ${detail}`;
+  if (/streaming/i.test(label)) return `Answer is streaming in: ${detail}`;
+  if (/saving/i.test(label)) return `Saving chat history.`;
+  if (/stopped/i.test(label)) return `Stopped. You can change the model here and ask again.`;
   return detail || label || 'Working...';
 };
 
-function PipelineActivity({ pipeline, model, provider, events, startedAt, reasoningMode, webSearch, fileCount, question }) {
+function PipelineActivity({ pipeline, model, provider, events, startedAt, reasoningMode, webSearch, fileCount, question, liveLlmHits = 0, liveWebQueries = 0, liveTotalTokens = 0 }) {
   const directModelChat = !webSearch && ((reasoningMode === 'light' && fileCount === 0) || reasoningMode === 'unrestricted');
   const responseStages = [
     ['understanding', 'Plan', BrainCircuit, 'Understanding intent'],
@@ -671,13 +738,32 @@ function PipelineActivity({ pipeline, model, provider, events, startedAt, reason
                 <span className="thinking-elapsed">{formatElapsedTime(elapsed)}</span>
                 <span className="thinking-file-count">{fileCount} file{fileCount !== 1 ? 's' : ''}</span>
               </div>
+              {(liveLlmHits > 0 || liveWebQueries > 0 || liveTotalTokens > 0) && (
+                <div className="thinking-stats" aria-label="Live usage while processing">
+                  {liveLlmHits > 0 && (
+                    <span className="thinking-stat"><Cpu size={11} /><strong>{liveLlmHits}</strong> LLM {liveLlmHits === 1 ? 'hit' : 'hits'}</span>
+                  )}
+                  {liveWebQueries > 0 && (
+                    <span className="thinking-stat"><Search size={11} /><strong>{liveWebQueries}</strong> {liveWebQueries === 1 ? 'search' : 'searches'}</span>
+                  )}
+                  {liveTotalTokens > 0 && (
+                    <span className="thinking-stat"><Zap size={11} /><strong>{liveTotalTokens.toLocaleString()}</strong> tokens</span>
+                  )}
+                </div>
+              )}
               <div className="working-notes" aria-label="Live working notes">
-                {workingNotes.map((note, index) => (
-                  <div className={`${index === workingNotes.length - 1 ? 'live' : ''}`} key={note.id}>
-                    <span>{index + 1}</span>
-                    <p>{note.text}</p>
-                  </div>
-                ))}
+                {workingNotes.map((note, index) => {
+                  const isLive = index === workingNotes.length - 1;
+                  return (
+                    <div className={isLive ? 'live' : 'done'} key={note.id}>
+                      <span className="note-node" aria-hidden="true">
+                        <span className="note-node-ring" />
+                        <span className="note-node-core">{isLive ? <span className="note-node-pulse" /> : <Check size={10} />}</span>
+                      </span>
+                      <p>{note.text}</p>
+                    </div>
+                  );
+                })}
               </div>
               <div className="thinking-animation" aria-hidden="true">
                 <span className="thinking-dot" />
@@ -814,12 +900,18 @@ function DirectStreamTrace({ activity = [], model, provider, text = '', streamin
   return (
     <>
       <div className="direct-working-notes" aria-label="Live working notes">
-        {directNotes.map((note, index) => (
-          <div className={`${note.live || index === directNotes.length - 1 && streaming ? 'live' : ''}`} key={note.id}>
-            <span>{index + 1}</span>
-            <p>{note.text}</p>
-          </div>
-        ))}
+        {directNotes.map((note, index) => {
+          const isLive = note.live || (index === directNotes.length - 1 && streaming);
+          return (
+            <div className={isLive ? 'live' : 'done'} key={note.id}>
+              <span className="note-node" aria-hidden="true">
+                <span className="note-node-ring" />
+                <span className="note-node-core">{isLive ? <span className="note-node-pulse" /> : <Check size={10} />}</span>
+              </span>
+              <p>{note.text}</p>
+            </div>
+          );
+        })}
       </div>
       <div className="direct-stream-trace" aria-label="Live answer activity">
         {activity.slice(0, 4).map(item => (
@@ -887,6 +979,61 @@ function DirectStreamTrace({ activity = [], model, provider, text = '', streamin
 
 function GitBranchIcon(props) {
   return <Code2 {...props} />;
+}
+
+const CODE_FILE_EXTENSIONS = {
+  html: 'html', htm: 'html', xml: 'xml', svg: 'svg',
+  javascript: 'js', js: 'js', jsx: 'jsx', typescript: 'ts', ts: 'ts', tsx: 'tsx',
+  python: 'py', py: 'py', json: 'json', css: 'css', scss: 'scss',
+  bash: 'sh', sh: 'sh', shell: 'sh', zsh: 'sh',
+  yaml: 'yaml', yml: 'yaml', sql: 'sql', java: 'java', c: 'c', cpp: 'cpp', 'c++': 'cpp',
+  go: 'go', rust: 'rs', rb: 'rb', ruby: 'rb', php: 'php', markdown: 'md', md: 'md',
+};
+
+function CodeBlock({ className, children }) {
+  const [copied, setCopied] = useState(false);
+  const match = /language-(\w+)/.exec(className || '');
+  if (!match) {
+    return <code className={className}>{children}</code>;
+  }
+  const language = match[1].toLowerCase();
+  const codeText = String(children).replace(/\n$/, '');
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(codeText);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  const handleDownload = () => {
+    const extension = CODE_FILE_EXTENSIONS[language] || 'txt';
+    const blob = new Blob([codeText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `snippet.${extension}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="code-block">
+      <div className="code-block-toolbar">
+        <span className="code-block-lang">{language}</span>
+        <div className="code-block-actions">
+          <button type="button" className="code-block-action" onClick={handleCopy} title="Copy code">
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+          <button type="button" className="code-block-action" onClick={handleDownload} title="Download as file">
+            <Download size={12} />
+          </button>
+        </div>
+      </div>
+      <pre><code className={className}>{children}</code></pre>
+    </div>
+  );
 }
 
 
@@ -1298,8 +1445,8 @@ const shouldAutoWebSearch = (text, mode = 'light') => {
 };
 
 function ExplorePage({
-  files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat, requestDeleteAllChats,
-  focusActive, toggleFocusMode, refreshChats, refreshJobs, openMenu,
+  files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat,
+  requestDeleteAllChats, hasActiveJobs, refreshChats, refreshJobs, openMenu, newChatSignal,
 }) {
   const savedAiPreference = readSavedAiPreference();
   const [question, setQuestion] = useState('');
@@ -1346,11 +1493,24 @@ function ExplorePage({
   };
   const selectedCount = selectedFileIds === null ? files.length : selectedFileIds.length;
   const activeJob = jobs.find(job => job.conversation_id === activeChat && ['queued', 'running'].includes(job.status));
-  const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
   const thinking = Boolean(activeJob) || directStreaming;
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
   const runningCount = jobs.filter(job => ['queued', 'running'].includes(job.status)).length;
   const failedCount = jobs.filter(job => job.status === 'failed').length;
+  const sessionTokens = messages.reduce((sum, message) => sum + (message.totalTokens || 0), 0);
+  const sessionLlmHits = messages.reduce((sum, message) => sum + (message.llmHits || 0), 0);
+
+  const formatChatTime = ts => {
+    const d = new Date(ts.replace(' ', 'T') + 'Z');
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'now';
+    if (diffMins < 60) return `${diffMins}m`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+    return `${Math.floor(diffHours / 24)}d`;
+  };
 
   const getReasoningMode = (text) => {
     for (const cmd of SLASH_COMMANDS) {
@@ -1432,6 +1592,9 @@ function ExplorePage({
       sources: rawSources.filter(s => !s.meta),
       llmHits: meta?.llm_hits || message.llm_hits || 0,
       webQueries: meta?.web_queries || message.web_queries || 0,
+      promptTokens: meta?.prompt_tokens || message.prompt_tokens || 0,
+      completionTokens: meta?.completion_tokens || message.completion_tokens || 0,
+      totalTokens: meta?.total_tokens || message.total_tokens || 0,
       model: message.model,
       provider: message.provider,
       createdAt: message.created_at,
@@ -1559,6 +1722,10 @@ function ExplorePage({
     setSelectedFileIds([]);
   };
 
+  useEffect(() => {
+    if (newChatSignal) newChat();
+  }, [newChatSignal]);
+
   const stripSlashPrefix = (text) => {
     for (const cmd of SLASH_COMMANDS) {
       const prefix = cmd.label;
@@ -1643,6 +1810,9 @@ function ExplorePage({
                   sources: (event.data.sources || []).filter(s => !s.meta),
                   llmHits: event.data.llm_hits || 1,
                   webQueries: event.data.web_queries || 0,
+                  promptTokens: event.data.prompt_tokens || 0,
+                  completionTokens: event.data.completion_tokens || 0,
+                  totalTokens: event.data.total_tokens || 0,
                   model: event.data.model,
                   provider,
                   streaming: false,
@@ -1891,6 +2061,65 @@ function ExplorePage({
 
   return (
     <div className="explore-shell">
+      <aside className="chat-rail">
+        <div className="chat-rail-head">
+          <span className="kicker">Chats</span>
+          <span className="chat-rail-count">{chats.length}</span>
+          {runningCount > 0 && <span className="chat-rail-running">{runningCount} running</span>}
+          <button type="button" className="chat-rail-new" onClick={newChat} aria-label="Start a new conversation">
+            <Plus size={13} /> New
+          </button>
+        </div>
+        <div className="chat-rail-list">
+          {chats.map(chat => {
+            const latestJob = jobs.find(j => j.conversation_id === chat.id);
+            const inProgress = ['queued', 'running'].includes(latestJob?.status);
+            const ready = latestJob?.status === 'completed' && !latestJob.seen;
+            const failed = latestJob?.status === 'failed';
+            return (
+              <div
+                key={chat.id}
+                role="button"
+                tabIndex={0}
+                className={`chat-rail-item ${activeChat === chat.id ? 'active' : ''} ${inProgress ? 'in-progress' : ''} ${ready ? 'ready' : ''} ${failed ? 'failed' : ''}`}
+                onClick={() => openChat(chat)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openChat(chat); }
+                }}
+                title={chat.title}
+              >
+                <span className="chat-rail-name">
+                  <span>{chat.title}</span>
+                  {inProgress && <i className="chat-dot progress" />}
+                  {ready && <i className="chat-dot ready" />}
+                  {failed && <i className="chat-dot failed" />}
+                </span>
+                <span className="chat-rail-time">{formatChatTime(chat.updated_at)}</span>
+                <button
+                  type="button"
+                  className="chat-rail-delete"
+                  onClick={e => { e.stopPropagation(); requestDeleteChat?.(chat, () => { if (activeChat === chat.id) newChat(); }); }}
+                  aria-label={`Delete ${chat.title}`}
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            );
+          })}
+          {!chats.length && <span className="chat-rail-empty">No chats yet</span>}
+        </div>
+        {!!chats.length && (
+          <button
+            type="button"
+            className="chat-rail-delete-all"
+            disabled={hasActiveJobs}
+            title={hasActiveJobs ? 'Wait for active answers to finish' : 'Delete all chats'}
+            onClick={() => requestDeleteAllChats?.(() => newChat())}
+          >
+            <Trash2 size={13} /> Delete all chats
+          </button>
+        )}
+      </aside>
       <div className="chat-page">
         <div className="chat-top">
           <div className="chat-top-left">
@@ -1911,21 +2140,23 @@ function ExplorePage({
                   <span>{activeChat}</span>
                 </button>
               )}
+              {sessionTokens > 0 && (
+                <span className="chat-session-usage" {...tip('Total tokens and LLM calls used across this conversation')}>
+                  <Cpu size={12} />
+                  <span>{sessionTokens.toLocaleString()} tokens</span>
+                  <span className="chat-session-usage-sep">·</span>
+                  <span>{sessionLlmHits} LLM {sessionLlmHits === 1 ? 'hit' : 'hits'}</span>
+                </span>
+              )}
             </div>
           </div>
           <div className="chat-top-right">
-            {!!chats.length && (
-              <button className="delete-all-chats explore-delete-all" disabled={hasActiveJobs} title={hasActiveJobs ? 'Wait for active answers to finish' : 'Delete all chats'} onClick={() => requestDeleteAllChats(newChat)}>
-                <Trash2 size={12} />
-              </button>
-            )}
             <button
-              className={`focus-mode-button ${focusActive ? 'active' : ''}`}
-              onClick={toggleFocusMode}
-              aria-label={focusActive ? 'Show all panels' : 'Focus mode'}
-              {...tip(focusActive ? 'Exit focus mode and restore sidebar.' : 'Hide sidebar for focused work.')}
+              className="explore-header-new-chat mobile-only-new-chat"
+              onClick={newChat}
+              aria-label="New conversation"
             >
-              {focusActive ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              <Plus size={20} />
             </button>
             <div className="desktop-controls">
               <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
@@ -1980,7 +2211,14 @@ function ExplorePage({
               {message.role === 'assistant' && <div className="assistant-avatar"><Sparkles size={15} /></div>}
               <div className="message-body">
                 <div className="message-head">
-                  <span>{message.role === 'assistant' ? assistantLabel(message.model, message.provider, PROVIDER_LABELS) : 'You'}</span>
+                  <span className="message-head-label">
+                    <span>{message.role === 'assistant' ? assistantLabel(message.model, message.provider, PROVIDER_LABELS) : 'You'}</span>
+                    {message.role === 'assistant' && message.totalTokens > 0 && (
+                      <span className="message-tokens" title={`${message.promptTokens.toLocaleString()} prompt + ${message.completionTokens.toLocaleString()} completion tokens`}>
+                        {message.totalTokens.toLocaleString()} tokens
+                      </span>
+                    )}
+                  </span>
                   <div className="message-actions">
                     {message.id && (
                       <>
@@ -2004,7 +2242,7 @@ function ExplorePage({
                 {message.role === 'assistant' ? (
                   <>
                     <DirectStreamTrace activity={message.activity} model={message.model} provider={message.provider} text={message.text} streaming={message.streaming} />
-                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text || ' '}</ReactMarkdown></div>
+                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{message.text || ' '}</ReactMarkdown></div>
                   </>
                 ) : (
                   <p>{message.text}</p>
@@ -2036,6 +2274,9 @@ function ExplorePage({
               webSearch={activeJob.web_search}
               fileCount={activeJob.file_ids === null ? files.length : (activeJob.file_ids?.length ?? selectedCount)}
               question={activeJob.question}
+              liveLlmHits={activeJob.llm_hits}
+              liveWebQueries={activeJob.web_queries}
+              liveTotalTokens={activeJob.total_tokens}
             />
           )}
         </div>
@@ -2250,6 +2491,7 @@ function SettingsPage({ toast }) {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(null);
   const [customModel, setCustomModel] = useState('');
+  const [freeOnly, setFreeOnly] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2282,6 +2524,12 @@ function SettingsPage({ toast }) {
   const providers = ['ollama', 'groq', 'openai', 'gemini'];
   const providerModels = provider => config?.providers?.[provider] || [];
   const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
+  const modelMeta = config?.model_meta || {};
+  const isFreeModel = item => !!modelMeta[item]?.free;
+  const contextOf = item => modelMeta[item]?.context_length || 0;
+  const visibleModels = (freeOnly ? providerModels(draft.provider).filter(isFreeModel) : providerModels(draft.provider))
+    .slice()
+    .sort((a, b) => contextOf(b) - contextOf(a));
 
   const selectProvider = (provider) => {
     const options = providerModels(provider);
@@ -2362,23 +2610,41 @@ function SettingsPage({ toast }) {
           </div>
         )}
 
-        <h3>Default model</h3>
+        <div className="settings-model-header">
+          <h3>Default model</h3>
+          <button
+            type="button"
+            className={`settings-free-toggle ${freeOnly ? 'active' : ''}`}
+            onClick={() => setFreeOnly(current => !current)}
+            aria-pressed={freeOnly}
+          >
+            Free models only
+          </button>
+        </div>
         <div className="settings-model-list">
           {providerModels(draft.provider).length === 0 && (
             <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
           )}
-          {providerModels(draft.provider).map(item => (
-            <button
-              key={item}
-              type="button"
-              className={`settings-model-chip ${draft.model === item ? 'active' : ''}`}
-              onClick={() => selectModel(item)}
-              title={item}
-            >
-              {item}
-              {draft.model === item && <Check size={12} />}
-            </button>
-          ))}
+          {providerModels(draft.provider).length > 0 && visibleModels.length === 0 && (
+            <p className="settings-empty-note">No free models available for {PROVIDER_LABELS[draft.provider]}.</p>
+          )}
+          {visibleModels.map(item => {
+            const contextLabel = formatContextLength(contextOf(item));
+            return (
+              <button
+                key={item}
+                type="button"
+                className={`settings-model-chip ${draft.model === item ? 'active' : ''}`}
+                onClick={() => selectModel(item)}
+                title={item}
+              >
+                <span className="settings-model-chip-name">{item}</span>
+                {contextLabel && <small className="settings-model-chip-ctx">{contextLabel}</small>}
+                {isFreeModel(item) && <span className="settings-model-chip-free">Free</span>}
+                {draft.model === item && <Check size={12} />}
+              </button>
+            );
+          })}
         </div>
         <div className="settings-custom-model">
           <input
@@ -2523,6 +2789,7 @@ function App() {
   const [confirm, setConfirm] = useState(null);
   const [hubFocusStoreId, setHubFocusStoreId] = useState(null);
   const [exploreChatId, setExploreChatId] = useState(null);
+  const [newChatSignal, setNewChatSignal] = useState(0);
   const [theme, setTheme] = useState(() => readStorage('theme') || 'dark');
 
   const toast = (message, type = 'success') => {
@@ -2730,8 +2997,7 @@ function App() {
   };
 
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
-  const toggleTheme = () => setTheme(current => current === 'dark' ? 'light' : 'dark');
-  const focusActive = sidebarCompact && historyCollapsed && filePanelCollapsed;
+  const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
 
   const openSecretChat = async () => {
     try {
@@ -2739,14 +3005,26 @@ function App() {
       setMobileOpen(false);
     } catch {}
   };
-  const toggleFocusMode = () => {
-    const nextFocus = !focusActive;
-    navigate('explore');
-    setSidebarCompact(nextFocus);
-    setHistoryCollapsed(nextFocus);
-    setFilePanelCollapsed(nextFocus);
-    setMobileOpen(false);
-  };
+
+  const requestDeleteChat = (chat, onDeleted) => setConfirm({
+    title: 'Delete chat?',
+    message: `"${chat.title}" will be permanently removed.`,
+    onConfirm: async () => {
+      await deleteChat(chat.id);
+      if (exploreChatId === chat.id) setExploreChatId(null);
+      onDeleted?.();
+    },
+  });
+
+  const requestDeleteAllChats = onDeleted => setConfirm({
+    title: 'Delete all chats?',
+    message: `All ${chats.length} conversations and their answers will be permanently removed.`,
+    confirmLabel: 'Delete all',
+    onConfirm: async () => {
+      await deleteAllChats();
+      onDeleted?.();
+    },
+  });
 
   if (isSharedLink && page === 'secret-chat' && secretChatToken) {
     return <SecretChatStandalone token={secretChatToken} />;
@@ -2763,23 +3041,18 @@ function App() {
         readyCount={readyCount}
         compact={sidebarCompact}
         toggleCompact={() => setSidebarCompact(value => !value)}
-        chats={chats}
         files={files}
-        jobs={jobs}
-        activeChat={exploreChatId}
         historyCollapsed={historyCollapsed}
         setHistoryCollapsed={setHistoryCollapsed}
-        onOpenChat={chatId => {
-          navigate('explore');
-          setExploreChatId(chatId);
-        }}
         onOpenFile={file => navigate('hub', { storeId: file.store_id })}
         onOpenSecretChat={openSecretChat}
         onNewChat={() => {
           setExploreChatId(null);
+          setNewChatSignal(value => value + 1);
           navigate('explore');
         }}
-        onDeleteChat={deleteChat}
+        theme={theme}
+        setTheme={setTheme}
       />
       <main>
         {!['explore', 'ticket-analysis'].includes(page) && (
@@ -2790,8 +3063,6 @@ function App() {
             openCreate={() => setCreateOpen(true)}
             openCommand={() => setCommandOpen(true)}
             page={page}
-            theme={theme}
-            toggleTheme={toggleTheme}
           />
         )}
         {apiError && (
@@ -2840,28 +3111,12 @@ function App() {
             markJobSeen={markJobSeen}
             initialChatId={exploreChatId}
             clearInitialChat={() => setExploreChatId(null)}
+            newChatSignal={newChatSignal}
             onOpenStore={storeId => navigate('hub', { storeId })}
             toast={toast}
-            requestDeleteChat={(chat, onDeleted) => setConfirm({
-              title: 'Delete chat?',
-              message: `"${chat.title}" will be permanently removed.`,
-              onConfirm: async () => {
-                await deleteChat(chat.id);
-                if (exploreChatId === chat.id) setExploreChatId(null);
-                onDeleted?.();
-              },
-            })}
-            requestDeleteAllChats={onDeleted => setConfirm({
-              title: 'Delete all chats?',
-              message: `All ${chats.length} conversations and their answers will be permanently removed.`,
-              confirmLabel: 'Delete all',
-              onConfirm: async () => {
-                await deleteAllChats();
-                onDeleted?.();
-              },
-            })}
-            focusActive={focusActive}
-            toggleFocusMode={toggleFocusMode}
+            requestDeleteChat={requestDeleteChat}
+            requestDeleteAllChats={requestDeleteAllChats}
+            hasActiveJobs={hasActiveJobs}
             refreshJobs={refreshJobs}
             openMenu={() => setMobileOpen(true)}
           />

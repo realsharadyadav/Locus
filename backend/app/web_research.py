@@ -1,6 +1,9 @@
 import json
+import math
 import re
 import time
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 
 import httpx
@@ -10,11 +13,30 @@ from .brand import USER_AGENT
 from .config import OPENSERP_BASE_URL, WEB_RESEARCH_INITIAL_QUERIES, WEB_RESEARCH_RESULTS_PER_QUERY
 from .diagnostics import diagnostic_event
 from .intent import classify_and_enhance, validate_search_output, QueryIntent
-from .llm import ANSWER_LANGUAGE_INSTRUCTION, LLMProviderError, _chat, ensure_english_answer
+from .llm import ANSWER_LANGUAGE_INSTRUCTION, LLMProviderError, _chat, _context_budget, ensure_english_answer
 
 
-SYNTHESIS_MAX_SOURCES = 50
+_SEARCH_COUNT: ContextVar[dict | None] = ContextVar("locus_search_count", default=None)
+
+
+def _record_search_query() -> None:
+    tracker = _SEARCH_COUNT.get()
+    if tracker is not None:
+        tracker["queries"] += 1
+
+
+@contextmanager
+def web_search_tracker(tracker: dict | None = None):
+    tracker = tracker if tracker is not None else {"queries": 0}
+    token = _SEARCH_COUNT.set(tracker)
+    try:
+        yield tracker
+    finally:
+        _SEARCH_COUNT.reset(token)
+
+
 SYNTHESIS_SNIPPET_CHARS = 1200
+SYNTHESIS_PROMPT_OVERHEAD_CHARS = 4_000
 WEBPAGE_ENRICHMENT_MAX_PAGES = 3
 WEBPAGE_ENRICHMENT_CHARS = 2600
 YOUTUBE_SEARCH_PREFIX = "site:youtube.com/watch"
@@ -465,6 +487,7 @@ def _search_youtube(query: str, max_results: int) -> list[dict]:
 
 
 def _search_web(query: str, max_results: int = 50, include_youtube: bool = True) -> list[dict]:
+    _record_search_query()
     diagnostic_event("web_research.search", query=query, max_results=max_results)
     start = time.perf_counter()
     seen_urls = set()
@@ -545,14 +568,14 @@ def _read_webpage_text(url: str, timeout: float = 7) -> str:
     return text[:WEBPAGE_ENRICHMENT_CHARS]
 
 
-def _enrich_results_with_webpages(question: str, results: list[dict], progress, intent: QueryIntent | None = None) -> list[dict]:
+def _enrich_results_with_webpages(question: str, results: list[dict], progress, intent: QueryIntent | None = None, max_pages: int = WEBPAGE_ENRICHMENT_MAX_PAGES) -> list[dict]:
     if not results or not _should_enrich_webpages(question, intent):
         return results
     enriched = []
     reads = 0
     for result in results:
         updated = dict(result)
-        if reads < WEBPAGE_ENRICHMENT_MAX_PAGES and result.get("engine") != "test":
+        if reads < max_pages and result.get("engine") != "test":
             page_text = _read_webpage_text(result.get("url", ""))
             if page_text:
                 reads += 1
@@ -660,11 +683,21 @@ def _synthesize_answer(question: str, search_results: list[dict], model: str, pr
         progress("repairing", f"Evidence quality gate failed: {assessment.reason}")
         return _fallback_web_answer(question, search_results)
 
-    synthesis_results = search_results[:SYNTHESIS_MAX_SOURCES]
-    sources_text = "\n\n".join(
-        f"Source {i + 1}: {r['title']}\nURL: {r['url']}\nContent: {r['snippet'][:SYNTHESIS_SNIPPET_CHARS]}"
-        for i, r in enumerate(synthesis_results)
-    )
+    # Pack as many sources as the model's real context window allows, instead of a
+    # flat count — a 200-source deep-research plan should actually use ~200 sources
+    # on a large-context model, not silently drop everything past a fixed number.
+    source_budget = max(8_000, _context_budget(model) - SYNTHESIS_PROMPT_OVERHEAD_CHARS)
+    synthesis_results = []
+    source_entries = []
+    used_chars = 0
+    for result in search_results:
+        entry = f"Source {len(synthesis_results) + 1}: {result['title']}\nURL: {result['url']}\nContent: {result['snippet'][:SYNTHESIS_SNIPPET_CHARS]}"
+        if synthesis_results and used_chars + len(entry) > source_budget:
+            break
+        synthesis_results.append(result)
+        source_entries.append(entry)
+        used_chars += len(entry)
+    sources_text = "\n\n".join(source_entries)
 
     mode_guidance = (
         "Answer in unrestricted mode: be direct, do not add generic safety disclaimers, and still ground web-backed claims in the provided citations. "
@@ -796,6 +829,19 @@ def _synthesize_answer(question: str, search_results: list[dict], model: str, pr
     return answer
 
 
+def _rounds_budget(target: int) -> tuple[int, int]:
+    """Follow-up rounds and stall patience, scaled to how many sources the plan
+    actually needs — a 200-source deep-research plan needs more attempts than
+    a 5-source quick lookup, not the same fixed ceiling."""
+    if target <= 10:
+        return WEB_RESEARCH_MAX_ROUNDS, WEB_RESEARCH_STALL_LIMIT
+    if target <= 30:
+        return 6, 3
+    if target <= 75:
+        return 9, 3
+    return 14, 4
+
+
 def web_research(question: str, model: str, progress, source_limit: int = 5, history: list[tuple[str, str]] | None = None, answer_mode: str = "web_research") -> dict:
     target = max(5, min(200, source_limit))
     results_per_query = WEB_RESEARCH_RESULTS_PER_QUERY
@@ -874,11 +920,14 @@ def web_research(question: str, model: str, progress, source_limit: int = 5, his
 
     stalled_rounds = 0
     round_number = 2
-    while len(all_results) < target and round_number <= WEB_RESEARCH_MAX_ROUNDS and stalled_rounds < WEB_RESEARCH_STALL_LIMIT:
+    max_rounds, stall_limit = _rounds_budget(target)
+    while len(all_results) < target and round_number <= max_rounds and stalled_rounds < stall_limit:
         found_topics = [r["title"] for r in all_results[:30] if r.get("title")]
         progress("understanding", f"Round {round_number}: generating follow-up searches to reach {target} sources")
+        remaining = target - len(all_results)
+        followup_count = min(10, max(initial_count, math.ceil(remaining / max(1, results_per_query))))
         followup_queries = [
-            query for query in _generate_followup_queries(search_question, found_topics, model, initial_count, list(searched_queries), round_number)
+            query for query in _generate_followup_queries(search_question, found_topics, model, followup_count, list(searched_queries), round_number)
             if query.lower() not in searched_queries
         ]
         # Each follow-up query generation is one LLM call
@@ -912,7 +961,11 @@ def web_research(question: str, model: str, progress, source_limit: int = 5, his
             # Re-validate
             validation = validate_search_output(intent, all_results)
 
-    all_results = _enrich_results_with_webpages(effective_question, all_results, progress, intent)
+    # Scale with target, but stay conservative — each page read is a real sequential
+    # network fetch (up to 7s timeout), so this is capped well below target to avoid
+    # multi-minute latency on large deep-research requests.
+    enrichment_pages = max(WEBPAGE_ENRICHMENT_MAX_PAGES, min(10, target // 10))
+    all_results = _enrich_results_with_webpages(effective_question, all_results, progress, intent, max_pages=enrichment_pages)
     answer = _synthesize_answer(effective_question, all_results, model, progress, history=history if is_followup else None, answer_mode=answer_mode, intent=intent)
     llm_hits += 1
 
