@@ -19,7 +19,6 @@ services:
   - type: web
     name: locus-frontend
     runtime: static
-    plan: free
     buildCommand: npm run build
     staticPublishPath: ./dist
     envVars:
