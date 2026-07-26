@@ -3550,7 +3550,7 @@ function App() {
           />
         )}
         {page === 'ticket-analysis' && (
-          <TicketAnalysisPage files={files} />
+          <TicketAnalysisPage files={files} openMenu={() => setMobileOpen(true)} />
         )}
         {page === 'secret-chat' && secretChatToken && (
           <SecretChatPage

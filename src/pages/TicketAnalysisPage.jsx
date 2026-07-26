@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertCircle, BarChart3, Brain, CheckCircle, ChevronDown,
   Clock, Database, Download, FileText, GitBranch, History, Loader2,
-  Network, Play, RefreshCw, Trash2,
+  Menu, Network, Play, RefreshCw, Trash2,
 } from 'lucide-react';
 import { api } from '../api';
 import './TicketAnalysisPage.css';
@@ -143,7 +143,7 @@ function editableTaxonomyFromOkf(okfTaxonomy) {
 
 const STAGE_KEYS = ['intake', 'taxonomy', 'discovery', 'llm', 'consolidation', 'output'];
 
-function TicketAnalysisPage({ files }) {
+function TicketAnalysisPage({ files, openMenu }) {
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [result, setResult] = useState(null);
@@ -341,6 +341,9 @@ function TicketAnalysisPage({ files }) {
     <div className="ticket-analysis-page">
       <nav className="ti-nav">
         <div className="ti-nav-inner">
+          <button className="menu-button icon-button ti-menu-button" onClick={openMenu} aria-label="Open menu">
+            <Menu size={20} />
+          </button>
           <div className="ti-brand"><span className="dot" /> Patterns</div>
           <div className="ti-nav-links">
             <a href="#pipeline">Pipeline</a>
