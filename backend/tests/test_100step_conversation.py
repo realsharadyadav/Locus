@@ -68,7 +68,7 @@ def mock_llm(monkeypatch):
     )
     monkeypatch.setattr(
         "backend.app.main.answer_planned_question",
-        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None: ("Test answer", model),
+        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None, on_token=None: ("Test answer", model),
     )
     monkeypatch.setattr(
         "backend.app.main.extract_shared_evidence",

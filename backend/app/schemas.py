@@ -121,6 +121,17 @@ class ChatResponse(BaseModel):
     total_tokens: int = 0
 
 
+class SuggestionsRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=8000)
+    answer: str = Field(min_length=1, max_length=20000)
+    model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
+    provider: Literal["ollama", "groq", "openai", "gemini"] = Field(default_factory=llm_provider)
+
+
+class SuggestionsResponse(BaseModel):
+    suggestions: list[str] = []
+
+
 class ChatSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -170,6 +181,7 @@ class ChatJobRead(BaseModel):
     completion_tokens: int = 0
     total_tokens: int = 0
     result: dict | None = None
+    partial_answer: str | None = None
     error: str | None = None
     seen: bool
     created_at: datetime

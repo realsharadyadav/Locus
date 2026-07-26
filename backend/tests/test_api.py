@@ -41,7 +41,7 @@ def chat(client, **payload):
 def mock_quality_layer(monkeypatch):
     monkeypatch.setattr("backend.app.main.enhance_question", lambda question, history, model: {"enhanced_question": question, "subquestions": [], "answer_format": "Clear answer", "supporting_details": [], "visualization": "none", "completeness_criteria": ["Answer the question"], "requires_full_relevant_files": False, "aggregation_operation": "none", "entity_type": None})
     monkeypatch.setattr("backend.app.main.verify_response", lambda question, answer, plan, model, sources=None: {"complete": True, "missing": [], "quality_score": 95})
-    monkeypatch.setattr("backend.app.main.answer_planned_question", lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None: ("Test answer", model))
+    monkeypatch.setattr("backend.app.main.answer_planned_question", lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None: ("Test answer", model))
     monkeypatch.setattr("backend.app.main.extract_shared_evidence", lambda question, requirements, documents, model, notify=lambda detail: None: documents)
 
 
@@ -309,7 +309,7 @@ def test_truncate_chat_from_message_removes_later_messages_and_jobs():
 def test_upload_file_and_chat_from_its_content(monkeypatch):
     monkeypatch.setattr(
         "backend.app.main.answer_planned_question",
-        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None: (f"Grounded answer from [{evidence[0][0]}]", "test-model"),
+        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None: (f"Grounded answer from [{evidence[0][0]}]", "test-model"),
     )
     with TestClient(app) as client:
         upload = client.post(
@@ -338,7 +338,7 @@ def test_delete_store_and_its_files():
 def test_general_question_does_not_require_file_context(monkeypatch):
     captured = {}
 
-    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None):
+    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None):
         captured["sources"] = evidence
         return "```python\nsum(numbers)\n```", model or "test-model"
 
@@ -352,7 +352,7 @@ def test_general_question_does_not_require_file_context(monkeypatch):
 def test_chat_only_searches_selected_files(monkeypatch):
     captured = {}
 
-    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None):
+    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None):
         captured["evidence"] = evidence
         return "Selected file answer", model
 
@@ -441,7 +441,7 @@ def test_unrestricted_direct_chat_stream_uses_expert_mode(monkeypatch):
 def test_thinking_mode_with_empty_selection_uses_no_files(monkeypatch):
     captured = {}
 
-    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None):
+    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None):
         captured["evidence"] = evidence
         return "General answer", model
 
@@ -1252,7 +1252,7 @@ def test_internal_plan_is_removed_from_final_answer():
 def test_planned_requirements_run_as_separate_calls_before_merge(monkeypatch):
     calls = []
 
-    def fake_generate(question, sources, history=None, model=None, allow_general_knowledge=True, reasoning_mode="light", guidance=""):
+    def fake_generate(question, sources, history=None, model=None, allow_general_knowledge=True, reasoning_mode="light", guidance="", on_token=None):
         calls.append({"question": question, "sources": sources})
         return f"Finding for {question}", model
 
@@ -1260,7 +1260,8 @@ def test_planned_requirements_run_as_separate_calls_before_merge(monkeypatch):
     monkeypatch.setattr("backend.app.llm._structured_entities", lambda *args: {"entity_type": "company", "count": 2, "entities": [{"name": "A"}, {"name": "B"}]})
     plan = {"enhanced_question": "Count employers", "subquestions": ["List employers", "Find roles", "Find dates"], "aggregation_operation": "count_unique", "entity_type": "company"}
     answer_planned_question("How many employers?", plan, [("resume.pdf", "evidence")], [], "test-model", False, "Use a table")
-    assert [call["question"] for call in calls[:3]] == plan["subquestions"]
+    # Subquestion calls now run concurrently, so they can land in any order relative to each other.
+    assert {call["question"] for call in calls[:3]} == set(plan["subquestions"])
     assert calls[-1]["question"] == "How many employers?"
     assert len(calls) == 4
 

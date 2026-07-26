@@ -1,7 +1,9 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeSlug from 'rehype-slug';
 import {
   Activity, AlertTriangle, ArrowLeft, ArrowRight, BarChart3, BookOpen, BrainCircuit, Check, CircleCheck,
   Code2, Compass, Copy, Cpu, Database, FileText, Folder, History, Home, Info, KeyRound, Layers3,
@@ -9,6 +11,7 @@ import {
   RotateCcw, SlidersHorizontal, Sparkles, Square, Terminal, Trash2, Upload, Download,
   WandSparkles, X, Zap, ChevronDown, ChevronRight, Globe, FilePlus2,
   LayoutDashboard, Library, MessagesSquare, ChartNoAxesCombined, Fingerprint, Sun, Moon,
+  List, Maximize2,
 } from 'lucide-react';
 import './styles.css';
 import { api } from './api';
@@ -990,14 +993,306 @@ const CODE_FILE_EXTENSIONS = {
   go: 'go', rust: 'rs', rb: 'rb', ruby: 'rb', php: 'php', markdown: 'md', md: 'md',
 };
 
-function CodeBlock({ className, children }) {
+let mermaidModulePromise = null;
+function loadMermaid() {
+  if (!mermaidModulePromise) mermaidModulePromise = import('mermaid').then(module => module.default);
+  return mermaidModulePromise;
+}
+
+function readMermaidTheme() {
+  return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'neutral';
+}
+
+// LLMs frequently emit unquoted node labels like Ingress[Ingress Controller (NGINX/Traefik)] —
+// Mermaid's grammar treats "(" right after "[" as the start of a different node shape, so the
+// parser breaks on any punctuation inside a plain [label]. Auto-quoting is a safe, mechanical fix:
+// a quoted label accepts arbitrary text, so this can only turn an invalid diagram valid, never the
+// reverse. Only touched as a retry after the model's original syntax has already failed to render.
+function autoQuoteMermaidLabels(code) {
+  return code.replace(/([A-Za-z_][\w-]*)\[([^[\]]*)\]/g, (match, id, content) => {
+    const trimmed = content.trim();
+    if (!trimmed || trimmed.startsWith('"')) return match;
+    if (trimmed.startsWith('(') && trimmed.endsWith(')')) return match; // [(cylinder shape)]
+    if (!/[()/\\{}|#;]/.test(trimmed)) return match;
+    return `${id}["${trimmed.replace(/"/g, "'")}"]`;
+  });
+}
+
+function renameWholeWordOutsideQuotes(line, oldId, newId) {
+  const quoted = [];
+  const withoutQuotes = line.replace(/"[^"]*"/g, match => {
+    quoted.push(match);
+    return `\x00${quoted.length - 1}\x00`;
+  });
+  const renamed = withoutQuotes.replace(new RegExp(`\\b${oldId}\\b`, 'g'), newId);
+  return renamed.replace(/\x00(\d+)\x00/g, (_, index) => quoted[Number(index)]);
+}
+
+// A subgraph id is itself a graph node, so a node inside it declared with the same id
+// ("subgraph API[...]" containing "API[...]") makes that node its own parent — Mermaid
+// rejects this as a cycle. Detect subgraph/node id collisions and rename the inner node,
+// rewriting every bare reference to it (edges included) but never touching quoted label text
+// or the subgraph's own id.
+function autoFixMermaidSubgraphCycles(code) {
+  const lines = code.split('\n');
+  const subgraphDeclareRegex = /^\s*subgraph\s+([A-Za-z_][\w-]*)/;
+  const nodeDeclareRegex = /^\s*([A-Za-z_][\w-]*)\s*[[({]/;
+  const stack = [];
+  const renameMap = new Map();
+
+  for (const line of lines) {
+    const subgraphMatch = line.match(subgraphDeclareRegex);
+    if (subgraphMatch) {
+      stack.push(subgraphMatch[1]);
+      continue;
+    }
+    if (/^\s*end\s*$/.test(line)) {
+      stack.pop();
+      continue;
+    }
+    const nodeMatch = line.match(nodeDeclareRegex);
+    if (nodeMatch && stack.includes(nodeMatch[1]) && !renameMap.has(nodeMatch[1])) {
+      renameMap.set(nodeMatch[1], `${nodeMatch[1]}Node`);
+    }
+  }
+
+  if (renameMap.size === 0) return code;
+
+  return lines
+    .map(line => {
+      const subgraphMatch = line.match(subgraphDeclareRegex);
+      let result = line;
+      for (const [oldId, newId] of renameMap) {
+        if (subgraphMatch && subgraphMatch[1] === oldId) continue; // keep the subgraph's own id
+        result = renameWholeWordOutsideQuotes(result, oldId, newId);
+      }
+      return result;
+    })
+    .join('\n');
+}
+
+function repairMermaidCode(code) {
+  return autoFixMermaidSubgraphCycles(autoQuoteMermaidLabels(code));
+}
+
+let mermaidDiagramSeq = 0;
+
+function useMermaidRender(code) {
+  const [result, setResult] = useState({ svg: null, error: null });
+  const [themeTick, setThemeTick] = useState(0);
+  const idRef = useRef(null);
+  if (!idRef.current) idRef.current = `mermaid-diagram-${++mermaidDiagramSeq}`;
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setThemeTick(tick => tick + 1));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMermaid()
+      .then(async mermaid => {
+        if (cancelled) return null;
+        mermaid.initialize({ startOnLoad: false, theme: readMermaidTheme(), securityLevel: 'strict', fontFamily: 'inherit' });
+        try {
+          return await mermaid.render(idRef.current, code);
+        } catch (firstError) {
+          const repaired = repairMermaidCode(code);
+          if (repaired === code) throw firstError;
+          try {
+            return await mermaid.render(`${idRef.current}-repaired`, repaired);
+          } catch {
+            throw firstError;
+          }
+        }
+      })
+      .then(rendered => { if (!cancelled && rendered) setResult({ svg: rendered.svg, error: null }); })
+      .catch(error => { if (!cancelled) setResult({ svg: null, error: error?.message || 'Invalid diagram syntax' }); });
+    return () => { cancelled = true; };
+  }, [code, themeTick]);
+
+  return result;
+}
+
+function DiagramLightbox({ svg, onClose }) {
+  const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+  const dragRef = useRef(null);
+
+  useEffect(() => {
+    const handleKey = event => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  const handleWheel = event => {
+    event.preventDefault();
+    setTransform(current => ({
+      ...current,
+      scale: Math.min(4, Math.max(0.5, current.scale * (event.deltaY < 0 ? 1.12 : 0.89))),
+    }));
+  };
+
+  const handlePointerDown = event => {
+    dragRef.current = { startX: event.clientX, startY: event.clientY, originX: transform.x, originY: transform.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const handlePointerMove = event => {
+    if (!dragRef.current) return;
+    const { startX, startY, originX, originY } = dragRef.current;
+    setTransform(current => ({ ...current, x: originX + (event.clientX - startX), y: originY + (event.clientY - startY) }));
+  };
+  const stopDrag = () => { dragRef.current = null; };
+
+  return createPortal(
+    <div className="diagram-lightbox" onClick={onClose}>
+      <div className="diagram-lightbox-toolbar" onClick={event => event.stopPropagation()}>
+        <button type="button" className="diagram-lightbox-action" onClick={() => setTransform({ scale: 1, x: 0, y: 0 })} title="Reset zoom">
+          <RotateCcw size={15} />
+        </button>
+        <button type="button" className="diagram-lightbox-action" onClick={onClose} title="Close">
+          <X size={17} />
+        </button>
+      </div>
+      <div
+        className="diagram-lightbox-canvas"
+        onClick={event => event.stopPropagation()}
+        onWheel={handleWheel}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDrag}
+        onPointerLeave={stopDrag}
+        onDoubleClick={() => setTransform({ scale: 1, x: 0, y: 0 })}
+      >
+        <div
+          className="diagram-lightbox-content"
+          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }}
+          dangerouslySetInnerHTML={{ __html: svg }}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+function MermaidBlock({ code }) {
+  const [copied, setCopied] = useState(false);
+  const [showSource, setShowSource] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  const { svg, error } = useMermaidRender(code);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  };
+
+  return (
+    <div className="code-block mermaid-block">
+      <div className="code-block-toolbar">
+        <span className="code-block-lang">diagram</span>
+        <div className="code-block-actions">
+          {svg && !showSource && (
+            <button type="button" className="code-block-action" onClick={() => setZoomed(true)} title="Expand diagram">
+              <Maximize2 size={12} />
+            </button>
+          )}
+          <button type="button" className="code-block-action" onClick={() => setShowSource(value => !value)} title={showSource ? 'Show diagram' : 'View source'}>
+            <Code2 size={12} />
+          </button>
+          <button type="button" className="code-block-action" onClick={handleCopy} title="Copy source">
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+          </button>
+        </div>
+      </div>
+      {showSource ? (
+        <pre><code>{code}</code></pre>
+      ) : error ? (
+        <div className="mermaid-error">
+          <p className="mermaid-error-message">Couldn't render this diagram: {error}</p>
+          <pre><code>{code}</code></pre>
+        </div>
+      ) : svg ? (
+        <div className="mermaid-canvas mermaid-canvas-zoomable" onClick={() => setZoomed(true)} dangerouslySetInnerHTML={{ __html: svg }} />
+      ) : (
+        <div className="mermaid-loading">Rendering diagram…</div>
+      )}
+      {zoomed && svg && <DiagramLightbox svg={svg} onClose={() => setZoomed(false)} />}
+    </div>
+  );
+}
+
+let highlighterPromise = null;
+function loadHighlighter() {
+  if (!highlighterPromise) {
+    highlighterPromise = Promise.all([
+      import('highlight.js'),
+      import('highlight.js/styles/atom-one-dark.css'),
+    ]).then(([module]) => module.default);
+  }
+  return highlighterPromise;
+}
+
+const HLJS_LANGUAGE_OVERRIDES = { jsx: 'javascript', tsx: 'typescript', 'c++': 'cpp', golang: 'go', vue: 'xml' };
+
+function useHighlightedCode(code, language) {
+  const [html, setHtml] = useState(null);
+  useEffect(() => {
+    if (!code) {
+      setHtml(null);
+      return;
+    }
+    let cancelled = false;
+    loadHighlighter()
+      .then(hljs => {
+        if (cancelled) return;
+        const resolved = HLJS_LANGUAGE_OVERRIDES[language] || language;
+        const result = hljs.getLanguage(resolved)
+          ? hljs.highlight(code, { language: resolved, ignoreIllegals: true })
+          : hljs.highlightAuto(code);
+        setHtml(result.value);
+      })
+      .catch(() => { if (!cancelled) setHtml(null); });
+    return () => { cancelled = true; };
+  }, [code, language]);
+  return html;
+}
+
+const LANGUAGE_ACCENT_COLORS = {
+  javascript: '#f0db4f', js: '#f0db4f', jsx: '#f0db4f',
+  typescript: '#3178c6', ts: '#3178c6', tsx: '#3178c6',
+  python: '#ffd43b', py: '#ffd43b',
+  json: '#8bc34a', css: '#42a5f5', scss: '#c06ed6',
+  bash: '#8bc9a8', sh: '#8bc9a8', shell: '#8bc9a8', zsh: '#8bc9a8',
+  yaml: '#e08ec2', yml: '#e08ec2', sql: '#ff9e64',
+  java: '#ea9d5a', c: '#7aa2f7', cpp: '#7aa2f7', 'c++': '#7aa2f7',
+  go: '#5bc8af', rust: '#dd8866', ruby: '#e0605b', php: '#8892c7',
+  html: '#e0714f', xml: '#e0714f', markdown: '#9aa5ce', md: '#9aa5ce',
+};
+
+function CodeBlock({ className, children, streaming }) {
   const [copied, setCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || '');
+  const language = match ? match[1].toLowerCase() : '';
+  const codeText = String(children).replace(/\n$/, '');
+  const isMermaid = language === 'mermaid';
+  const highlighted = useHighlightedCode(match && !isMermaid ? codeText : '', language);
+
   if (!match) {
     return <code className={className}>{children}</code>;
   }
-  const language = match[1].toLowerCase();
-  const codeText = String(children).replace(/\n$/, '');
+
+  if (isMermaid) {
+    if (streaming) {
+      return (
+        <div className="code-block mermaid-block mermaid-block-pending">
+          <div className="code-block-toolbar"><span className="code-block-lang">diagram</span></div>
+          <pre><code className={className}>{children}</code></pre>
+        </div>
+      );
+    }
+    return <MermaidBlock code={codeText} />;
+  }
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(codeText);
@@ -1021,7 +1316,10 @@ function CodeBlock({ className, children }) {
   return (
     <div className="code-block">
       <div className="code-block-toolbar">
-        <span className="code-block-lang">{language}</span>
+        <span className="code-block-lang">
+          <span className="code-block-lang-dot" style={{ background: LANGUAGE_ACCENT_COLORS[language] || '#8b95a5' }} aria-hidden="true" />
+          {language}
+        </span>
         <div className="code-block-actions">
           <button type="button" className="code-block-action" onClick={handleCopy} title="Copy code">
             {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -1031,7 +1329,66 @@ function CodeBlock({ className, children }) {
           </button>
         </div>
       </div>
-      <pre><code className={className}>{children}</code></pre>
+      {highlighted != null ? (
+        <pre><code className={`hljs language-${language}`} dangerouslySetInnerHTML={{ __html: highlighted }} /></pre>
+      ) : (
+        <pre><code className={className}>{children}</code></pre>
+      )}
+    </div>
+  );
+}
+
+function AnswerToc({ headings }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (headings.length < 3) return null;
+
+  const jumpTo = id => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <div className="answer-toc">
+      <button type="button" className="answer-toc-toggle" onClick={() => setCollapsed(value => !value)}>
+        <List size={13} />
+        <span>Contents · {headings.length}</span>
+        <ChevronDown size={13} className={`answer-toc-chevron ${collapsed ? 'collapsed' : ''}`} />
+      </button>
+      {!collapsed && (
+        <ul className="answer-toc-list">
+          {headings.map(heading => (
+            <li key={heading.id} className={`answer-toc-item level-${heading.level}`}>
+              <button type="button" onClick={() => jumpTo(heading.id)}>{heading.text}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function AssistantMarkdown({ text, streaming, messageKey }) {
+  const containerRef = useRef(null);
+  const [headings, setHeadings] = useState([]);
+  // components must stay referentially stable across re-renders (e.g. from chat-job
+  // polling) — react-markdown remounts the code renderer whenever its identity changes,
+  // which would restart any in-flight Mermaid render before it ever resolves.
+  const components = useMemo(
+    () => ({ code: props => <CodeBlock {...props} streaming={streaming} /> }),
+    [streaming],
+  );
+  const rehypePlugins = useMemo(() => [[rehypeSlug, { prefix: `md-${messageKey}-` }]], [messageKey]);
+
+  useLayoutEffect(() => {
+    if (streaming || !containerRef.current) return;
+    const nodes = containerRef.current.querySelectorAll('h1[id], h2[id], h3[id]');
+    setHeadings(Array.from(nodes).map(node => ({ id: node.id, level: Number(node.tagName[1]), text: node.textContent })));
+  }, [streaming, text]);
+
+  return (
+    <div ref={containerRef}>
+      {!streaming && <AnswerToc headings={headings} />}
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={rehypePlugins} components={components}>{text || ' '}</ReactMarkdown>
     </div>
   );
 }
@@ -1470,6 +1827,7 @@ function ExplorePage({
   const [directStreaming, setDirectStreaming] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const threadRef = useRef(null);
   const composerRef = useRef(null);
   const loadedCompletedJob = useRef(null);
@@ -1713,6 +2071,30 @@ function ExplorePage({
     });
   }, [jobs, activeChat, markJobSeen]);
 
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.text) {
+      setFollowups(current => (current.key === null ? current : { key: null, items: [], loading: false }));
+      return;
+    }
+    const key = last.id ?? last.streamId ?? messages.length - 1;
+    if (followups.key === key) return;
+    const priorUser = [...messages.slice(0, messages.length - 1)].reverse().find(item => item.role === 'user');
+    if (!priorUser) {
+      setFollowups({ key, items: [], loading: false });
+      return;
+    }
+    setFollowups({ key, items: [], loading: true });
+    api.chatSuggestions(priorUser.text, last.text, provider, model)
+      .then(result => setFollowups(current => (current.key === key ? { key, items: result.suggestions || [], loading: false } : current)))
+      .catch(() => setFollowups(current => (current.key === key ? { key, items: [], loading: false } : current)));
+  }, [messages]);
+
+  const askSuggestion = (text) => {
+    setFollowups({ key: null, items: [], loading: false });
+    ask(text);
+  };
+
   const newChat = () => {
     stopReveal();
     setActiveChat(null);
@@ -1941,13 +2323,18 @@ function ExplorePage({
 
   const askAgain = async (message, index) => {
     if (thinking) return;
-    const promptMessage = message.role === 'user'
-      ? message
-      : [...messages.slice(0, index)].reverse().find(item => item.role === 'user');
-    if (!promptMessage) return;
+    let promptMessage = message;
+    let promptIndex = index;
+    if (message.role !== 'user') {
+      const userEntry = [...messages.slice(0, index).entries()].reverse().find(([, item]) => item.role === 'user');
+      if (!userEntry) return;
+      [promptIndex, promptMessage] = userEntry;
+    }
     try {
       if (promptMessage.id && !String(promptMessage.id).startsWith('temp-')) {
         await truncateFromMessage(promptMessage);
+      } else {
+        setMessages(current => current.slice(0, promptIndex));
       }
       await ask(promptMessage.text);
     } catch (error) {
@@ -2049,9 +2436,28 @@ function ExplorePage({
 
   const copyConversationId = async () => {
     if (!activeChat) return;
-    await navigator.clipboard.writeText(String(activeChat));
+    const chat = chats.find(item => item.id === activeChat);
+    const title = chat?.title || 'Untitled conversation';
+    const statsParts = [
+      `${messages.length} message${messages.length === 1 ? '' : 's'}`,
+      model ? `${PROVIDER_LABELS[provider] || provider}/${model}` : null,
+      sessionTokens > 0 ? `${sessionTokens.toLocaleString()} tokens` : null,
+    ].filter(Boolean);
+    const recent = messages.filter(message => message.text).slice(-6);
+    const omitted = messages.filter(message => message.text).length - recent.length;
+    const transcript = recent
+      .map(message => `${message.role === 'user' ? 'Q' : 'A'}: ${message.text.length > 600 ? `${message.text.slice(0, 600)}…` : message.text}`)
+      .join('\n\n');
+    const payload = [
+      `Locus conversation #${activeChat} — "${title}"`,
+      statsParts.join(' · '),
+      omitted > 0 ? `(${omitted} earlier message${omitted === 1 ? '' : 's'} omitted)` : null,
+      '',
+      transcript,
+    ].filter(line => line !== null).join('\n');
+    await navigator.clipboard.writeText(payload);
     setCopiedConvId(true);
-    toast('Conversation ID copied', 'success');
+    toast('Conversation context copied', 'success');
     window.setTimeout(() => setCopiedConvId(false), 1500);
   };
 
@@ -2132,9 +2538,9 @@ function ExplorePage({
                 <button
                   className="copy-conv-id-button"
                   onClick={copyConversationId}
-                  aria-label="Copy conversation ID"
-                  title={`Copy conversation #${activeChat}`}
-                  {...tip('Copy this conversation\'s ID so you can refer to it elsewhere.')}
+                  aria-label="Copy conversation context"
+                  title={`Copy conversation #${activeChat} with context`}
+                  {...tip('Copy this conversation\'s title, stats, and recent messages so it makes sense wherever you paste it.')}
                 >
                   {copiedConvId ? <Check size={14} /> : <Copy size={14} />}
                   <span>{activeChat}</span>
@@ -2242,7 +2648,7 @@ function ExplorePage({
                 {message.role === 'assistant' ? (
                   <>
                     <DirectStreamTrace activity={message.activity} model={message.model} provider={message.provider} text={message.text} streaming={message.streaming} />
-                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ code: CodeBlock }}>{message.text || ' '}</ReactMarkdown></div>
+                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><AssistantMarkdown text={message.text} streaming={message.streaming} messageKey={message.id || message.streamId || index} /></div>
                   </>
                 ) : (
                   <p>{message.text}</p>
@@ -2263,6 +2669,18 @@ function ExplorePage({
               </div>
             </div>
           ))}
+          {!thinking && (followups.loading || followups.items.length > 0) && (
+            <div className="chat-suggestions" aria-label="Suggested follow-up questions">
+              {followups.loading
+                ? Array.from({ length: 3 }).map((_, index) => <span className="chat-suggestion-skeleton" key={index} />)
+                : followups.items.map((suggestion, index) => (
+                    <button type="button" className="chat-suggestion-chip" key={index} onClick={() => askSuggestion(suggestion)}>
+                      <Sparkles size={12} />
+                      <span>{suggestion}</span>
+                    </button>
+                  ))}
+            </div>
+          )}
           {activeJob && (
             <PipelineActivity
               pipeline={{ stage: activeJob.stage, detail: activeJob.detail }}
@@ -2278,6 +2696,16 @@ function ExplorePage({
               liveWebQueries={activeJob.web_queries}
               liveTotalTokens={activeJob.total_tokens}
             />
+          )}
+          {activeJob?.partial_answer && (
+            <div className="chat-message assistant">
+              <div className="assistant-avatar"><Sparkles size={15} /></div>
+              <div className="message-body">
+                <div className="markdown-answer streaming">
+                  <AssistantMarkdown text={activeJob.partial_answer} streaming messageKey={`job-${activeJob.id}`} />
+                </div>
+              </div>
+            </div>
           )}
         </div>
 

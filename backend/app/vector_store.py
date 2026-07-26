@@ -64,7 +64,7 @@ def _tokens(text: str) -> list[str]:
 
 def _normalize(vector: list[float]) -> list[float]:
     magnitude = math.sqrt(sum(value * value for value in vector)) or 1.0
-    return [value / magnitude for value in vector]
+    return [float(value) / magnitude for value in vector]
 
 
 def _hash_embed(text: str) -> list[float]:

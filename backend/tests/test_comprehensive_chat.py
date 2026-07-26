@@ -81,7 +81,7 @@ def mock_quality_layer(monkeypatch):
     )
     monkeypatch.setattr(
         "backend.app.main.answer_planned_question",
-        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None: ("Test answer", model),
+        lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None: ("Test answer", model),
     )
     monkeypatch.setattr(
         "backend.app.main.extract_shared_evidence",
@@ -234,7 +234,7 @@ class TestLightModeDirectChat:
 
     def test_light_multiple_files_selects_top_excerpts(self, monkeypatch):
         captured = {}
-        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None):
+        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None, on_token=None):
             captured["evidence"] = evidence
             return ("multi file answer", model)
         monkeypatch.setattr("backend.app.main.answer_planned_question", fake_answer)
@@ -273,7 +273,7 @@ class TestLightModeFileBased:
     """Light mode with file selection — tests excerpt selection and grounding."""
 
     def test_light_file_grounded_answer(self, monkeypatch):
-        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None):
+        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None, on_token=None):
             if evidence:
                 return (f"Based on {evidence[0][0]}: the answer is here", model)
             return ("no evidence", model)
@@ -286,7 +286,7 @@ class TestLightModeFileBased:
 
     def test_light_file_excerpt_max_length(self, monkeypatch):
         captured = {}
-        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None):
+        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None, on_token=None):
             captured["evidence"] = evidence
             return ("ok", model)
         monkeypatch.setattr("backend.app.main.answer_planned_question", fake_answer)
@@ -701,7 +701,7 @@ class TestHistoryManagement:
 
     def test_long_conversation_with_files(self, monkeypatch):
         captured = {}
-        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None):
+        def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda d: None, on_token=None):
             captured["history_len"] = len(history) if history else 0
             return ("file answer", model)
         monkeypatch.setattr("backend.app.main.answer_planned_question", fake_answer)

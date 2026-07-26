@@ -10,12 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vite": "4.5.14",
+    "highlight.js": "^11.11.1",
+    "lucide-react": "latest",
+    "mermaid": "^11.16.0",
     "react": "latest",
     "react-dom": "latest",
-    "lucide-react": "latest",
     "react-markdown": "9.0.1",
-    "remark-gfm": "4.0.0"
-  },
-  "devDependencies": {}
+    "rehype-slug": "^6.0.0",
+    "remark-gfm": "4.0.0",
+    "vite": "4.5.14"
+  }
 }

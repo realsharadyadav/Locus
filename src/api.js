@@ -103,6 +103,10 @@ export const api = {
     if (!result) throw new Error('The direct chat stream ended without a result');
     return result;
   },
+  chatSuggestions: (question, answer, provider, model) => request('/chat/suggestions', {
+    method: 'POST',
+    body: JSON.stringify({ question, answer, provider, model }),
+  }),
   chats: () => request('/chats'),
   chatMessages: (id) => request(`/chats/${id}/messages`),
   stopChat: (id) => request(`/chats/${id}/stop`, { method: 'POST' }),

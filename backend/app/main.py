@@ -36,10 +36,10 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
-from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
+from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
 from .ticket_taxonomy_data import DEFAULT_TAXONOMY, DEFAULT_TAXONOMY_V2, TaxonomyRule
@@ -143,6 +143,8 @@ def _ensure_schema_columns():
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0"))
         if "total_tokens" not in chat_job_columns:
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0"))
+        if "partial_answer" not in chat_job_columns:
+            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN partial_answer TEXT"))
 
 
 def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:
@@ -980,7 +982,7 @@ def _load_chat_history(db: Session, session_id: int, limit: int = CHAT_HISTORY_L
     return history
 
 
-def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False):
+def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False, on_answer_token=lambda text: None):
     def ensure_not_cancelled():
         if cancelled():
             raise ChatJobCancelled("Chat was deleted; answer pipeline cancelled")
@@ -1264,7 +1266,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
             sources = [ChatSource(id=stored_file.id, name=stored_file.name, store_id=stored_file.store_id, excerpt=f"Full file inspected and consolidated in {mode_name} mode.") for stored_file in stored_files]
             repair_context = complete_documents
         if coverage_manifest is None:
-            answer, model = answer_planned_question(payload.question, plan, evidence, history, payload.model, payload.allow_general_knowledge, guidance, lambda detail: notify("drafting", detail))
+            answer, model = answer_planned_question(payload.question, plan, evidence, history, payload.model, payload.allow_general_knowledge, guidance, lambda detail: notify("drafting", detail), on_answer_token)
             if full_summary_requested and payload.reasoning_mode == "light" and stored_files:
                 answer = "This is a partial summary based on retrieved excerpts, not a full-document summary.\n\n" + answer
         if mode.use_quality_layer:
@@ -1307,6 +1309,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
                 answer = repair_response(payload.question, answer, plan, missing, prioritized_context, payload.model, payload.allow_general_knowledge and not repair_context)
                 if coverage_manifest and not missing_sections(answer, coverage_manifest):
                     coverage_manifest.coverageStatus = "complete"
+                on_answer_token(answer)
         answer = clean_final_answer(answer)
     except LLMProviderError as exception:
         raise HTTPException(status_code=exception.status_code, detail=str(exception))
@@ -1325,15 +1328,18 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
     return ChatResponse(answer=answer, sources=sources, model=model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries)
 
 
-def _process_chat(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False):
+def _process_chat(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False, on_answer_token=lambda text: None):
     with llm_provider_context(payload.provider):
-        return _process_chat_impl(payload, db, notify, cancelled)
+        return _process_chat_impl(payload, db, notify, cancelled, on_answer_token)
 
 
-def _call_process_chat(payload: ChatRequest, db: Session, notify, cancelled):
-    if len(signature(_process_chat).parameters) < 4:
+def _call_process_chat(payload: ChatRequest, db: Session, notify, cancelled, on_answer_token=lambda text: None):
+    param_count = len(signature(_process_chat).parameters)
+    if param_count < 4:
         return _process_chat(payload, db, notify)
-    return _process_chat(payload, db, notify, cancelled)
+    if param_count < 5:
+        return _process_chat(payload, db, notify, cancelled)
+    return _process_chat(payload, db, notify, cancelled, on_answer_token)
 
 
 def _validate_chat_request(payload: ChatRequest):
@@ -1522,6 +1528,16 @@ def chat_direct_stream(payload: ChatRequest):
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
+@app.post("/api/chat/suggestions", response_model=SuggestionsResponse)
+def chat_suggestions(payload: SuggestionsRequest):
+    with llm_provider_context(payload.provider):
+        try:
+            suggestions = generate_followup_questions(payload.question, payload.answer, payload.model)
+        except (LLMProviderError, RuntimeError):
+            suggestions = []
+    return SuggestionsResponse(suggestions=suggestions)
+
+
 def _pipeline_event_metadata(stage: str, detail: str) -> dict:
     lowered = detail.lower()
     metadata = {
@@ -1650,11 +1666,12 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
         if cancellation.is_set():
             raise ChatJobCancelled(_chat_job_cancel_reason(job_id))
 
-    _update_chat_job(job_id, status="running", stage="starting", detail="Answer pipeline started")
+    _update_chat_job(job_id, status="running", stage="starting", detail="Answer pipeline started", partial_answer=None)
     stopped = Event()
     progress = {"stage": "starting", "detail": "Answer pipeline started", "ticks": 0}
     token_usage: dict = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "calls": 0}
     search_usage: dict = {"queries": 0}
+    last_partial_write = {"at": 0.0}
 
     def notify(stage: str, detail: str):
         ensure_not_cancelled()
@@ -1669,6 +1686,18 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
             completion_tokens=token_usage["completion_tokens"],
             total_tokens=token_usage["total_tokens"],
         )
+
+    def on_answer_token(text: str):
+        # Best-effort live preview: throttled so a fast stream doesn't turn into a DB write
+        # per token, and wrapped so a write failure never takes down the actual answer.
+        now = time.monotonic()
+        if now - last_partial_write["at"] < 0.35:
+            return
+        last_partial_write["at"] = now
+        try:
+            _update_chat_job(job_id, partial_answer=text)
+        except Exception as exception:
+            diagnostic_event("job.partial_answer_write_failed", job_id=job_id, error=str(exception))
 
     def heartbeat():
         while not stopped.wait(10):
@@ -1710,7 +1739,7 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
             ensure_not_cancelled()
             with llm_call_cache(completed_calls), token_usage_tracker(token_usage), web_search_tracker(search_usage):
                 with SessionLocal() as db:
-                    result = _call_process_chat(payload, db, notify, cancellation.is_set)
+                    result = _call_process_chat(payload, db, notify, cancellation.is_set, on_answer_token)
                     metrics = _attach_usage_metrics(db, result.conversation_id, token_usage, search_usage["queries"])
                     result.llm_hits = metrics["llm_hits"]
                     result.web_queries = metrics["web_queries"]
@@ -1770,6 +1799,7 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
                 stage="starting",
                 detail=f"Attempt {total_attempts} failed: {detail}. Retrying ({consecutive_failures}/{CHAT_JOB_MAX_RETRIES}) in {delay:g}s{resume_detail}{reset_detail}",
                 error=None,
+                partial_answer=None,
             )
             diagnostic_event("pipeline.retry_scheduled", attempt=total_attempts, next_attempt=total_attempts + 1, delay_seconds=delay, cached_llm_calls=preserved, retry_count=consecutive_failures, max_retries=CHAT_JOB_MAX_RETRIES)
             if cancellation.wait(delay):

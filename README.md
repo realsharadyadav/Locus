@@ -6,10 +6,21 @@ Locus is a local-first research workspace: upload files, ask questions, and insp
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
+## Screenshots
+
+| Home | Library |
+| --- | --- |
+| ![Home dashboard](docs/screenshots/home.png) | ![Library / stores](docs/screenshots/library.png) |
+
+**Ask, with suggested follow-up questions** — after every answer, Locus proposes a few natural next questions so a conversation keeps going without you having to think of what to ask next.
+
+![Ask chat with follow-up question suggestions](docs/screenshots/ask-suggestions.png)
+
 ## Features
 
 - **Library** — create stores, upload PDF/DOCX/XLSX/CSV/TXT/MD/JSON/code files, and organize them into collections.
 - **Ask** — question your files with selectable evidence scope (all files, none, or specific ones); reopen or delete past chats.
+- **Suggested follow-ups** — after each answer, Locus proposes a few relevant next questions as one-click chips.
 - **Reasoning modes** — `light` (fast excerpt answers), `thinking` (deep inspection), `deep_summary` (section-by-section), `ticket_analysis` (group incidents by pattern), and more.
 - **Multi-provider models** — switch between Ollama (local), Groq, OpenAI, and Gemini, with model presets or custom model IDs.
 - **Pipeline trace** — a live developer view of retrieval, request/response previews, and stage-by-stage progress, since Locus is built for people who want to see how the answer was made, not just the answer.
