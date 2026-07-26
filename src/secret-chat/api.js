@@ -1,5 +1,7 @@
+import { API_BASE } from '../apiBase';
+
 const request = async (path, options = {}) => {
-  const response = await fetch(`/api/secret-chat${path}`, {
+  const response = await fetch(`${API_BASE}/api/secret-chat${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
@@ -23,5 +25,5 @@ export const secretChatApi = {
   get: (token) => request(`/${token}`),
   getMessages: (token, after = 0) => request(`/${token}/messages?after=${after}`),
   sendMessage: (token, sender, content) => request(`/${token}/messages`, { method: 'POST', body: JSON.stringify({ sender, content }) }),
-  stream: (token, after = 0) => `/api/secret-chat/${token}/stream?after=${after}`,
+  stream: (token, after = 0) => `${API_BASE}/api/secret-chat/${token}/stream?after=${after}`,
 };

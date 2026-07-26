@@ -1,5 +1,7 @@
+import { API_BASE } from './apiBase';
+
 const request = async (path, options = {}) => {
-  const response = await fetch(`/api${path}`, {
+  const response = await fetch(`${API_BASE}/api${path}`, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
   });
@@ -30,7 +32,7 @@ export const api = {
     const body = new FormData();
     body.append('store_id', storeId);
     body.append('file', file);
-    const response = await fetch('/api/files', { method: 'POST', body });
+    const response = await fetch(`${API_BASE}/api/files`, { method: 'POST', body });
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Upload failed');
     return response.json();
   },
@@ -52,7 +54,7 @@ export const api = {
   markChatJobSeen: (id) => request(`/chat/jobs/${id}/seen`, { method: 'PATCH' }),
   cancelChatJob: (id) => request(`/chat/jobs/${id}/cancel`, { method: 'POST' }),
   chatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, webSourceLimit, webSearch, onEvent, options = {}) => {
-    const response = await fetch('/api/chat/stream', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal });
+    const response = await fetch(`${API_BASE}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal });
     if (!response.ok) throw new Error('Unable to start the answer pipeline');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -74,7 +76,7 @@ export const api = {
     return result;
   },
   directChatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, onEvent, options = {}) => {
-    const response = await fetch('/api/chat/direct-stream', {
+    const response = await fetch(`${API_BASE}/api/chat/direct-stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: [], web_search: false }),
