@@ -22,11 +22,8 @@ services:
     buildCommand: npm run build
     staticPublishPath: ./dist
     envVars:
-      # Placeholder — after the first deploy, set this to the backend
-      # service's actual *.onrender.com URL (shown in the Render dashboard)
-      # and redeploy this static site if it doesn't match.
       - key: VITE_API_BASE_URL
-        value: https://locus-backend.onrender.com
+        value: https://locus-backend-ewwe.onrender.com
     routes:
       - type: rewrite
         source: /*
