@@ -1826,6 +1826,7 @@ function ExplorePage({
   const [slashFilter, setSlashFilter] = useState('');
   const [directStreaming, setDirectStreaming] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const threadRef = useRef(null);
@@ -1836,6 +1837,7 @@ function ExplorePage({
   const directAbortRef = useRef(null);
   const stopRequestedRef = useRef(false);
   const modePickerRef = useRef(null);
+  const optionsPopoverRef = useRef(null);
 
   useEffect(() => {
     if (!modePickerOpen) return undefined;
@@ -1845,6 +1847,15 @@ function ExplorePage({
     window.addEventListener('mousedown', onPointerDown);
     return () => window.removeEventListener('mousedown', onPointerDown);
   }, [modePickerOpen]);
+
+  useEffect(() => {
+    if (!optionsOpen) return undefined;
+    const onPointerDown = event => {
+      if (optionsPopoverRef.current && !optionsPopoverRef.current.contains(event.target)) setOptionsOpen(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [optionsOpen]);
 
   const toggleSources = (messageIndex) => {
     setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
@@ -2566,6 +2577,20 @@ function ExplorePage({
             </button>
             <div className="desktop-controls">
               <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
+            </div>
+            <div className="options-popover-wrap" ref={optionsPopoverRef}>
+              <button
+                type="button"
+                className="options-toggle icon-button"
+                onClick={() => setOptionsOpen(value => !value)}
+                aria-label="Model options"
+                aria-expanded={optionsOpen}
+              >
+                <SlidersHorizontal size={18} />
+              </button>
+              <div className={`options-popover desktop-controls ${optionsOpen ? 'open' : ''}`}>
+                <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
+              </div>
             </div>
           </div>
         </div>

@@ -798,6 +798,9 @@ header {
   background: #6d9270;
 }
 
+.options-popover-wrap { position: relative; }
+.options-toggle { display: none; }
+
 .options-popover {
   position: absolute;
   right: 0;
@@ -810,9 +813,36 @@ header {
   flex-direction: column;
   gap: 10px;
   min-width: 220px;
+  max-width: min(320px, 84vw);
   box-shadow: 0 12px 30px #293a4e14;
-  z-index: 12;
+  z-index: 61;
 }
+
+.options-popover.desktop-controls .model-control {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-height: 0;
+}
+.options-popover.desktop-controls .mc-divider { display: none; }
+.options-popover.desktop-controls .mc-provider,
+.options-popover.desktop-controls .mc-model { width: 100%; min-width: 0; }
+.options-popover.desktop-controls .model-control-field {
+  flex-direction: column;
+  align-items: stretch;
+  height: auto;
+}
+.options-popover.desktop-controls .mc-trigger { height: 38px; }
+.options-popover.desktop-controls .mc-value,
+.options-popover.desktop-controls .mc-value-model { max-width: none; }
+.options-popover.desktop-controls .mc-menu {
+  position: static;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+}
+.options-popover.desktop-controls .mc-menu-model { min-width: 0; }
 
 .chat-history-item {
   display: grid;
@@ -4680,6 +4710,7 @@ header,
   .chat-top { gap: 13px; }
   .desktop-controls { display: none !important; }
   .options-toggle { display: grid; }
+  .options-popover.open.desktop-controls { display: flex !important; }
   .chat-top-left p { display: none; }
   .chat-thread { padding-top: 25px; }
   .composer-meta small { display: none; }
