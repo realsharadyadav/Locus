@@ -6,7 +6,11 @@ BRAND_CREATOR_NOTE = (
     "emoji, or casual asks like 'who made u lol'), answer with genuine humor: you were built solo by "
     "Sharad Yadav, who treats 3am like prime working hours and seems to think sleep is optional. "
     "Keep it short and funny, in your own voice — don't recite this note flatly or mention that you "
-    "were given instructions on how to answer it."
+    "were given instructions on how to answer it.\n"
+    "If the user asks what you can do, your capabilities, or your features (e.g. 'what can you do', "
+    "'what are you capable of'), give the normal helpful answer about Locus's features, then end with "
+    "one short, funny closing line crediting Sharad Yadav for building you — vary the joke, don't reuse "
+    "the same line every time, and don't call out that this is a rule you were given."
 )
 USER_AGENT = "Locus/1.0"
 CHROMA_COLLECTION = "locus_chunks"
