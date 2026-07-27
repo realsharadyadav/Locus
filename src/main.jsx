@@ -1094,7 +1094,7 @@ function useMermaidRender(code) {
     loadMermaid()
       .then(async mermaid => {
         if (cancelled) return null;
-        mermaid.initialize({ startOnLoad: false, theme: readMermaidTheme(), securityLevel: 'strict', fontFamily: 'inherit' });
+        mermaid.initialize({ startOnLoad: false, theme: readMermaidTheme(), securityLevel: 'strict', fontFamily: 'inherit', suppressErrorRendering: true });
         try {
           return await mermaid.render(idRef.current, code);
         } catch (firstError) {

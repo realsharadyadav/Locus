@@ -17,6 +17,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh;
   background: #f5f3ee;
 }
 
@@ -91,7 +92,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
   transform: translate(-50%, 0) rotate(45deg);
 }
 
-.app-shell { min-height: 100vh; }
+.app-shell { min-height: 100vh; min-height: 100dvh; }
 
 /* Sidebar */
 .sidebar {
@@ -210,7 +211,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible {
 .side-top { display: flex; }
 .mobile-close { display: none; margin-left: auto; }
 
-main { margin-left: 248px; min-height: 100vh; }
+main { margin-left: 248px; min-height: 100vh; min-height: 100dvh; }
 
 /* Header */
 header {
@@ -6738,9 +6739,23 @@ html[data-theme='dark'] .explore-shell.history-collapsed.file-panel-collapsed {
   }
 }
 
-/* Explore compact command bar: remove the global header and keep workspace controls tight. */
-.app-shell.explore-active .explore-shell {
+/* Explore compact command bar: remove the global header and keep workspace controls tight.
+   `main` is locked to exactly one viewport tall and laid out as a column so the offline
+   banner (rendered as a sibling of .explore-shell, only when the API is unreachable) takes
+   its own space instead of pushing the shell past the viewport — that extra, unaccounted
+   height was what made the outer page scrollable and dragged the whole layout upward on
+   scroll (most visible on iOS/iPadOS). .explore-shell then just fills what's left. */
+.app-shell.explore-active main {
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+.app-shell.explore-active .explore-shell {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 0;
   grid-template-columns: 248px minmax(0, 1fr) !important;
 }
 
