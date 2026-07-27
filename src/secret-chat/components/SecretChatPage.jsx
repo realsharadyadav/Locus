@@ -12,14 +12,13 @@ export default function SecretChatPage({ token, onBack }) {
   const [copyMsg, setCopyMsg] = useState('');
   const bottomRef = useRef(null);
   const eventSourceRef = useRef(null);
-  const [lastId, setLastId] = useState(0);
+  const lastIdRef = useRef(0);
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
       setSession(data);
       setMessages(data.messages || []);
-      const maxId = (data.messages || []).reduce((m, msg) => Math.max(m, msg.id), 0);
-      setLastId(maxId);
+      lastIdRef.current = (data.messages || []).reduce((m, msg) => Math.max(m, msg.id), 0);
       setLoading(false);
     }).catch(() => {
       setLoading(false);
@@ -28,21 +27,55 @@ export default function SecretChatPage({ token, onBack }) {
 
   useEffect(() => {
     if (loading) return;
-    const es = new EventSource(secretChatApi.stream(token, 0));
-    eventSourceRef.current = es;
-    es.onmessage = (event) => {
-      if (event.data === ': keepalive') return;
-      try {
-        const msg = JSON.parse(event.data);
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-        setLastId(msg.id);
-      } catch {}
+    let cancelled = false;
+    let retryDelay = 1000;
+    let retryTimer = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      const es = new EventSource(secretChatApi.stream(token, lastIdRef.current));
+      eventSourceRef.current = es;
+      es.onopen = () => { retryDelay = 1000; };
+      es.onmessage = (event) => {
+        if (event.data === ': keepalive') return;
+        try {
+          const msg = JSON.parse(event.data);
+          setMessages(prev => {
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          lastIdRef.current = Math.max(lastIdRef.current, msg.id);
+        } catch {}
+      };
+      es.onerror = () => {
+        es.close();
+        if (cancelled) return;
+        retryTimer = setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 15000);
+      };
     };
-    es.onerror = () => {};
-    return () => { es.close(); };
+    connect();
+
+    // Safety net: poll for missed messages in case the stream silently stalls.
+    const poll = setInterval(() => {
+      secretChatApi.getMessages(token, lastIdRef.current).then(newMessages => {
+        if (!newMessages || newMessages.length === 0) return;
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const additions = newMessages.filter(m => !existingIds.has(m.id));
+          if (additions.length === 0) return prev;
+          return [...prev, ...additions];
+        });
+        lastIdRef.current = newMessages.reduce((m, msg) => Math.max(m, msg.id), lastIdRef.current);
+      }).catch(() => {});
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      clearInterval(poll);
+      eventSourceRef.current?.close();
+    };
   }, [token, loading]);
 
   useEffect(() => {
@@ -57,7 +90,7 @@ export default function SecretChatPage({ token, onBack }) {
     try {
       const msg = await secretChatApi.sendMessage(token, sender, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-      setLastId(msg.id);
+      lastIdRef.current = Math.max(lastIdRef.current, msg.id);
     } catch {}
   };
 

@@ -17,6 +17,7 @@ export default function SecretChatStandalone({ token }) {
   const bottomRef = useRef(null);
   const [rootEl, setRootEl] = useState(null);
   const eventSourceRef = useRef(null);
+  const lastIdRef = useRef(0);
 
   // iOS Safari keeps the layout viewport (and 100vh/100dvh) fixed when the on-screen
   // keyboard opens instead of shrinking it - only the visual viewport shrinks. Without this,
@@ -46,6 +47,7 @@ export default function SecretChatStandalone({ token }) {
     secretChatApi.get(token).then(data => {
       setSession(data);
       setMessages(data.messages || []);
+      lastIdRef.current = (data.messages || []).reduce((m, msg) => Math.max(m, msg.id), 0);
       setLoading(false);
     }).catch(() => {
       setLoading(false);
@@ -54,20 +56,55 @@ export default function SecretChatStandalone({ token }) {
 
   useEffect(() => {
     if (loading) return;
-    const es = new EventSource(secretChatApi.stream(token, 0));
-    eventSourceRef.current = es;
-    es.onmessage = (event) => {
-      if (event.data === ': keepalive') return;
-      try {
-        const msg = JSON.parse(event.data);
-        setMessages(prev => {
-          if (prev.some(m => m.id === msg.id)) return prev;
-          return [...prev, msg];
-        });
-      } catch {}
+    let cancelled = false;
+    let retryDelay = 1000;
+    let retryTimer = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      const es = new EventSource(secretChatApi.stream(token, lastIdRef.current));
+      eventSourceRef.current = es;
+      es.onopen = () => { retryDelay = 1000; };
+      es.onmessage = (event) => {
+        if (event.data === ': keepalive') return;
+        try {
+          const msg = JSON.parse(event.data);
+          setMessages(prev => {
+            if (prev.some(m => m.id === msg.id)) return prev;
+            return [...prev, msg];
+          });
+          lastIdRef.current = Math.max(lastIdRef.current, msg.id);
+        } catch {}
+      };
+      es.onerror = () => {
+        es.close();
+        if (cancelled) return;
+        retryTimer = setTimeout(connect, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 15000);
+      };
     };
-    es.onerror = () => {};
-    return () => { es.close(); };
+    connect();
+
+    // Safety net: poll for missed messages in case the stream silently stalls.
+    const poll = setInterval(() => {
+      secretChatApi.getMessages(token, lastIdRef.current).then(newMessages => {
+        if (!newMessages || newMessages.length === 0) return;
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const additions = newMessages.filter(m => !existingIds.has(m.id));
+          if (additions.length === 0) return prev;
+          return [...prev, ...additions];
+        });
+        lastIdRef.current = newMessages.reduce((m, msg) => Math.max(m, msg.id), lastIdRef.current);
+      }).catch(() => {});
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      clearInterval(poll);
+      eventSourceRef.current?.close();
+    };
   }, [token, loading]);
 
   useEffect(() => {
@@ -90,6 +127,7 @@ export default function SecretChatStandalone({ token }) {
     try {
       const msg = await secretChatApi.sendMessage(token, `${sender}|||${clientId}`, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
+      lastIdRef.current = Math.max(lastIdRef.current, msg.id);
     } catch {}
   };
 
