@@ -91,6 +91,35 @@ html[data-theme='dark'] .ticket-analysis-page {
 @media (max-width:980px){ .ti-menu-button { display: grid; } }
 @media (max-width:760px){ .ti-nav-links { display:none; } }
 
+/* ─── NAV STATUS PILL ─── */
+.ti-nav-status { display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11px; padding: 5px 10px 5px 8px; border-radius: 100px; border: 1px solid var(--line); color: var(--muted-dim); background: var(--surface-2); flex-shrink: 0; }
+.ti-nav-status.running { color: var(--amber); border-color: var(--amber); background: var(--amber-dim); }
+.ti-nav-status.success { color: var(--teal); border-color: var(--teal); background: var(--teal-dim); }
+.ti-nav-status.error { color: var(--rose); border-color: var(--rose); background: var(--rose-dim); }
+@media (max-width:420px){ .ti-nav-status span { display: none; } .ti-nav-status { padding: 6px; } }
+
+/* ─── LIVE PIPELINE CONSOLE ─── */
+.ti-console { border: 1px solid var(--line); border-radius: var(--radius); background: var(--console); overflow: hidden; margin-bottom: 24px; box-shadow: 0 14px 38px rgba(0,0,0,.14); }
+.ti-console.live { border-color: var(--amber); }
+.ti-console-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+.ti-console-head-left { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.ti-console-title { font-family: var(--mono); font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+.ti-console-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted-dim); flex-shrink: 0; }
+.ti-console.live .ti-console-dot { background: var(--amber); animation: ti-pulse 1.1s ease-in-out infinite; }
+@keyframes ti-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 0 0 rgba(228,228,231,.35); } 50% { opacity: .55; } }
+.ti-console-head-right { display: flex; align-items: center; gap: 12px; }
+.ti-console-timer { font-family: var(--mono); font-size: 12px; color: var(--muted-dim); }
+.ti-console-progress { height: 3px; background: var(--surface-2); }
+.ti-console-progress-fill { height: 100%; background: linear-gradient(90deg, var(--amber), var(--teal), var(--violet)); transition: width .3s ease; }
+.ti-console-body { max-height: 220px; overflow-y: auto; padding: 12px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; color: var(--code-text); }
+.ti-console-line { display: flex; gap: 10px; }
+.ti-console-ts { color: var(--muted-dim); flex-shrink: 0; width: 46px; }
+.ti-console-cursor { color: var(--amber); }
+.ti-console-blink { animation: ti-blink 1s step-end infinite; }
+@keyframes ti-blink { 50% { opacity: 0; } }
+.ti-chevron.open-rot { transform: rotate(90deg); }
+@media (max-width:600px){ .ti-console-body { max-height: 160px; font-size: 12px; } .ti-console-head { padding: 10px 12px; } }
+
 /* ─── SCROLL WRAPPER ─── */
 .ti-scroll { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
 .ti-wrap { max-width: 1280px; margin: 0 auto; padding: 0 28px; }
@@ -253,7 +282,7 @@ h1.ti-title span { color: var(--muted); }
 .ti-fig .n { font-size: 14.5px; font-weight: 600; }
 .ti-fig .l { font-size: 10px; color: var(--muted-dim); text-transform: uppercase; letter-spacing: 0.05em; }
 .ti-conf-pill { font-family: var(--mono); font-size: 12px; padding: 4px 10px; border-radius: 100px; background: var(--teal-dim); color: var(--teal); border: 1px solid rgba(69,199,184,0.25); }
-@media (max-width:700px){ .ti-group-main p { white-space: normal; } .ti-group-figs { display:none; } }
+@media (max-width:700px){ .ti-group-main p { white-space: normal; } }
 
 .ti-group-body-inner { padding: 0 20px 22px 56px; display: grid; grid-template-columns: 1.3fr 1fr; gap: 26px; }
 @media (max-width:700px){ .ti-group-body-inner{grid-template-columns:1fr;padding:0 18px 20px;} }
@@ -273,8 +302,15 @@ h1.ti-title span { color: var(--muted); }
 .ti-conf-fill { height: 100%; border-radius: 4px; }
 .ti-conf-val { width: 32px; text-align: right; color: var(--text); }
 
+/* ─── TABS ROW ─── */
+.ti-tabs-row { display: flex; gap: 8px; margin-bottom: 28px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-snap-type: x proximity; }
+.ti-tabs-row::-webkit-scrollbar { display: none; }
+.ti-tab { flex-shrink: 0; scroll-snap-align: start; }
+.ti-tab.active { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
+
 /* ─── TRACE TABLE ─── */
-.ti-trace-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; }
+.ti-table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.ti-trace-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 10px; min-width: 420px; }
 .ti-trace-table th { font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-dim); text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 .ti-trace-table td { padding: 8px 10px; border-bottom: 1px solid var(--line-soft); color: var(--muted); }
 .ti-trace-table td:first-child { color: var(--text); }
@@ -347,6 +383,10 @@ h1.ti-title span { color: var(--muted); }
 .ti-okf-chip-cloud { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
 .ti-okf-chip-cloud span { font-family: var(--mono); font-size: 11px; padding: 4px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); }
 .ti-okf-chip-cloud.muted span { opacity: 0.5; }
+@media (max-width:760px){
+  .ti-okf-browser { grid-template-columns: 1fr; }
+  .ti-okf-list { border-right: none; border-bottom: 1px solid var(--line); max-height: 200px; }
+}
 
 /* ─── SUGGESTIONS ─── */
 .ti-suggestions { display: grid; gap: 10px; }
@@ -397,14 +437,44 @@ h1.ti-title span { color: var(--muted); }
   .ti-stat-row { grid-template-columns: repeat(2, minmax(120px,1fr)); }
 }
 
+/* History drawer becomes a full-screen sheet on phones instead of a cramped 340px panel */
+@media (max-width: 640px) {
+  .ti-history-drawer { width: 100%; padding: 16px; }
+}
+
+/* Stat strips: below two-column-grid-squeeze territory, switch to a horizontally
+   scrollable snap row so every KPI card stays fully readable instead of shrinking. */
+@media (max-width: 480px) {
+  .ti-hero-stats { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .ti-hero-stats::-webkit-scrollbar { display: none; }
+  .ti-hero-stat { scroll-snap-align: start; min-width: 148px; flex-shrink: 0; border-right: 1px solid var(--line); border-bottom: none !important; }
+  .ti-hero-stat:last-child { border-right: none; }
+
+  .ti-stat-row { display: flex; overflow-x: auto; -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .ti-stat-row::-webkit-scrollbar { display: none; }
+  .ti-stat-row .cell { scroll-snap-align: start; min-width: 130px; flex-shrink: 0; }
+}
+
 @media (max-width: 600px) {
-  .ti-rail { padding-left: 46px; }
-  .ti-stage-node { left: -46px; width: 32px; height: 32px; }
+  /* Stage rail: the desktop version absolutely-positions the icon node into a left
+     gutter with a connecting line, which gets cramped once the gutter has to shrink
+     below ~46px. Below this width, stop trying to shrink that layout and switch to a
+     plain stacked row instead — icon and card side by side, no absolute offsets. */
+  .ti-rail { padding-left: 0; }
+  .ti-rail-line { display: none; }
+  .ti-stage { display: flex; align-items: flex-start; gap: 10px; }
+  .ti-stage-node { position: static; width: 32px; height: 32px; margin-top: 4px; }
   .ti-stage-node svg { width: 16px; height: 16px; }
+  .ti-stage-card { flex: 1; min-width: 0; }
   .ti-stage-head { flex-wrap: wrap; row-gap: 10px; padding: 14px 16px; }
   .ti-stage-head-side .ti-chip { display: none; }
-  .ti-group-head { padding: 14px 16px; }
-  .ti-hero-stats { grid-template-columns: repeat(2, 1fr); }
+
+  /* Group cards: previously hid the ticket-count/share/confidence figures entirely
+     under 700px. Reflow them onto their own row instead so nothing disappears. */
+  .ti-group-head { padding: 14px 16px; flex-wrap: wrap; row-gap: 8px; }
+  .ti-group-main { flex-basis: 100%; }
+  .ti-group-figs { display: flex; margin-left: 0; gap: 14px; }
+
   .ti-controls-summary { padding: 16px; }
   .ti-controls-inner-pad { padding: 4px 16px 20px; }
   .ti-acc-inner-pad { padding: 0 16px 16px; }

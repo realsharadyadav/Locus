@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, AlertCircle, BarChart3, Brain, CheckCircle, ChevronDown,
   Clock, Database, Download, FileText, GitBranch, History, Loader2,
@@ -168,6 +168,11 @@ function TicketAnalysisPage({ files, openMenu }) {
   const [selectedOkfIndex, setSelectedOkfIndex] = useState(0);
   const [availableFiles, setAvailableFiles] = useState(files || []);
   const [filesLoading, setFilesLoading] = useState(false);
+  const [consoleLines, setConsoleLines] = useState([]);
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const runStartRef = useRef(0);
+  const consoleBodyRef = useRef(null);
 
   const ticketFiles = useMemo(() => availableFiles.filter(f => TICKET_EXTENSIONS.includes(`.${f.name.split('.').pop().toLowerCase()}`)), [availableFiles]);
   const selectedFile = ticketFiles.find(f => f.id === selectedFileId);
@@ -267,14 +272,33 @@ function TicketAnalysisPage({ files, openMenu }) {
   useEffect(() => {
     if (!analyzing) return;
     let i = 0;
+    runStartRef.current = Date.now();
+    setElapsedMs(0);
+    setConsoleOpen(true);
+    setConsoleLines([{ t: 0, text: `Starting pipeline on ${selectedFile?.name || 'selected file'}` }]);
     setActiveStepKey(PIPELINE_SKELETON[0][0]);
     setSelectedStepKey(PIPELINE_SKELETON[0][0]);
-    const t = setInterval(() => { i = Math.min(i + 1, PIPELINE_SKELETON.length - 1); setActiveStepKey(PIPELINE_SKELETON[i][0]); setSelectedStepKey(PIPELINE_SKELETON[i][0]); }, 520);
-    return () => clearInterval(t);
+    const stepTimer = setInterval(() => {
+      i = Math.min(i + 1, PIPELINE_SKELETON.length - 1);
+      const [key, label, explanation] = PIPELINE_SKELETON[i];
+      setActiveStepKey(key);
+      setSelectedStepKey(key);
+      setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `${label} — ${explanation}` }]);
+    }, 520);
+    const clockTimer = setInterval(() => setElapsedMs(Date.now() - runStartRef.current), 100);
+    return () => { clearInterval(stepTimer); clearInterval(clockTimer); };
   }, [analyzing]);
 
+  useEffect(() => {
+    if (consoleBodyRef.current) consoleBodyRef.current.scrollTop = consoleBodyRef.current.scrollHeight;
+  }, [consoleLines]);
+
+  const pipelineProgressPct = analyzing
+    ? Math.min(100, (PIPELINE_SKELETON.findIndex(s => s[0] === activeStepKey) / (PIPELINE_SKELETON.length - 1)) * 100)
+    : result ? 100 : 0;
+
   const setConfigValue = (key, value) => setConfig(prev => ({ ...prev, [key]: value }));
-  const resetRun = () => { setResult(null); setSavedRunId(null); setActiveStepKey('select_file'); setSelectedStepKey('select_file'); setRunStatus({ type: 'idle', message: 'Run reset.' }); };
+  const resetRun = () => { setResult(null); setSavedRunId(null); setActiveStepKey('select_file'); setSelectedStepKey('select_file'); setRunStatus({ type: 'idle', message: 'Run reset.' }); setConsoleLines([]); setConsoleOpen(false); };
 
   const handleAnalyze = async () => {
     if (!selectedFileId) { setRunStatus({ type: 'error', message: 'Select a ticket file.' }); return; }
@@ -292,8 +316,12 @@ function TicketAnalysisPage({ files, openMenu }) {
       });
       setResult(data); setActiveStepKey('final_groups'); setSelectedStepKey('final_groups');
       setRunStatus({ type: 'success', message: 'Analysis complete. Saving snapshot.' });
+      setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `Done — ${data.manifest?.problemGroups ?? (data.groups || []).length} problem group(s) from ${data.manifest?.validTickets ?? '?'} valid tickets.` }]);
       await saveSnapshot(data, 'auto');
-    } catch (err) { setRunStatus({ type: 'error', message: err.message || 'Analysis failed' }); }
+    } catch (err) {
+      setRunStatus({ type: 'error', message: err.message || 'Analysis failed' });
+      setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `Error — ${err.message || 'Analysis failed'}` }]);
+    }
     finally { setAnalyzing(false); }
   };
 
@@ -345,6 +373,10 @@ function TicketAnalysisPage({ files, openMenu }) {
             <Menu size={20} />
           </button>
           <div className="ti-brand"><span className="dot" /> Patterns</div>
+          <div className={`ti-nav-status${analyzing ? ' running' : runStatus.type === 'idle' ? '' : ` ${runStatus.type}`}`}>
+            {analyzing ? <Loader2 size={12} className="ti-spin" /> : runStatus.type === 'error' ? <AlertCircle size={12} /> : runStatus.type === 'success' ? <CheckCircle size={12} /> : <Activity size={12} />}
+            <span>{analyzing ? 'Running' : runStatus.type === 'error' ? 'Error' : runStatus.type === 'success' ? 'Done' : 'Idle'}</span>
+          </div>
           <div className="ti-nav-links">
             <a href="#pipeline">Pipeline</a>
             <a href="#results">Results</a>
@@ -408,6 +440,40 @@ function TicketAnalysisPage({ files, openMenu }) {
             <div className={`ti-status ${runStatus.type}`}>
               {runStatus.type === 'running' ? <Loader2 size={15} className="ti-spin" /> : runStatus.type === 'error' ? <AlertCircle size={15} /> : <CheckCircle size={15} />}
               <span>{runStatus.message}</span>
+            </div>
+          )}
+
+          {/* ─── LIVE PIPELINE CONSOLE ─── */}
+          {(analyzing || consoleLines.length > 0) && (
+            <div className={`ti-console${analyzing ? ' live' : ''}`}>
+              <div className="ti-console-head">
+                <div className="ti-console-head-left">
+                  <span className="ti-console-dot" />
+                  <Activity size={13} />
+                  <span className="ti-console-title">{analyzing ? 'Pipeline running' : 'Last run log'}</span>
+                </div>
+                <div className="ti-console-head-right">
+                  <span className="ti-console-timer">{(elapsedMs / 1000).toFixed(1)}s</span>
+                  {!analyzing && (
+                    <button className="ti-detail-toggle" onClick={() => setConsoleOpen(o => !o)}>
+                      <ChevronDown size={14} className={`ti-chevron${consoleOpen ? ' open-rot' : ''}`} />
+                      {consoleOpen ? 'Hide log' : 'Show log'}
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="ti-console-progress"><div className="ti-console-progress-fill" style={{ width: `${pipelineProgressPct}%` }} /></div>
+              {(analyzing || consoleOpen) && (
+                <div className="ti-console-body" ref={consoleBodyRef}>
+                  {consoleLines.map((line, i) => (
+                    <div key={i} className="ti-console-line">
+                      <span className="ti-console-ts">+{(line.t / 1000).toFixed(1)}s</span>
+                      <span>{line.text}</span>
+                    </div>
+                  ))}
+                  {analyzing && <div className="ti-console-line ti-console-cursor"><span className="ti-console-ts" /><span className="ti-console-blink">▍</span></div>}
+                </div>
+              )}
             </div>
           )}
 
@@ -662,7 +728,7 @@ function TicketAnalysisPage({ files, openMenu }) {
             </div>
 
             {/* ─── TABS ─── */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
+            <div className="ti-tabs-row">
               {[
                 ['groups', 'Problem Groups'],
                 ['evidence', 'Pipeline Evidence'],
@@ -671,7 +737,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                 ['debug', 'Debug'],
                 ['history', 'History / Compare'],
               ].map(([key, label]) => (
-                <button key={key} className="ti-bulk-btn" style={activeTab === key ? { background: 'var(--amber-dim)', borderColor: 'var(--amber)', color: 'var(--amber)' } : {}}
+                <button key={key} className={`ti-bulk-btn ti-tab${activeTab === key ? ' active' : ''}`}
                   onClick={() => setActiveTab(key)}>{label}</button>
               ))}
             </div>
@@ -732,6 +798,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                                   Show full trace
                                 </button>
                                 <div className="ti-acc-body"><div className="ti-acc-inner">
+                                  <div className="ti-table-scroll">
                                   <table className="ti-trace-table">
                                     <thead><tr><th>Ticket</th><th>Matched rule</th><th>Confidence</th></tr></thead>
                                     <tbody>
@@ -746,6 +813,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                                         : <tr><td colSpan={3} style={{ color: 'var(--muted-dim)' }}>No trace data</td></tr>}
                                     </tbody>
                                   </table>
+                                  </div>
                                 </div></div>
                               </div>
                             </div>
