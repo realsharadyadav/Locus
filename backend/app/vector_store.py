@@ -7,6 +7,7 @@ import json
 import math
 import re
 import sqlite3
+from threading import Lock
 from typing import Iterable
 
 from .brand import (
@@ -33,6 +34,9 @@ EMBEDDING_MODEL = f"fastembed:{FASTEMBED_MODEL_NAME}" if _FASTEMBED_INSTALLED el
 
 _fastembed_model = None
 _fastembed_load_failed = False
+
+_chroma_client = None
+_chroma_client_lock = Lock()
 
 
 @dataclass(frozen=True)
@@ -147,14 +151,26 @@ def chunk_text(text: str, *, chunk_chars: int = SEMANTIC_CHUNK_CHARS, overlap: i
     return [chunk for chunk in chunks if chunk]
 
 
+def _chroma_client_instance():
+    """A process-wide PersistentClient, created once. Instantiating a new
+    PersistentClient per call leaks memory (each one opens its own sqlite
+    connection and loads HNSW segments that are never fully released)."""
+    global _chroma_client
+    if _chroma_client is None:
+        with _chroma_client_lock:
+            if _chroma_client is None:
+                import chromadb
+                _chroma_client = chromadb.PersistentClient(path=str(CHROMA_PATH))
+    return _chroma_client
+
+
 def _collection():
     if not SEMANTIC_RETRIEVAL_ENABLED:
         raise VectorStoreUnavailable("Semantic retrieval is disabled")
     try:
-        import chromadb
+        client = _chroma_client_instance()
     except Exception as exception:  # pragma: no cover - depends on optional local package
         raise VectorStoreUnavailable("ChromaDB is not installed") from exception
-    client = chromadb.PersistentClient(path=str(CHROMA_PATH))
     metadata = {"hnsw:space": "cosine"}
     primary = client.get_or_create_collection(CHROMA_COLLECTION, metadata=metadata)
     try:
