@@ -576,7 +576,7 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
                 raise HTTPException(status_code=413, detail="Files must be 250 MB or smaller")
             destination.write(chunk)
     try:
-        text = extract_text_from_path(file.filename or stored_name, stored_path)
+        text = await asyncio.to_thread(extract_text_from_path, file.filename or stored_name, stored_path)
     except Exception as exception:
         stored_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=f"Could not read this file: {exception}")
@@ -584,7 +584,7 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
     db.add(stored_file)
     db.commit()
     db.refresh(stored_file)
-    _index_stored_file(db, stored_file)
+    await asyncio.to_thread(_index_stored_file, db, stored_file)
     db.refresh(stored_file)
     return stored_file
 
