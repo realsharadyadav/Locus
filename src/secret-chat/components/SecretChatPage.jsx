@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Link2, MessageCircle, Send, User, Users } from 'lucide-react';
+import { ChevronDown, Link2, MessageCircle, Send, User, Users } from 'lucide-react';
 import { secretChatApi } from '../api';
-import { parseServerTime } from '../../utils';
+import { parseServerTime, resizeTextarea } from '../../utils';
+import { useVisualViewportShell } from '../../hooks/useVisualViewportShell';
 
 export default function SecretChatPage({ token, onBack }) {
   const [session, setSession] = useState(null);
@@ -10,9 +11,13 @@ export default function SecretChatPage({ token, onBack }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [copyMsg, setCopyMsg] = useState('');
+  const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef(null);
+  const messagesRef = useRef(null);
+  const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
+  const setShellEl = useVisualViewportShell();
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -79,14 +84,31 @@ export default function SecretChatPage({ token, onBack }) {
   }, [token, loading]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    else setShowJump(true);
   }, [messages]);
+
+  const handleMessagesScroll = () => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) setShowJump(false);
+  };
+
+  const jumpToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowJump(false);
+  };
 
   const send = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     const content = input.trim();
     setInput('');
+    window.setTimeout(() => resizeTextarea(inputRef.current), 0);
     try {
       const msg = await secretChatApi.sendMessage(token, sender, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
@@ -117,7 +139,7 @@ export default function SecretChatPage({ token, onBack }) {
   }
 
   return (
-    <div className="secret-chat-shell">
+    <div className="secret-chat-shell" ref={setShellEl}>
       <header className="secret-chat-header">
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
@@ -144,7 +166,7 @@ export default function SecretChatPage({ token, onBack }) {
         </div>
       </header>
 
-      <div className="secret-chat-messages">
+      <div className="secret-chat-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
         {messages.length === 0 && (
           <div className="secret-chat-empty">
             <MessageCircle size={40} />
@@ -168,13 +190,22 @@ export default function SecretChatPage({ token, onBack }) {
         <div ref={bottomRef} />
       </div>
 
+      {showJump && (
+        <button type="button" className="secret-chat-jump-btn" onClick={jumpToBottom} aria-label="Jump to latest message">
+          <ChevronDown size={16} /> New messages
+        </button>
+      )}
+
       <form className="secret-chat-composer" onSubmit={send}>
-        <input
+        <textarea
+          ref={inputRef}
           className="secret-chat-input"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={e => { setInput(e.target.value); resizeTextarea(e.target); }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); } }}
           placeholder="Type a message..."
           maxLength={2000}
+          rows={1}
         />
         <button
           type="submit"
