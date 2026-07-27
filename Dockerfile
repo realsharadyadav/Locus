@@ -10,6 +10,7 @@ COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend backend
+COPY docs docs
 
 RUN useradd --create-home --uid 1000 locus \
     && chown -R locus:locus /app

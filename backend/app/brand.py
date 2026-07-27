@@ -1,5 +1,7 @@
 import re
 
+from .config import PROJECT_ROOT
+
 BRAND_NAME = "Locus"
 BRAND_ASSISTANT = "Locus AI"
 BRAND_TAGLINE = "Your knowledge, one question away."
@@ -19,6 +21,15 @@ CREATOR_QUESTION_PATTERN = re.compile(
     r"[^?.!]{0,20}\b(you|u|locus|this\s+app|this\s+site|this\s+thing)\b",
     re.IGNORECASE,
 )
+# There's an unrelated, fairly well-known Indian politician who shares the builder's name
+# (1947-2023) — plain "who is Sharad Yadav" was landing on a Wikipedia-style bio of him instead
+# of the actual builder of this app. Caught separately from CREATOR_QUESTION_PATTERN above
+# because a direct name lookup gets a richer, more "customized" bio-style answer (see
+# CREATOR_BIO_ANSWERS) rather than the short "who built you" one-liners.
+CREATOR_NAME_PATTERN = re.compile(
+    rf"\bwho(?:'s|\s+(?:is|was))\s+(the\s+)?{re.escape(BRAND_CREATOR)}\b",
+    re.IGNORECASE,
+)
 CAPABILITY_QUESTION_PATTERN = re.compile(
     r"\bwhat\s+can\s+(you|locus|it)\s+do\b"
     r"|\byour\s+capabilit(?:y|ies)\b"
@@ -32,6 +43,12 @@ CREATOR_JOKE_ANSWERS = [
     f"One person: {BRAND_CREATOR}. Zero co-founders. Several sleepless nights. That's the whole origin story.",
     f"{BRAND_CREATOR} built me, solo, fueled by caffeine and some genuinely questionable sleep decisions.",
     f"Built end-to-end by {BRAND_CREATOR}, who coded me instead of sleeping — a very indie-developer move.",
+]
+CREATOR_BIO_ANSWERS = [
+    f"Not the Indian politician (1947–2023) the internet will try to hand you — this {BRAND_CREATOR} is the solo developer who built Locus, currently very much alive and running mostly on caffeine and stubbornness.",
+    f"There's more than one {BRAND_CREATOR} out there. The one who matters here built this entire app by himself, one late-night commit at a time — no cabinet position, just a code editor.",
+    f"{BRAND_CREATOR}: solo builder of Locus, professional coffee enthusiast, and — no relation whatsoever to the politician who shares his name.",
+    f"The {BRAND_CREATOR} behind Locus isn't a public figure — just one developer who decided building an AI knowledge app alone at 3am sounded like a great idea.",
 ]
 CAPABILITY_ANSWER_INTRO = (
     "Here's what I can do:\n\n"
@@ -68,38 +85,38 @@ ABOUT_LOCUS_QUESTION_PATTERN = re.compile(
     r"|\b(user\s+guide|self.?help|getting\s+started|how\s+does\s+locus\s+work)\b",
     re.IGNORECASE,
 )
-LOCUS_KNOWLEDGE_DOC = f"""
-{BRAND_NAME} — "{BRAND_TAGLINE}" — is a personal "second brain" app. Upload your own files, then
-ask questions grounded in them, either strictly from those files or blended with general knowledge.
-Built solo by {BRAND_CREATOR}.
+# Source of truth for what Locus actually does is docs/FEATURES.md (checked into the repo,
+# read by developers too) rather than a separate hand-maintained description here — one place
+# to update, and the self-help answers can't drift out of sync with the real feature list.
+_FEATURES_FALLBACK = (
+    "Ask: chat over your uploaded files (Library) with Light/Thinking/Deep Summary/Ticket "
+    "Analysis reasoning modes. Patterns: turn ticket exports into ranked problem groups. "
+    "Private: a separate shareable ephemeral chat. Multiple LLM providers: Ollama, Groq, "
+    "OpenAI, Gemini."
+)
 
-Sections (left sidebar):
-- Home: dashboard with stats (stores, files, chats) and quick actions (create a store, upload
-  files, ask a question).
-- Library: where uploaded files live, organized into "stores" (collections).
-- Ask: the main chat. Type a question, optionally scope it to specific files, and pick a
-  reasoning mode via slash command:
-  - /light (default): fast, direct answers.
-  - /unrestricted: expert mode, maximum detail, minimal hand-holding.
-  - /thinking: deep, multi-step reasoning over everything selected.
-  - /deepsummary: thorough, section-by-section coverage of a document.
-  - /ticketanalysis: jumps into the Patterns pipeline for ticket exports.
-  There's an "LLM Knowledge" toggle: on blends general knowledge in with your files; off means
-  strictly file-only, no outside facts. You can pick the LLM provider/model (Ollama for
-  local/private, or Groq/OpenAI/Gemini).
-- Patterns: upload a ticket/incident export (CSV/TSV/XLSX/JSON/TXT/MD) and turn it into ranked
-  "problem groups" — a pipeline of taxonomy matching, clustering, and optional LLM fallback, with
-  a live console showing what's happening stage by stage, confidence scores, evidence, and run
-  history you can compare.
-- Private: a separate, ephemeral, shareable chat — generate a link, anyone who opens it can chat
-  in real time, no account needed. Good for a quick throwaway conversation outside your main
-  history.
-- Settings: theme (light/dark) and default LLM provider/model.
-- Command palette (Cmd/Ctrl+K): jump to any page, file, store, or chat instantly.
+
+def _load_features_doc() -> str:
+    path = PROJECT_ROOT / "docs" / "FEATURES.md"
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return _FEATURES_FALLBACK
+
+
+LOCUS_KNOWLEDGE_DOC = f"""
+{BRAND_NAME} — "{BRAND_TAGLINE}" — built solo by {BRAND_CREATOR}.
+
+{_load_features_doc()}
+
+Other sections not detailed above: Home (dashboard with stats and quick actions), Settings
+(theme, default LLM provider/model), and a command palette (Cmd/Ctrl+K) for jumping to any page,
+file, store, or chat instantly.
 
 IMPORTANT: there is an unrelated real-world logistics/supply-chain company that also happens to
-be called "Locus" (locus.sh). Completely ignore anything you know about that company or any other
-product also named Locus — it has nothing to do with this app.
+be called "Locus" (locus.sh), and an unrelated Indian politician named "Sharad Yadav" (1947-2023).
+Completely ignore anything you know about either of them, or any other person/company sharing
+these names — none of it has anything to do with this app or its builder.
 """.strip()
 ABOUT_LOCUS_SYSTEM_PROMPT = (
     f"You are {BRAND_NAME}'s in-app help assistant, answering a user's question about the "

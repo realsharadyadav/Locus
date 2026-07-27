@@ -39,7 +39,9 @@ from .brand import (
     CAPABILITY_ANSWER_INTRO,
     CAPABILITY_JOKE_CLOSERS,
     CAPABILITY_QUESTION_PATTERN,
+    CREATOR_BIO_ANSWERS,
     CREATOR_JOKE_ANSWERS,
+    CREATOR_NAME_PATTERN,
     CREATOR_QUESTION_PATTERN,
 )
 from .web_research import web_research, web_search_tracker
@@ -1023,11 +1025,13 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
     # Answered deterministically instead of routed through the LLM/web-search pipeline: those
     # paths proved unreliable for this (e.g. web-search auto-trigger pulling in evidence about
     # an unrelated real company also named "Locus"). See brand.py for why.
-    creator_match = CREATOR_QUESTION_PATTERN.search(payload.question)
+    creator_name_match = CREATOR_NAME_PATTERN.search(payload.question)
+    creator_match = creator_name_match or CREATOR_QUESTION_PATTERN.search(payload.question)
     capability_match = not creator_match and CAPABILITY_QUESTION_PATTERN.search(payload.question)
     if creator_match or capability_match:
         answer = (
-            random.choice(CREATOR_JOKE_ANSWERS) if creator_match
+            random.choice(CREATOR_BIO_ANSWERS) if creator_name_match
+            else random.choice(CREATOR_JOKE_ANSWERS) if creator_match
             else CAPABILITY_ANSWER_INTRO + "\n\n" + random.choice(CAPABILITY_JOKE_CLOSERS)
         )
         ensure_not_cancelled()
