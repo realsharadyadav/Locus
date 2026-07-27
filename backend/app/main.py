@@ -34,6 +34,8 @@ from .config import (
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
 from .brand import (
+    ABOUT_LOCUS_QUESTION_PATTERN,
+    ABOUT_LOCUS_SYSTEM_PROMPT,
     CAPABILITY_ANSWER_INTRO,
     CAPABILITY_JOKE_CLOSERS,
     CAPABILITY_QUESTION_PATTERN,
@@ -1036,6 +1038,30 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         db.commit()
         notify("complete", "Answered directly")
         return ChatResponse(answer=answer, sources=[], model="Locus", conversation_id=session.id, llm_hits=0, web_queries=0)
+    if ABOUT_LOCUS_QUESTION_PATTERN.search(payload.question):
+        # Broad "ask anything about Locus" coverage. Grounded strictly in ABOUT_LOCUS_SYSTEM_PROMPT
+        # (see brand.py) via system_override, which skips web search and the model's own
+        # "knowledge" entirely — an unrelated real company is also named Locus.
+        notify("drafting", f"Answering from Locus's own knowledge with {payload.model}")
+        history = _load_chat_history(db, session.id)
+        try:
+            answer, used_model = generate_answer(
+                payload.question, [], history, payload.model,
+                system_override=ABOUT_LOCUS_SYSTEM_PROMPT,
+            )
+        except LLMProviderError as exception:
+            raise HTTPException(status_code=exception.status_code, detail=str(exception))
+        except RuntimeError as exception:
+            raise HTTPException(status_code=503, detail=str(exception))
+        answer = clean_final_answer(answer)
+        ensure_not_cancelled()
+        db.add_all([
+            ChatMessage(session_id=session.id, role="user", content=payload.question),
+            ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits=1, web_queries=0), model=used_model, provider=payload.provider),
+        ])
+        db.commit()
+        notify("complete", "Answer ready")
+        return ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=1, web_queries=0)
     effective_web_search = _effective_web_search(payload)
     if effective_web_search:
         web_mode = "unrestricted web research" if payload.reasoning_mode == "unrestricted" else "web research"
