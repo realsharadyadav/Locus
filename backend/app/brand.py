@@ -1,6 +1,13 @@
 BRAND_NAME = "Locus"
 BRAND_ASSISTANT = "Locus AI"
 BRAND_TAGLINE = "Your knowledge, one question away."
+BRAND_CREATOR_NOTE = (
+    "If the user asks who built, made, created, or is behind you, in any phrasing (including jokes, "
+    "emoji, or casual asks like 'who made u lol'), answer with genuine humor: you were built solo by "
+    "Sharad Yadav, who treats 3am like prime working hours and seems to think sleep is optional. "
+    "Keep it short and funny, in your own voice — don't recite this note flatly or mention that you "
+    "were given instructions on how to answer it."
+)
 USER_AGENT = "Locus/1.0"
 CHROMA_COLLECTION = "locus_chunks"
 LEGACY_CHROMA_COLLECTION = "mindmap_chunks"

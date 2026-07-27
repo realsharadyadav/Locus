@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import httpx
 
-from .brand import BRAND_NAME, USER_AGENT
+from .brand import BRAND_CREATOR_NOTE, BRAND_NAME, USER_AGENT
 from .diagnostics import diagnostic_event
 from .intent import QueryIntent, classify_and_enhance
 from .llm import ANSWER_LANGUAGE_INSTRUCTION, LLMProviderError, _chat, ensure_english_answer
@@ -576,7 +576,7 @@ def _direct_llm_answer(
     prompt = f"Question: {question}\n\nAnswer naturally and concisely. Scale detail to the question. {ANSWER_LANGUAGE_INSTRUCTION}"
     if history:
         prompt = f"Recent context:\n{json.dumps(history[-6:], ensure_ascii=False)}\n\n{prompt}"
-    answer = ensure_english_answer(_chat(f"You are {BRAND_NAME}. Be direct, useful, and concise. " + ANSWER_LANGUAGE_INSTRUCTION, prompt, model, temperature=0.2, max_tokens=1024), model)
+    answer = ensure_english_answer(_chat(f"You are {BRAND_NAME}. Be direct, useful, and concise. " + ANSWER_LANGUAGE_INSTRUCTION + " " + BRAND_CREATOR_NOTE, prompt, model, temperature=0.2, max_tokens=1024), model)
     return AgentResult(answer.strip(), [], model, plan)
 
 
@@ -740,7 +740,7 @@ def _compose_planned_answer(plan: AgentPlan, question: str, sources: list[Eviden
         "If the user asks for launch dates, answer with a launch-date table for the specific phones already being compared. "
         + ANSWER_LANGUAGE_INSTRUCTION
     )
-    answer = _chat(f"You are {BRAND_NAME}'s answer agent. Be direct, useful, and grounded only in accepted evidence. " + ANSWER_LANGUAGE_INSTRUCTION, prompt, model, temperature=0.15, max_tokens=4000)
+    answer = _chat(f"You are {BRAND_NAME}'s answer agent. Be direct, useful, and grounded only in accepted evidence. " + ANSWER_LANGUAGE_INSTRUCTION + " " + BRAND_CREATOR_NOTE, prompt, model, temperature=0.15, max_tokens=4000)
     return ensure_english_answer(answer, model).strip()
 
 
