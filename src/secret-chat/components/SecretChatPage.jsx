@@ -176,7 +176,12 @@ export default function SecretChatPage({ token, onBack }) {
           placeholder="Type a message..."
           maxLength={2000}
         />
-        <button type="submit" disabled={!input.trim()} className={`secret-chat-send-btn${input.trim() ? ' active' : ' disabled'}`}>
+        <button
+          type="submit"
+          disabled={!input.trim()}
+          className={`secret-chat-send-btn${input.trim() ? ' active' : ' disabled'}`}
+          onMouseDown={e => e.preventDefault()}
+        >
           <Send size={18} />
         </button>
       </form>

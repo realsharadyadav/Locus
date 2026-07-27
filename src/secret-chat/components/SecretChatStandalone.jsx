@@ -207,7 +207,12 @@ export default function SecretChatStandalone({ token }) {
           placeholder="Type a message..."
           maxLength={2000}
         />
-        <button type="submit" disabled={!input.trim()} className={`scs-send ${input.trim() ? 'active' : ''}`}>
+        <button
+          type="submit"
+          disabled={!input.trim()}
+          className={`scs-send ${input.trim() ? 'active' : ''}`}
+          onMouseDown={e => e.preventDefault()}
+        >
           <Send size={18} />
         </button>
       </form>

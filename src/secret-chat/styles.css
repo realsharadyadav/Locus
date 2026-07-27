@@ -49,6 +49,7 @@
 .secret-chat-meta {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .secret-chat-title-row {
@@ -96,11 +97,21 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .secret-chat-url-preview {
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  /* The url preview text is a nice-to-have next to the Share link button on desktop; on a
+     narrow header it was refusing to shrink and squeezing .secret-chat-meta down to 0 width,
+     so the title/name field would overflow their own (collapsed) box and visually sit on top
+     of this text instead of next to it. Drop the preview text and keep just the button. */
+  .secret-chat-url-preview { display: none; }
 }
 
 .secret-chat-copy-btn {

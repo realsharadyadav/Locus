@@ -1827,6 +1827,7 @@ function ExplorePage({
   const [directStreaming, setDirectStreaming] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const [railOpen, setRailOpen] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const threadRef = useRef(null);
@@ -2009,6 +2010,7 @@ function ExplorePage({
   };
 
   const openChat = async chat => {
+    setRailOpen(false);
     stopReveal();
     const saved = await api.chatMessages(chat.id);
     const latestJob = jobs.find(job => job.conversation_id === chat.id);
@@ -2107,6 +2109,7 @@ function ExplorePage({
   };
 
   const newChat = () => {
+    setRailOpen(false);
     stopReveal();
     setActiveChat(null);
     window.localStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY);
@@ -2478,13 +2481,16 @@ function ExplorePage({
 
   return (
     <div className="explore-shell">
-      <aside className="chat-rail">
+      <aside className={`chat-rail ${railOpen ? 'open' : ''}`}>
         <div className="chat-rail-head">
           <span className="kicker">Chats</span>
           <span className="chat-rail-count">{chats.length}</span>
           {runningCount > 0 && <span className="chat-rail-running">{runningCount} running</span>}
           <button type="button" className="chat-rail-new" onClick={newChat} aria-label="Start a new conversation">
             <Plus size={13} /> New
+          </button>
+          <button type="button" className="chat-rail-close icon-button" onClick={() => setRailOpen(false)} aria-label="Close chat history">
+            <X size={18} />
           </button>
         </div>
         <div className="chat-rail-list">
@@ -2537,11 +2543,21 @@ function ExplorePage({
           </button>
         )}
       </aside>
+      {railOpen && <button type="button" className="chat-rail-scrim" aria-label="Close chat history" onClick={() => setRailOpen(false)} />}
       <div className="chat-page">
         <div className="chat-top">
           <div className="chat-top-left">
             <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
               <Menu size={20} />
+            </button>
+            <button
+              type="button"
+              className="rail-toggle icon-button"
+              onClick={() => setRailOpen(true)}
+              aria-label="Show chat history"
+            >
+              <History size={19} />
+              {chats.length > 0 && <span className="rail-toggle-count">{chats.length}</span>}
             </button>
             <span className="workspace-label"><i /> ASK</span>
             <div className="chat-top-info">
@@ -2844,7 +2860,7 @@ function ExplorePage({
                 <Square size={15} />
               </button>
             ) : (
-              <button type="submit" disabled={!question.trim()} aria-label="Send question"><Send size={17} /></button>
+              <button type="submit" disabled={!question.trim()} aria-label="Send question" onMouseDown={e => e.preventDefault()}><Send size={17} /></button>
             )}
           </div>
           <div className="composer-meta">
