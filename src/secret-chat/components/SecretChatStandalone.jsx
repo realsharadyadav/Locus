@@ -15,7 +15,32 @@ export default function SecretChatStandalone({ token }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef(null);
+  const [rootEl, setRootEl] = useState(null);
   const eventSourceRef = useRef(null);
+
+  // iOS Safari keeps the layout viewport (and 100vh/100dvh) fixed when the on-screen
+  // keyboard opens instead of shrinking it - only the visual viewport shrinks. Without this,
+  // the fixed-height shell stays full-size and gets shifted up by the OS to keep the focused
+  // input visible, pushing the message list off the top of the visible area. Track the visual
+  // viewport directly and size the shell to it so the composer always ends up right above the
+  // keyboard instead of floating somewhere else on screen. rootEl is a state-backed callback
+  // ref (rather than useRef) because the shell only mounts once loading/session resolve, and a
+  // plain ref wouldn't re-run this effect when that DOM node actually appears.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv || !rootEl) return undefined;
+    const applyLayout = () => {
+      rootEl.style.height = `${vv.height}px`;
+      rootEl.style.top = `${vv.offsetTop}px`;
+    };
+    applyLayout();
+    vv.addEventListener('resize', applyLayout);
+    vv.addEventListener('scroll', applyLayout);
+    return () => {
+      vv.removeEventListener('resize', applyLayout);
+      vv.removeEventListener('scroll', applyLayout);
+    };
+  }, [rootEl]);
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -48,6 +73,14 @@ export default function SecretChatStandalone({ token }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return undefined;
+    const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+    vv.addEventListener('resize', scrollToBottom);
+    return () => vv.removeEventListener('resize', scrollToBottom);
+  }, []);
 
   const send = async (e) => {
     e.preventDefault();
@@ -85,7 +118,7 @@ export default function SecretChatStandalone({ token }) {
   }
 
   return (
-    <div className="scs">
+    <div className="scs" ref={setRootEl}>
       <header className="scs-header">
         <div className="scs-header-left">
           <Users size={16} className="scs-header-icon" />
