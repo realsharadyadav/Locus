@@ -662,7 +662,7 @@ header {
   margin: 0 auto;
   padding: 16px 4.2vw 24px;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-height: 540px;
   position: relative;
   width: 100%;
@@ -10532,4 +10532,16 @@ html[data-theme='dark'] .chat-rail-running { color: #9bbaff; }
 .mobile-only-new-chat { display: none; }
 @media (max-width: 980px) {
   .mobile-only-new-chat { display: inline-flex; }
+}
+
+/* ─── Ask: mobile keyboard robustness ───
+   .chat-page is a 3-row grid (top/thread/composer). Below 720px there isn't
+   room for the 540px floor plus a real on-screen keyboard's visualViewport
+   shrink (see useVisualViewportShell, applied to <main> in App()) without the
+   thread content forcing the grid taller than the available space and
+   clipping the composer under .explore-shell's overflow:hidden. Drop the
+   floor and let the already-scrollable .chat-thread row absorb the squeeze
+   instead of the composer disappearing off-screen. */
+@media (max-width: 720px) {
+  .chat-page { min-height: 0; }
 }

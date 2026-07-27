@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { MessageCircle, Send, User, Users } from 'lucide-react';
+import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
 import { secretChatApi } from '../api';
-import { parseServerTime } from '../../utils';
+import { parseServerTime, resizeTextarea } from '../../utils';
+import { useVisualViewportShell } from '../../hooks/useVisualViewportShell';
 
 export default function SecretChatStandalone({ token }) {
   const [session, setSession] = useState(null);
@@ -14,34 +15,13 @@ export default function SecretChatStandalone({ token }) {
   })());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showJump, setShowJump] = useState(false);
   const bottomRef = useRef(null);
-  const [rootEl, setRootEl] = useState(null);
+  const messagesRef = useRef(null);
+  const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
-
-  // iOS Safari keeps the layout viewport (and 100vh/100dvh) fixed when the on-screen
-  // keyboard opens instead of shrinking it - only the visual viewport shrinks. Without this,
-  // the fixed-height shell stays full-size and gets shifted up by the OS to keep the focused
-  // input visible, pushing the message list off the top of the visible area. Track the visual
-  // viewport directly and size the shell to it so the composer always ends up right above the
-  // keyboard instead of floating somewhere else on screen. rootEl is a state-backed callback
-  // ref (rather than useRef) because the shell only mounts once loading/session resolve, and a
-  // plain ref wouldn't re-run this effect when that DOM node actually appears.
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv || !rootEl) return undefined;
-    const applyLayout = () => {
-      rootEl.style.height = `${vv.height}px`;
-      rootEl.style.top = `${vv.offsetTop}px`;
-    };
-    applyLayout();
-    vv.addEventListener('resize', applyLayout);
-    vv.addEventListener('scroll', applyLayout);
-    return () => {
-      vv.removeEventListener('resize', applyLayout);
-      vv.removeEventListener('scroll', applyLayout);
-    };
-  }, [rootEl]);
+  const setRootEl = useVisualViewportShell();
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -108,8 +88,24 @@ export default function SecretChatStandalone({ token }) {
   }, [token, loading]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = messagesRef.current;
+    if (!el) { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    else setShowJump(true);
   }, [messages]);
+
+  const handleMessagesScroll = () => {
+    const el = messagesRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    if (nearBottom) setShowJump(false);
+  };
+
+  const jumpToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowJump(false);
+  };
 
   useEffect(() => {
     const vv = window.visualViewport;
@@ -124,6 +120,7 @@ export default function SecretChatStandalone({ token }) {
     if (!input.trim()) return;
     const content = input.trim();
     setInput('');
+    window.setTimeout(() => resizeTextarea(inputRef.current), 0);
     try {
       const msg = await secretChatApi.sendMessage(token, `${sender}|||${clientId}`, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
@@ -174,7 +171,7 @@ export default function SecretChatStandalone({ token }) {
         </div>
       </header>
 
-      <div className="scs-messages">
+      <div className="scs-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
         {messages.length === 0 && (
           <div className="scs-empty">
             <MessageCircle size={36} />
@@ -199,13 +196,22 @@ export default function SecretChatStandalone({ token }) {
         <div ref={bottomRef} />
       </div>
 
+      {showJump && (
+        <button type="button" className="scs-jump-btn" onClick={jumpToBottom} aria-label="Jump to latest message">
+          <ChevronDown size={16} /> New messages
+        </button>
+      )}
+
       <form className="scs-composer" onSubmit={send}>
-        <input
+        <textarea
+          ref={inputRef}
           className="scs-input"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={e => { setInput(e.target.value); resizeTextarea(e.target); }}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); } }}
           placeholder="Type a message..."
           maxLength={2000}
+          rows={1}
         />
         <button
           type="submit"
