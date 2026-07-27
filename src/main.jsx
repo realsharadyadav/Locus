@@ -22,6 +22,7 @@ import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, secretChatApi
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { BRAND, assistantLabel, readStorage, readSessionFlag, storageKey, writeSessionFlag, writeStorage } from './brand';
 import { displayTime, parseServerTime, resizeTextarea, STORE_COLORS } from './utils';
+import { useVisualViewportShell } from './hooks/useVisualViewportShell';
 
 function Logo() {
   return (
@@ -3248,6 +3249,7 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { token: secretChatToken, isSharedLink, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute();
+  const setExploreShellEl = useVisualViewportShell();
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -3523,7 +3525,7 @@ function App() {
         theme={theme}
         setTheme={setTheme}
       />
-      <main>
+      <main ref={page === 'explore' ? setExploreShellEl : undefined}>
         {!['explore', 'ticket-analysis'].includes(page) && (
           <Header
             query={query}
