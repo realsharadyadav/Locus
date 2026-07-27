@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from queue import Queue
+import random
 import re
 from inspect import signature
 from threading import Event, Lock, Thread
@@ -32,6 +33,13 @@ from .config import (
 )
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
+from .brand import (
+    CAPABILITY_ANSWER_INTRO,
+    CAPABILITY_JOKE_CLOSERS,
+    CAPABILITY_QUESTION_PATTERN,
+    CREATOR_JOKE_ANSWERS,
+    CREATOR_QUESTION_PATTERN,
+)
 from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
@@ -1010,6 +1018,24 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         db.commit()
         notify("complete", "Ticket Analysis ready")
         return ChatResponse(answer=answer, sources=[source], model="Ticket Analysis", conversation_id=session.id, llm_hits=1, web_queries=0)
+    # Answered deterministically instead of routed through the LLM/web-search pipeline: those
+    # paths proved unreliable for this (e.g. web-search auto-trigger pulling in evidence about
+    # an unrelated real company also named "Locus"). See brand.py for why.
+    creator_match = CREATOR_QUESTION_PATTERN.search(payload.question)
+    capability_match = not creator_match and CAPABILITY_QUESTION_PATTERN.search(payload.question)
+    if creator_match or capability_match:
+        answer = (
+            random.choice(CREATOR_JOKE_ANSWERS) if creator_match
+            else CAPABILITY_ANSWER_INTRO + "\n\n" + random.choice(CAPABILITY_JOKE_CLOSERS)
+        )
+        ensure_not_cancelled()
+        db.add_all([
+            ChatMessage(session_id=session.id, role="user", content=payload.question),
+            ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits=0, web_queries=0), model="Locus", provider=payload.provider),
+        ])
+        db.commit()
+        notify("complete", "Answered directly")
+        return ChatResponse(answer=answer, sources=[], model="Locus", conversation_id=session.id, llm_hits=0, web_queries=0)
     effective_web_search = _effective_web_search(payload)
     if effective_web_search:
         web_mode = "unrestricted web research" if payload.reasoning_mode == "unrestricted" else "web research"
