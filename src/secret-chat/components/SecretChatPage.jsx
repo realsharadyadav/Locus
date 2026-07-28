@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
+import { Ban, ChevronDown, Menu, MessageCircle, Send, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
@@ -9,12 +9,16 @@ import { parseServerTime } from '../../utils';
 import { timeLabel, withMessageGrouping } from '../messageGroups';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
-export default function SecretChatPage({ token, onBack }) {
+export default function SecretChatPage({ token, onBack, onChanged, onRevoked, openRail }) {
   const [session, setSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [sender, setSender] = useState(() => window.localStorage.getItem('secret-chat-sender') || 'Anonymous');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  const [title, setTitle] = useState('');
+  // Set when the room is deleted while this view is open — in another tab, or by
+  // the host while a guest is sitting in the room.
+  const [revoked, setRevoked] = useState(false);
   const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
@@ -29,25 +33,41 @@ export default function SecretChatPage({ token, onBack }) {
   useEffect(() => {
     secretChatApi.get(token).then(data => {
       setSession(data);
+      setTitle(data.title || 'Private');
       setMessages(data.messages || []);
       lastIdRef.current = (data.messages || []).reduce((m, msg) => Math.max(m, msg.id), 0);
       setLoading(false);
-    }).catch(() => {
+    }).catch(error => {
+      // A deleted room 404s here — that is a revoked link, not a failure.
+      if (/not found/i.test(error.message || '')) setRevoked(true);
       setLoading(false);
     });
   }, [token]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || revoked) return;
     let cancelled = false;
     let retryDelay = 1000;
     let retryTimer = null;
+
+    const stop = () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      eventSourceRef.current?.close();
+    };
 
     const connect = () => {
       if (cancelled) return;
       const es = new EventSource(secretChatApi.stream(token, lastIdRef.current));
       eventSourceRef.current = es;
       es.onopen = () => { retryDelay = 1000; };
+      // The server sends this right before closing a deleted room's stream, so
+      // we stop rather than reconnect-looping against a room that is gone.
+      es.addEventListener('revoked', () => {
+        stop();
+        setRevoked(true);
+        onRevoked?.();
+      });
       es.onmessage = (event) => {
         if (event.data === ': keepalive') return;
         try {
@@ -79,16 +99,23 @@ export default function SecretChatPage({ token, onBack }) {
           return [...prev, ...additions];
         });
         lastIdRef.current = newMessages.reduce((m, msg) => Math.max(m, msg.id), lastIdRef.current);
-      }).catch(() => {});
+      }).catch(error => {
+        // Backstop for the stream event: if the room was deleted while the
+        // stream was down, the poll is what notices.
+        if (/not found/i.test(error.message || '')) {
+          stop();
+          clearInterval(poll);
+          setRevoked(true);
+          onRevoked?.();
+        }
+      });
     }, 8000);
 
     return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
+      stop();
       clearInterval(poll);
-      eventSourceRef.current?.close();
     };
-  }, [token, loading]);
+  }, [token, loading, revoked]);
 
   // Keyboard, rotation and a resizing composer all change the list container's height
   // rather than its content; see useRepinOnResize.
@@ -120,6 +147,19 @@ export default function SecretChatPage({ token, onBack }) {
     window.localStorage.setItem('secret-chat-sender', name);
   };
 
+  const commitTitle = async () => {
+    const next = title.trim() || 'Private';
+    setTitle(next);
+    if (next === session?.title) return;
+    try {
+      const updated = await secretChatApi.rename(token, next);
+      setSession(updated);
+      onChanged?.();
+    } catch {
+      setTitle(session?.title || 'Private');
+    }
+  };
+
   if (loading) {
     return (
       <div className="secret-chat-loading">
@@ -128,14 +168,42 @@ export default function SecretChatPage({ token, onBack }) {
     );
   }
 
+  if (revoked) {
+    return (
+      <div className="secret-chat-shell">
+        <div className="secret-chat-revoked">
+          <Ban size={40} />
+          <h2>This chat is no longer available</h2>
+          <p>The person who created it deleted the chat, so the link no longer works.</p>
+          {onBack && <button type="button" className="btn-primary" onClick={onBack}>Back</button>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="secret-chat-shell">
       <header className="secret-chat-header">
+        {openRail && (
+          <button type="button" className="secret-chat-rail-btn icon-button" onClick={openRail} aria-label="Open private chat list">
+            <Menu size={18} />
+          </button>
+        )}
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
             <Users size={16} />
-            <strong>{session?.title || 'Private'}</strong>
+            {/* Editable for the host; a guest has no rename route, so the PATCH
+                just fails and the old title is restored. */}
+            <input
+              className="secret-chat-title-input"
+              value={title}
+              onChange={event => setTitle(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={event => { if (event.key === 'Enter') event.target.blur(); }}
+              maxLength={160}
+              aria-label="Chat name"
+            />
           </div>
           <div className="secret-chat-sender-row">
             <User size={12} />

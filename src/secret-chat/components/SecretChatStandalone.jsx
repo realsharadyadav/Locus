@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
+import { Ban, ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
@@ -21,6 +21,8 @@ export default function SecretChatStandalone({ token }) {
   })());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
+  // The host deleted the room while the guest was sitting in it.
+  const [revoked, setRevoked] = useState(false);
   const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
@@ -55,16 +57,25 @@ export default function SecretChatStandalone({ token }) {
   }, [token]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || revoked) return;
     let cancelled = false;
     let retryDelay = 1000;
     let retryTimer = null;
+
+    const stop = () => {
+      cancelled = true;
+      clearTimeout(retryTimer);
+      eventSourceRef.current?.close();
+    };
 
     const connect = () => {
       if (cancelled) return;
       const es = new EventSource(secretChatApi.stream(token, lastIdRef.current));
       eventSourceRef.current = es;
       es.onopen = () => { retryDelay = 1000; };
+      // Sent just before the server closes a deleted room's stream. Without
+      // this the guest would reconnect-loop against a room that is gone.
+      es.addEventListener('revoked', () => { stop(); setRevoked(true); });
       es.onmessage = (event) => {
         if (event.data === ': keepalive') return;
         try {
@@ -96,16 +107,22 @@ export default function SecretChatStandalone({ token }) {
           return [...prev, ...additions];
         });
         lastIdRef.current = newMessages.reduce((m, msg) => Math.max(m, msg.id), lastIdRef.current);
-      }).catch(() => {});
+      }).catch(error => {
+        // Backstop for the stream event, for a deletion that lands while the
+        // stream happens to be down.
+        if (/not found/i.test(error.message || '')) {
+          stop();
+          clearInterval(poll);
+          setRevoked(true);
+        }
+      });
     }, 8000);
 
     return () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
+      stop();
       clearInterval(poll);
-      eventSourceRef.current?.close();
     };
-  }, [token, loading]);
+  }, [token, loading, revoked]);
 
   // Keyboard, rotation and a resizing composer all change the list container's height
   // rather than its content; see useRepinOnResize.
@@ -143,12 +160,13 @@ export default function SecretChatStandalone({ token }) {
     );
   }
 
-  if (!session) {
+  if (revoked || !session) {
     return (
       <div className="scs-loading">
         <div className="scs-error">
-          <MessageCircle size={32} />
-          <p>Chat not found or expired</p>
+          <Ban size={32} />
+          <p>This chat is no longer available</p>
+          <small>The person who created it deleted the chat, so this link no longer works.</small>
         </div>
       </div>
     );

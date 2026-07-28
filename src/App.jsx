@@ -16,7 +16,7 @@ import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
-import { SecretChatPage, secretChatApi, useSecretChatRoute } from './secret-chat';
+import { PrivateChatsPage, useSecretChatRoute } from './secret-chat';
 
 export function App({ initialSecretChatToken = null }) {
   // 'checking' until the backend says whether a password is configured, then
@@ -34,7 +34,7 @@ export function App({ initialSecretChatToken = null }) {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const { token: secretChatToken, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
+  const { token: secretChatToken, select: selectSecretChat, open: openSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -211,7 +211,7 @@ export function App({ initialSecretChatToken = null }) {
     if (!preferencesLoaded) return;
     const path = window.location.pathname;
     const pageFromUrl = normalizePageId(path === '/' ? 'home' : path.replace(/^\//, ''));
-    if (APP_PAGES.includes(pageFromUrl) && pageFromUrl !== 'secret-chat') {
+    if (APP_PAGES.includes(pageFromUrl)) {
       setPage(pageFromUrl);
       const canonicalPath = pageFromUrl === 'home' ? '/' : `/${pageFromUrl}`;
       if (path !== canonicalPath) window.history.replaceState({}, '', canonicalPath);
@@ -219,7 +219,7 @@ export function App({ initialSecretChatToken = null }) {
     const onPopState = () => {
       const p = window.location.pathname;
       const next = normalizePageId(p === '/' ? 'home' : p.replace(/^\//, ''));
-      if (APP_PAGES.includes(next) && next !== 'secret-chat') setPage(next);
+      if (APP_PAGES.includes(next)) setPage(next);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -301,11 +301,12 @@ export function App({ initialSecretChatToken = null }) {
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
   const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
 
-  const openSecretChat = async () => {
-    try {
-      await openSecretChatRoute(secretChatApi.create);
-      setMobileOpen(false);
-    } catch {}
+  // Opens the Private list, not a room — rooms are created from the page now, so
+  // clicking the nav item no longer leaves an empty chat behind every time.
+  const openSecretChat = () => {
+    openSecretChatRoute();
+    setPage('secret-chat');
+    setMobileOpen(false);
   };
 
   const requestDeleteChat = (chat, onDeleted) => setConfirm({
@@ -428,13 +429,13 @@ export function App({ initialSecretChatToken = null }) {
         {page === 'ticket-analysis' && (
           <TicketAnalysisPage files={files} openMenu={() => setMobileOpen(true)} />
         )}
-        {page === 'secret-chat' && secretChatToken && (
-          <SecretChatPage
+        {page === 'secret-chat' && (
+          <PrivateChatsPage
             token={secretChatToken}
-            onBack={() => {
-              setPage('home');
-              closeSecretChatRoute();
-            }}
+            onSelect={selectSecretChat}
+            requestConfirm={setConfirm}
+            toast={toast}
+            openMenu={() => setMobileOpen(true)}
           />
         )}
         {page === 'settings' && (

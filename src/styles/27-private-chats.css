@@ -1,0 +1,169 @@
+/* Private chats: rail + room, laid out like the Ask workspace.
+
+   The rail reuses the .chat-rail family from the Ask module rather than
+   cloning it, so the two lists stay visually identical as that one evolves.
+   Only the Private-specific bits live here. */
+
+.private-shell {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Message count on a room row, sitting where Ask puts its status dot. */
+.private-rail-count {
+  flex: none;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--violet) 16%, transparent);
+  color: var(--violet);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+html[data-theme='dark'] .private-rail-count {
+  background: rgba(255, 255, 255, .09);
+  color: #a9b6c6;
+}
+
+.private-empty {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.private-empty-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Only useful once the rail collapses into a drawer. */
+.private-rail-toggle {
+  display: none;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.private-empty-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.private-empty-body svg { opacity: .4; }
+.private-empty-body h2 { margin: 0; font-size: 19px; color: var(--ink); }
+
+.private-empty-body p {
+  margin: 0;
+  max-width: 380px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.private-empty-body .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 4px;
+}
+
+.private-empty-body small { font-size: 11px; opacity: .7; }
+
+html[data-theme='dark'] .private-empty-body h2 { color: #e6edf3; }
+html[data-theme='dark'] .private-empty-bar { border-bottom-color: rgba(255, 255, 255, .08); }
+
+html[data-theme='dark'] .private-rail-toggle {
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .04);
+  color: #e6edf3;
+}
+
+/* Room title, editable in place for the host. Styled as text until focused so
+   the header does not read as a form. */
+.secret-chat-title-input {
+  min-width: 0;
+  max-width: 260px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.secret-chat-title-input:hover { border-color: var(--line); }
+
+.secret-chat-title-input:focus {
+  outline: none;
+  border-color: var(--violet);
+  background: var(--paper);
+}
+
+html[data-theme='dark'] .secret-chat-title-input:hover { border-color: rgba(255, 255, 255, .14); }
+html[data-theme='dark'] .secret-chat-title-input:focus { background: rgba(255, 255, 255, .05); }
+
+.secret-chat-rail-btn { display: none; }
+
+/* Shown in place of the room once its link has been revoked. */
+.secret-chat-revoked {
+  grid-row: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.secret-chat-revoked svg { opacity: .45; }
+.secret-chat-revoked h2 { margin: 0; font-size: 18px; color: var(--ink); }
+.secret-chat-revoked p { margin: 0; max-width: 360px; font-size: 13px; line-height: 1.55; }
+
+html[data-theme='dark'] .secret-chat-revoked h2 { color: #e6edf3; }
+
+/* Same drawer treatment the Ask rail gets, at the same breakpoint. */
+@media (max-width: 980px) {
+  .private-shell .chat-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 30;
+    height: 100dvh;
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+
+  .private-shell .chat-rail.open { transform: translateX(0); }
+  .private-rail-toggle { display: inline-flex; }
+  .secret-chat-rail-btn { display: inline-flex; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .private-shell .chat-rail { transition: none; }
+}

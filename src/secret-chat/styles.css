@@ -781,3 +781,13 @@ html[data-theme='dark'] .scs-day span {
   position: relative;
   z-index: 6;
 }
+
+/* Guest view of a room whose link was revoked while they were in it. */
+.scs-error small {
+  display: block;
+  max-width: 300px;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: .7;
+}

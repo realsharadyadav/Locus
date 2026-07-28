@@ -1,4 +1,5 @@
 export { secretChatApi } from './api';
+export { default as PrivateChatsPage } from './components/PrivateChatsPage';
 export { default as SecretChatPage } from './components/SecretChatPage';
 export { default as SecretChatStandalone } from './components/SecretChatStandalone';
 export { default as ShareMenu } from './components/ShareMenu';
@@ -57,18 +58,23 @@ export function useSecretChatRoute(initialToken = null) {
     if (token) markSecretChatHost();
   }, [token]);
 
-  const open = async (createFn) => {
+  /**
+   * Point the route at one room, or at the room list when given null. The host
+   * keeps the same /j/{token} URL a guest would use, so copying it out of the
+   * address bar still produces a working invite.
+   */
+  const select = (nextToken) => {
     markSecretChatHost();
-    const session = await createFn();
-    setToken(session.token);
-    window.history.replaceState({}, '', guestPath(session.token));
-    return session.token;
+    setToken(nextToken);
+    window.history.replaceState({}, '', nextToken ? guestPath(nextToken) : '/secret-chat');
   };
+
+  const open = () => select(null);
 
   const close = () => {
     setToken(null);
     window.history.replaceState({}, '', '/');
   };
 
-  return { token, open, close };
+  return { token, select, open, close };
 }

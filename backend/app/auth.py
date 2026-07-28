@@ -19,6 +19,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -31,11 +32,20 @@ from .schemas import AuthLoginRequest, AuthLoginResponse, AuthStatusRead
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Paths reachable without a token. Secret Chat is on the list by design: those
-# rooms are shared with outsiders via link (see src/secret-chat/links.js), and
-# their EventSource stream cannot send an Authorization header anyway.
+# Paths reachable without a token.
 PUBLIC_PATHS = {"/api/health", "/api/auth/status", "/api/auth/login"}
-PUBLIC_PATH_PREFIXES = ("/api/secret-chat",)
+
+# Secret Chat is split rather than blanket-public. A guest holding a share link
+# needs exactly these four calls — read the room, read and post messages, and
+# stream (EventSource cannot send an Authorization header, so the stream has to
+# be reachable on the token alone). Everything else under the prefix — listing
+# rooms, creating, renaming, deleting — is the host's and stays guarded.
+GUEST_SECRET_CHAT_ROUTES = (
+    ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+$")),
+    ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+/messages$")),
+    ("POST", re.compile(r"^/api/secret-chat/[a-f0-9]+/messages$")),
+    ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+/stream$")),
+)
 
 LOGIN_MAX_FAILURES = 10
 LOGIN_FAILURE_WINDOW_SECONDS = 900
@@ -104,8 +114,10 @@ def bearer_token(authorization: str | None) -> str:
     return value.strip() if scheme.lower() == "bearer" else ""
 
 
-def is_public_path(path: str) -> bool:
-    return path in PUBLIC_PATHS or path.startswith(PUBLIC_PATH_PREFIXES)
+def is_public(method: str, path: str) -> bool:
+    if path in PUBLIC_PATHS:
+        return True
+    return any(method == verb and pattern.match(path) for verb, pattern in GUEST_SECRET_CHAT_ROUTES)
 
 
 def _login_blocked(client: str) -> bool:
@@ -133,7 +145,7 @@ async def require_auth(request: Request, call_next):
     Registered before the CORS middleware so CORS stays the outer layer and a
     401 still carries the headers the browser needs to read it.
     """
-    if request.method == "OPTIONS" or not auth_enabled() or is_public_path(request.url.path):
+    if request.method == "OPTIONS" or not auth_enabled() or is_public(request.method, request.url.path):
         return await call_next(request)
     if verify_token(bearer_token(request.headers.get("authorization"))):
         return await call_next(request)

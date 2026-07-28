@@ -242,3 +242,19 @@ class AuthLoginRequest(BaseModel):
 class AuthLoginResponse(BaseModel):
     token: str
     expires_at: datetime
+
+
+class SecretChatSessionSummary(BaseModel):
+    """Row in the host's room list — no messages, just enough to pick a room."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    token: str
+    title: str
+    created_at: datetime
+    last_activity: datetime
+    message_count: int = 0
+
+
+class SecretChatTitleUpdate(BaseModel):
+    title: str = Field(default="Private", max_length=160)
