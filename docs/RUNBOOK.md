@@ -72,31 +72,62 @@ Use `.env.example` as the source of truth for expected config.
 
 Important settings:
 
+- `LOCUS_DATABASE_URL`: unset uses local SQLite (`backend/locus.db`); set to a Postgres URL to
+  use Postgres + pgvector for both relational data and semantic search
 - `LLM_PROVIDER`: `ollama`, `groq`, `openai`, or `gemini`
 - `OLLAMA_URL`, `OLLAMA_MODEL`
 - `GROQ_API_KEY`, `GROQ_MODEL`
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `SEMANTIC_RETRIEVAL_ENABLED`
-- `CHROMA_PATH`
+- `VECTOR_FALLBACK_PATH`
 - `TICKET_ANALYSIS_ENABLED`
+
+## Running Postgres Locally (optional, for pgvector parity with prod)
+
+Local dev works with zero setup (defaults to SQLite). To run against Postgres + pgvector
+locally, matching what Render runs:
+
+```bash
+docker run -d \
+  --name locus-postgres \
+  -e POSTGRES_USER=locus \
+  -e POSTGRES_PASSWORD=locus \
+  -e POSTGRES_DB=locus \
+  -p 5432:5432 \
+  pgvector/pgvector:pg16
+```
+
+Then in `.env`:
+
+```
+LOCUS_DATABASE_URL=postgresql://locus:locus@127.0.0.1:5432/locus
+```
+
+The backend creates the `vector` extension, tables, and indexes automatically on startup
+(`ensure_vector_schema()` in `vector_store.py`) — the `pgvector/pgvector` image's default
+`postgres` superuser role can do this, so no manual `psql` step is needed locally. On Render,
+the managed Postgres role is also permitted to create supported extensions like `pgvector`.
 
 ## Common Local Data
 
-- SQLite database: `backend/locus.db`
+- Database: `backend/locus.db` (SQLite, only if `LOCUS_DATABASE_URL` is unset)
 - Uploaded files: `backend/uploads/`
-- Optional Chroma vector data: `backend/chroma`
+- Vector fallback data (SQLite, only used without Postgres): `backend/vector_fallback`
 - Job diagnostics: `backend/diagnostics/jobs/`
 
 Do not delete these casually. They contain user data and local state.
 
 ## Deploy to Render (free tier)
 
-Locus deploys as two free Render services, defined in `render.yaml`
+Locus deploys as three free Render resources, defined in `render.yaml`
 (a Render "Blueprint"):
 
+- `locus-db`: a free Render Postgres instance (with the `pgvector` extension) for
+  relational data and semantic-search embeddings
 - `locus-backend`: a Docker web service built from the root `Dockerfile`,
-  running the FastAPI app on port 8080
+  running the FastAPI app on port 8080, with `LOCUS_DATABASE_URL` wired to
+  `locus-db` via the Blueprint's `fromDatabase` linking
 - `locus-frontend`: a static site built with `npm run build`, publishing `dist/`
 
 They're on different `*.onrender.com` subdomains, so the frontend calls the
@@ -104,27 +135,30 @@ backend via an absolute URL (`VITE_API_BASE_URL`, baked in at build time — see
 `src/apiBase.js`); the backend's CORS is already open (`allow_origins=["*"]` in
 `backend/app/main.py`).
 
-**Storage is ephemeral on the free plan.** Render's free web services have no
-persistent disk — every redeploy, and every wake from the 15-minute idle
-spin-down, starts from a fresh filesystem. `locus.db`, `backend/chroma/`, and
-`backend/uploads/` all reset when that happens; there's currently no
-backup/restore in place. That's an acceptable tradeoff for trying the app out,
-but means uploaded documents and chat history won't survive a spin-down. If you
-want real persistence later, the options are a Render paid plan (persistent
-disks), Render's free Postgres for the relational data, or wiring up backup to
-some other object store — not something this setup does today.
+**`locus-backend`'s own filesystem is still ephemeral** — every redeploy and
+15-minute idle spin-down wipes `backend/uploads/` (uploaded file bytes; a
+separate concern from the extracted text and embeddings, which live in
+Postgres). **`locus-db` (the database) persists across those**, but only for
+30 days on Render's free Postgres plan, plus a 14-day grace period to upgrade
+before it's deleted — see Render's free Postgres policy. Free accounts are
+limited to one free Postgres at a time.
 
 ### One-time setup
 
 1. In the Render dashboard: **New → Blueprint**, connect this GitHub repo. Render
-   reads `render.yaml` and creates both services.
+   reads `render.yaml` and creates all three resources.
 2. On the `locus-backend` service, set the env vars marked `sync: false` in
    `render.yaml`: `LLM_PROVIDER`, and whichever provider key it needs
-   (`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`).
+   (`OPENAI_API_KEY` / `GEMINI_API_KEY` / `GROQ_API_KEY`). `LOCUS_DATABASE_URL`
+   is wired automatically — no manual connection string needed.
 3. Once `locus-backend` has a URL, check it matches the `VITE_API_BASE_URL`
    placeholder in `render.yaml` (`https://locus-backend.onrender.com`). If Render
    picked a different subdomain (e.g. the name was taken), update that value and
    redeploy `locus-frontend`.
+4. **When editing `render.yaml` on an already-deployed Blueprint** (e.g. this
+   migration, which adds `locus-db`): pushing alone doesn't create new
+   resources. Open the Blueprint in the Render dashboard and approve the sync —
+   it shows a diff and asks for confirmation before creating `locus-db`.
 
 ### Deploy
 

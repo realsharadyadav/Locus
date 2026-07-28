@@ -55,7 +55,7 @@ from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, Ch
 from .seed import seed_database
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
 from .ticket_taxonomy_data import DEFAULT_TAXONOMY, DEFAULT_TAXONOMY_V2, TaxonomyRule
-from .vector_store import EMBEDDING_MODEL, active_embedding_model, delete_file_embeddings, index_file_with_status, search as semantic_search
+from .vector_store import EMBEDDING_MODEL, VectorStoreUnavailable, active_embedding_model, delete_file_embeddings, ensure_vector_schema, index_file_with_status, search as semantic_search
 
 
 class ChatJobCancelled(RuntimeError):
@@ -375,6 +375,7 @@ def _index_stored_file(db: Session, stored_file: StoredFile) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_vector_schema()
     _ensure_schema_columns()
     with SessionLocal() as db:
         interrupted_jobs = db.scalars(select(ChatJob).where(ChatJob.status.in_(["queued", "running"]))).all()
@@ -1217,7 +1218,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
     semantic_sources = []
     if stored_files:
         try:
-            notify("gathering", "Semantic retrieval: embedding question and querying local Chroma chunks")
+            notify("gathering", "Semantic retrieval: embedding question and querying vector store chunks")
             search_file_ids = payload.file_ids if payload.file_ids is not None else [stored_file.id for stored_file in stored_files]
             semantic_hits = [
                 hit for hit in semantic_search(retrieval_question, file_ids=search_file_ids)
@@ -1235,7 +1236,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
                     ChatSource(id=hit.file_id, name=hit.name, store_id=hit.store_id, excerpt=hit.excerpt)
                     for hit in semantic_hits
                 ]
-                notify("gathering", f"Semantic retrieval returned {len(semantic_hits)} chunk{'s' if len(semantic_hits) != 1 else ''} from local Chroma")
+                notify("gathering", f"Semantic retrieval returned {len(semantic_hits)} chunk{'s' if len(semantic_hits) != 1 else ''}")
             else:
                 notify("gathering", "Semantic retrieval returned no chunks; falling back to lexical scan")
         except VectorStoreUnavailable:

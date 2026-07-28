@@ -10,20 +10,18 @@ import sqlite3
 from threading import Lock
 from typing import Iterable
 
-from .brand import (
-    CHROMA_COLLECTION,
-    LEGACY_CHROMA_COLLECTION,
-    LEGACY_VECTOR_INDEX_FILENAME,
-    VECTOR_INDEX_FILENAME,
-)
+from sqlalchemy import text
+
+from .brand import LEGACY_VECTOR_INDEX_FILENAME, VECTOR_INDEX_FILENAME
 from .config import (
-    CHROMA_PATH,
     EMBEDDING_DIMENSIONS,
     SEMANTIC_CHUNK_CHARS,
     SEMANTIC_CHUNK_OVERLAP,
     SEMANTIC_RETRIEVAL_ENABLED,
     SEMANTIC_TOP_K,
+    VECTOR_FALLBACK_PATH,
 )
+from .database import engine
 
 
 TOKEN_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{2,}")
@@ -35,8 +33,8 @@ EMBEDDING_MODEL = f"fastembed:{FASTEMBED_MODEL_NAME}" if _FASTEMBED_INSTALLED el
 _fastembed_model = None
 _fastembed_load_failed = False
 
-_chroma_client = None
-_chroma_client_lock = Lock()
+_pgvector_ready = False
+_pgvector_lock = Lock()
 
 
 @dataclass(frozen=True)
@@ -151,43 +149,121 @@ def chunk_text(text: str, *, chunk_chars: int = SEMANTIC_CHUNK_CHARS, overlap: i
     return [chunk for chunk in chunks if chunk]
 
 
-def _chroma_client_instance():
-    """A process-wide PersistentClient, created once. Instantiating a new
-    PersistentClient per call leaks memory (each one opens its own sqlite
-    connection and loads HNSW segments that are never fully released)."""
-    global _chroma_client
-    if _chroma_client is None:
-        with _chroma_client_lock:
-            if _chroma_client is None:
-                import chromadb
-                _chroma_client = chromadb.PersistentClient(path=str(CHROMA_PATH))
-    return _chroma_client
+def _is_postgres() -> bool:
+    return engine.url.get_backend_name() == "postgresql"
 
 
-def _collection():
+def ensure_vector_schema() -> None:
+    """Create the pgvector extension, chunks table, and index once per process.
+    No-op on non-Postgres engines — those fall back to the plain-cosine sqlite path."""
+    global _pgvector_ready
+    if _pgvector_ready or not _is_postgres():
+        return
+    with _pgvector_lock:
+        if _pgvector_ready:
+            return
+        with engine.begin() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            connection.execute(text(
+                f"""
+                CREATE TABLE IF NOT EXISTS chunks (
+                    id TEXT PRIMARY KEY,
+                    file_id INTEGER NOT NULL,
+                    store_id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    chunk_index INTEGER NOT NULL,
+                    document TEXT NOT NULL,
+                    embedding vector({EMBEDDING_DIMENSIONS}) NOT NULL
+                )
+                """
+            ))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS idx_chunks_file_id ON chunks (file_id)"))
+            connection.execute(text(
+                "CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON chunks "
+                "USING hnsw (embedding vector_cosine_ops)"
+            ))
+        _pgvector_ready = True
+
+
+def _require_pgvector() -> None:
     if not SEMANTIC_RETRIEVAL_ENABLED:
         raise VectorStoreUnavailable("Semantic retrieval is disabled")
-    try:
-        client = _chroma_client_instance()
-    except Exception as exception:  # pragma: no cover - depends on optional local package
-        raise VectorStoreUnavailable("ChromaDB is not installed") from exception
-    metadata = {"hnsw:space": "cosine"}
-    primary = client.get_or_create_collection(CHROMA_COLLECTION, metadata=metadata)
-    try:
-        if primary.count() > 0:
-            return primary
-        legacy = client.get_or_create_collection(LEGACY_CHROMA_COLLECTION, metadata=metadata)
-        if legacy.count() > 0:
-            return legacy
-    except Exception:
-        pass
-    return primary
+    if not _is_postgres():
+        raise VectorStoreUnavailable("pgvector requires a Postgres LOCUS_DATABASE_URL")
+    ensure_vector_schema()
+
+
+def _vector_literal(embedding: list[float]) -> str:
+    return "[" + ",".join(repr(float(value)) for value in embedding) + "]"
+
+
+def _pgvector_delete(file_id: int) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM chunks WHERE file_id = :file_id"), {"file_id": file_id})
+
+
+def _pgvector_insert(file_id: int, store_id: int, name: str, chunks: list[str], embeddings: list[list[float]]) -> None:
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM chunks WHERE file_id = :file_id"), {"file_id": file_id})
+        connection.execute(
+            text(
+                """
+                INSERT INTO chunks (id, file_id, store_id, name, chunk_index, document, embedding)
+                VALUES (:id, :file_id, :store_id, :name, :chunk_index, :document, CAST(:embedding AS vector))
+                """
+            ),
+            [
+                {
+                    "id": f"file-{file_id}-chunk-{index}",
+                    "file_id": file_id,
+                    "store_id": store_id,
+                    "name": name,
+                    "chunk_index": index,
+                    "document": chunk,
+                    "embedding": _vector_literal(embedding),
+                }
+                for index, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+            ],
+        )
+
+
+def _pgvector_search(query_embedding: list[float], *, file_ids: list[int] | None, top_k: int) -> list[SemanticHit]:
+    params: dict = {"embedding": _vector_literal(query_embedding), "top_k": top_k}
+    where_clause = ""
+    if file_ids is not None:
+        where_clause = "WHERE file_id = ANY(:file_ids)"
+        params["file_ids"] = list(file_ids)
+    with engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                f"""
+                SELECT file_id, store_id, name, chunk_index, document,
+                       embedding <=> CAST(:embedding AS vector) AS distance
+                FROM chunks
+                {where_clause}
+                ORDER BY embedding <=> CAST(:embedding AS vector)
+                LIMIT :top_k
+                """
+            ),
+            params,
+        ).fetchall()
+    return [
+        SemanticHit(
+            file_id=int(row.file_id),
+            store_id=int(row.store_id),
+            name=str(row.name),
+            excerpt=str(row.document),
+            score=max(0.0, 1.0 - float(row.distance)),
+            chunk_index=int(row.chunk_index),
+        )
+        for row in rows
+    ]
 
 
 def _sqlite_path():
-    CHROMA_PATH.mkdir(parents=True, exist_ok=True)
-    primary = CHROMA_PATH / VECTOR_INDEX_FILENAME
-    legacy = CHROMA_PATH / LEGACY_VECTOR_INDEX_FILENAME
+    VECTOR_FALLBACK_PATH.mkdir(parents=True, exist_ok=True)
+    primary = VECTOR_FALLBACK_PATH / VECTOR_INDEX_FILENAME
+    legacy = VECTOR_FALLBACK_PATH / LEGACY_VECTOR_INDEX_FILENAME
     if primary.exists() or not legacy.exists():
         return primary
     return legacy
@@ -218,7 +294,8 @@ def _cosine(left: list[float], right: list[float]) -> float:
 
 def delete_file_embeddings(file_id: int) -> None:
     try:
-        _collection().delete(where={"file_id": file_id})
+        _require_pgvector()
+        _pgvector_delete(file_id)
         return
     except Exception:
         pass
@@ -234,22 +311,12 @@ def index_file_with_status(file_id: int, store_id: int, name: str, text: str) ->
     chunks = chunk_text(text)
     model_used = active_embedding_model()
     try:
-        collection = _collection()
-        collection.delete(where={"file_id": file_id})
+        _require_pgvector()
         if not chunks:
-            return IndexResult(chunks=0, backend="chroma", model=model_used, status="empty")
-        ids = [f"file-{file_id}-chunk-{index}" for index in range(len(chunks))]
-        metadatas = [
-            {"file_id": file_id, "store_id": store_id, "name": name, "chunk_index": index}
-            for index in range(len(chunks))
-        ]
-        collection.add(
-            ids=ids,
-            documents=chunks,
-            embeddings=embed_passages(chunks),
-            metadatas=metadatas,
-        )
-        return IndexResult(chunks=len(chunks), backend="chroma", model=model_used)
+            _pgvector_delete(file_id)
+            return IndexResult(chunks=0, backend="pgvector", model=model_used, status="empty")
+        _pgvector_insert(file_id, store_id, name, chunks, embed_passages(chunks))
+        return IndexResult(chunks=len(chunks), backend="pgvector", model=model_used)
     except VectorStoreUnavailable:
         pass
     except Exception:
@@ -295,31 +362,12 @@ def search(query: str, *, file_ids: list[int] | None = None, top_k: int = SEMANT
         return []
     query_embedding = embed_query(query)
     try:
-        collection = _collection()
-        where = None
-        if file_ids is not None:
-            where = {"file_id": {"$in": file_ids}}
-        result = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k,
-            where=where,
-            include=["documents", "metadatas", "distances"],
-        )
+        _require_pgvector()
+        return _pgvector_search(query_embedding, file_ids=file_ids, top_k=top_k)
     except VectorStoreUnavailable:
         return _sqlite_search(query_embedding, file_ids=file_ids, top_k=top_k)
     except Exception:
         return _sqlite_search(query_embedding, file_ids=file_ids, top_k=top_k)
-    hits = []
-    for document, metadata, distance in zip(result.get("documents", [[]])[0], result.get("metadatas", [[]])[0], result.get("distances", [[]])[0]):
-        hits.append(SemanticHit(
-            file_id=int(metadata["file_id"]),
-            store_id=int(metadata["store_id"]),
-            name=str(metadata["name"]),
-            excerpt=document,
-            score=max(0.0, 1.0 - float(distance)),
-            chunk_index=int(metadata["chunk_index"]),
-        ))
-    return hits
 
 
 def _sqlite_search(query_embedding: list[float], *, file_ids: list[int] | None, top_k: int) -> list[SemanticHit]:

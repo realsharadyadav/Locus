@@ -9,8 +9,8 @@ python-dotenv==1.1.1
 pypdf==5.6.1
 python-docx==1.2.0
 openpyxl==3.1.5
-chromadb==0.5.23; python_version < "3.13"
-chromadb>=1.5,<2; python_version >= "3.13"
+psycopg2-binary==2.9.10
+pgvector==0.3.6
 ddgs==9.14.4
 litellm==1.83.0; python_version < "3.13"
 litellm>=1.90.2; python_version >= "3.13"

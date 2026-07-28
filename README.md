@@ -24,13 +24,13 @@ Locus is a local-first research workspace: upload files, ask questions, and insp
 - **Reasoning modes** — `light` (fast excerpt answers), `thinking` (deep inspection), `deep_summary` (section-by-section), `ticket_analysis` (group incidents by pattern), and more.
 - **Multi-provider models** — switch between Ollama (local), Groq, OpenAI, and Gemini, with model presets or custom model IDs.
 - **Pipeline trace** — a live developer view of retrieval, request/response previews, and stage-by-stage progress, since Locus is built for people who want to see how the answer was made, not just the answer.
-- **Local semantic search** — embeddings and vector search run locally (fastembed + Chroma/SQLite), no external vector DB required.
+- **Semantic search** — embeddings via fastembed, vector search via pgvector on Postgres (falls back to a plain-cosine SQLite index if no Postgres is configured), no external vector DB required.
 
 See [docs/FEATURES.md](docs/FEATURES.md) for the full list.
 
 ## Tech stack
 
-React 19 + Vite (frontend) · FastAPI + SQLAlchemy (backend) · SQLite + Chroma (storage) · Ollama / Groq / OpenAI / Gemini (LLM providers)
+React 19 + Vite (frontend) · FastAPI + SQLAlchemy (backend) · Postgres + pgvector, or SQLite for local dev (storage) · Ollama / Groq / OpenAI / Gemini (LLM providers)
 
 ## Prerequisites
 

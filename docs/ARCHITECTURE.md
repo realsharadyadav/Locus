@@ -36,8 +36,8 @@ Major frontend surfaces:
 
 1. User creates a collection or store.
 2. User uploads files.
-3. Backend extracts text and stores metadata in SQLite.
-4. If semantic retrieval is enabled, backend indexes chunks in Chroma through `vector_store.py`.
+3. Backend extracts text and stores metadata in the relational database (SQLite locally by default, Postgres when `LOCUS_DATABASE_URL` is set).
+4. If semantic retrieval is enabled, backend indexes chunks via `vector_store.py` — pgvector when the database is Postgres, otherwise a plain-cosine SQLite fallback.
 5. User asks a question in Ask.
 6. Backend creates a `ChatJob` and runs it in a background thread.
 7. Frontend polls `/api/chat/jobs`.
@@ -49,9 +49,9 @@ Major frontend surfaces:
 Current retrieval is hybrid:
 
 - Keyword and relevant excerpt retrieval in `files.py`
-- Optional local semantic retrieval in `vector_store.py`
-- Semantic retrieval uses hash-based local embeddings, not an external embedding API.
-- Chroma is optional; if unavailable, the app continues without semantic search.
+- Optional semantic retrieval in `vector_store.py`, backed by pgvector on Postgres (or a SQLite cosine fallback if no Postgres is configured)
+- Semantic retrieval uses local embeddings (fastembed, or a hash-based fallback), not an external embedding API.
+- The vector store is optional; if unavailable, the app continues without semantic search.
 
 ## Chat Jobs
 
