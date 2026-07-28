@@ -17,7 +17,9 @@ TICKET_ANALYSIS_USE_EMBEDDINGS = os.getenv("TICKET_ANALYSIS_USE_EMBEDDINGS", "tr
 TICKET_ANALYSIS_DEDUP_THRESHOLD = float(os.getenv("TICKET_ANALYSIS_DEDUP_THRESHOLD", "0.92"))
 TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD = float(os.getenv("TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD", "0.78"))
 SEMANTIC_RETRIEVAL_ENABLED = os.getenv("SEMANTIC_RETRIEVAL_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
-CHROMA_PATH = (PROJECT_ROOT / os.getenv("CHROMA_PATH", "backend/chroma")).resolve()
+# Used only as a last-resort fallback when LOCUS_DATABASE_URL isn't Postgres (pgvector is the
+# primary vector store — see vector_store.py).
+VECTOR_FALLBACK_PATH = (PROJECT_ROOT / os.getenv("VECTOR_FALLBACK_PATH", "backend/vector_fallback")).resolve()
 EMBEDDING_DIMENSIONS = max(64, int(os.getenv("EMBEDDING_DIMENSIONS", "384")))
 SEMANTIC_CHUNK_CHARS = max(300, int(os.getenv("SEMANTIC_CHUNK_CHARS", "1200")))
 SEMANTIC_CHUNK_OVERLAP = max(0, int(os.getenv("SEMANTIC_CHUNK_OVERLAP", "180")))

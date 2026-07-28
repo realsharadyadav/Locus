@@ -47,4 +47,4 @@ Legacy `mindmap-*` localStorage and sessionStorage keys are read once and copied
 
 Legacy database path `backend/mindmap.db` is used automatically when `backend/locus.db` does not exist yet.
 
-Legacy Chroma collection `mindmap_chunks` is used when `locus_chunks` is empty but legacy data exists.
+Legacy sqlite vector index `mindmap_vector_index.sqlite3` is used when `locus_vector_index.sqlite3` does not exist yet (fallback path only; the primary vector store is pgvector on Postgres).

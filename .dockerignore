@@ -17,7 +17,7 @@ backend/mindmap.db
 *.db
 *.db-journal
 *.sqlite3
-backend/chroma/
+backend/vector_fallback/
 backend/uploads/
 backend/diagnostics/jobs/
 tmp/

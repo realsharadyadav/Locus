@@ -37,9 +37,9 @@ Broader tests when touching file parsing, vector search, tickets, or LLM behavio
 
 ## Architecture
 
-**Stack:** React 19 + Vite + lucide-react + react-markdown (SPA) | FastAPI + SQLAlchemy + Uvicorn (Python) | SQLite | Chroma/SQLite vector store | LLM: Ollama, Groq, OpenAI, Gemini
+**Stack:** React 19 + Vite + lucide-react + react-markdown (SPA) | FastAPI + SQLAlchemy + Uvicorn (Python) | SQLite (default local) / Postgres (via `LOCUS_DATABASE_URL`) | pgvector/SQLite vector store | LLM: Ollama, Groq, OpenAI, Gemini
 
-**Data flow:** User uploads files -> text extracted and indexed into Chroma -> user asks question -> background ChatJob pipeline: enhance question -> retrieve evidence (semantic + lexical) -> compose answer -> verify -> repair -> frontend polls and renders via PipelineActivity
+**Data flow:** User uploads files -> text extracted and indexed into pgvector (or SQLite fallback) -> user asks question -> background ChatJob pipeline: enhance question -> retrieve evidence (semantic + lexical) -> compose answer -> verify -> repair -> frontend polls and renders via PipelineActivity
 
 **Reasoning modes:** `light` (fast excerpt), `thinking` (full-file), `deep_summary` (section-by-section), `ticket_analysis` (ITSM grouping), `web_research` (multi-round search + synthesis), `unrestricted` (no guardrails + jailbreak pipeline — 7 strategies + auto-rephrase on refusal)
 
@@ -94,7 +94,7 @@ Keep these notes so future sessions don't repeat mistakes:
 
 | File | Purpose | Key Functions |
 |---|---|---|
-| `vector_store.py` | Local semantic retrieval: hash-based embeddings, Chroma (primary) or SQLite fallback, chunking, indexing | `embed_text()` — deterministic hash embeddings; `chunk_text()` — overlap-aware chunking; `index_file()` / `index_files()` — index into Chroma; `search()` — semantic search; `SemanticHit` dataclass |
+| `vector_store.py` | Semantic retrieval: fastembed/hash-based embeddings, pgvector on Postgres (primary) or SQLite cosine fallback, chunking, indexing | `embed_text()` — embeddings; `chunk_text()` — overlap-aware chunking; `index_file()` / `index_files()` — index chunks; `search()` — semantic search; `SemanticHit` dataclass |
 | `web_research.py` (230 lines) | Multi-round web search (DDG), LLM query planning, follow-up queries, source synthesis | `web_research()` (line 168) — main entry; `_search_web()` — DDG; `_generate_initial_queries()` — planner; `_generate_followup_queries()` — expansion; `_synthesize_answer()` — LLM synthesis with conversation history |
 
 ### Deep Summary
@@ -169,7 +169,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `index.html` | SPA HTML shell |
 | `pytest.ini` | Pytest: pythonpath, testpaths |
 | `.env.example` | Template env: LLM_PROVIDER, Ollama, Groq, OpenAI, Gemini, semantic, ticket settings |
-| `backend/requirements.txt` | Python deps: fastapi, uvicorn, sqlalchemy, pydantic, httpx, pypdf, python-docx, openpyxl, chromadb, ddgs, litellm, tenacity |
+| `backend/requirements.txt` | Python deps: fastapi, uvicorn, sqlalchemy, pydantic, httpx, pypdf, python-docx, openpyxl, psycopg2-binary, pgvector, ddgs, litellm, tenacity |
 
 ---
 
@@ -204,6 +204,6 @@ Keep these notes so future sessions don't repeat mistakes:
 |---|---|
 | `backend/locus.db` | SQLite database |
 | `backend/uploads/` | Uploaded file storage |
-| `backend/chroma/` | Chroma vector store + SQLite fallback index |
+| `backend/vector_fallback/` | SQLite fallback vector index (used only when `LOCUS_DATABASE_URL` isn't Postgres) |
 | `backend/diagnostics/jobs/` | Per-job JSONL diagnostic logs (retained on failure) |
 | `dist/` | Built production output |
