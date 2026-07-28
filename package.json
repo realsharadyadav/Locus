@@ -16,8 +16,10 @@
     "react": "latest",
     "react-dom": "latest",
     "react-markdown": "9.0.1",
+    "react-textarea-autosize": "^8.5.9",
     "rehype-slug": "^6.0.0",
     "remark-gfm": "4.0.0",
+    "use-stick-to-bottom": "^1.1.6",
     "vite": "4.5.14"
   }
 }

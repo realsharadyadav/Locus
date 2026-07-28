@@ -10573,17 +10573,6 @@ html[data-theme='dark'] .chat-rail-running { color: #9bbaff; }
   .mobile-only-new-chat { display: inline-flex; }
 }
 
-/* ─── Ask: mobile keyboard robustness ───
-   .chat-page is a 3-row grid (top/thread/composer). Below 720px there isn't
-   room for the 540px floor plus a real on-screen keyboard's visualViewport
-   shrink (see useVisualViewportShell, applied to <main> in App()) without the
-   thread content forcing the grid taller than the available space and
-   clipping the composer under .explore-shell's overflow:hidden. Drop the
-   floor and let the already-scrollable .chat-thread row absorb the squeeze
-   instead of the composer disappearing off-screen. */
-@media (max-width: 720px) {
-  .chat-page { min-height: 0; }
-}
 
 /* Home dashboard revamp */
 .stat-grid article { cursor: pointer; }
@@ -10614,4 +10603,139 @@ html[data-theme='dark'] .chat-rail-running { color: #9bbaff; }
 @media (max-width: 680px) {
   .quick-actions button { min-height: 44px; }
   .panel-row { min-height: 44px; }
+}
+
+/* ═══ Chat surfaces: mobile keyboard + scroll containment ═══
+   Sizing here is driven by useChatViewportLock (src/hooks/useChatViewport.js), which
+   publishes the live visual-viewport height as --app-vh while Ask or a secret chat is
+   open. Everything below assumes "the shell is exactly the visible area, and only the
+   message list scrolls". The viewport-unit values are the pre-JS fallbacks. */
+
+:root {
+  --app-vh: 100dvh;
+  --keyboard-inset: 0px;
+}
+
+/* No document-level scrolling while a chat surface owns the screen. This is what kills
+   the stray horizontal/vertical page scroll that used to appear once the keyboard
+   changed the viewport out from under a 100vh-sized shell. */
+html.viewport-locked,
+html.viewport-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.viewport-locked .app-shell {
+  height: var(--app-vh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+html.viewport-locked .app-shell > main {
+  height: var(--app-vh);
+  min-height: 0;
+  max-width: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Ask fills whatever main gives it rather than betting on `100vh - header`; the Ask
+   route renders no page header, so the old calc() both under- and over-shot. */
+html.viewport-locked .explore-shell,
+.explore-active main .explore-shell {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+/* The 540px floor is what pushed the composer under the keyboard: with the viewport
+   shrunk to ~350px the grid still claimed 540px and its last row fell off-screen. */
+.chat-page {
+  min-height: 0;
+  max-width: 100%;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.chat-thread {
+  min-height: 0;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* use-stick-to-bottom observes this element's height, so it must wrap the whole thread
+   and must not be the scroll container itself. */
+.chat-thread-inner {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+}
+
+/* Empty state centres via the wrapper now that .chat-thread is a plain scroll box. */
+.chat-thread:not(.has-messages) {
+  display: block;
+}
+
+.chat-thread:not(.has-messages) .chat-thread-inner {
+  align-items: center;
+  justify-content: center;
+  /* `safe` keeps the top reachable when the landing content is taller than the thread;
+     plain `center` would overflow both edges and clip the heading out of scroll range. */
+  justify-content: safe center;
+}
+
+/* Long URLs and pasted tokens were the other source of sideways scroll. */
+.chat-message,
+.message-body,
+.message-body > p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-composer {
+  flex-shrink: 0;
+  padding-bottom: max(9px, env(safe-area-inset-bottom));
+}
+
+.chat-composer textarea {
+  max-height: none; /* row count is owned by react-textarea-autosize's maxRows */
+}
+
+/* Sits inside the composer so it tracks the composer's height as the textarea grows. */
+.scroll-to-bottom-btn {
+  bottom: calc(100% + 10px);
+  white-space: nowrap;
+}
+
+/* With a keyboard up there is very little room left - drop the desktop-only hints and
+   tighten the composer so the thread keeps as many messages visible as possible. */
+@media (max-width: 820px) {
+  html[data-keyboard='open'] .composer-meta,
+  html[data-keyboard='open'] .chat-top-info,
+  html[data-keyboard='open'] .chat-empty .slash-hints {
+    display: none;
+  }
+
+  html[data-keyboard='open'] .chat-page {
+    padding-top: 8px;
+  }
+}
+
+/* Touch targets: the composer toolbar buttons are small by design on desktop, but they
+   need a real hit area on a phone. */
+@media (pointer: coarse) {
+  .composer-tool-btn {
+    min-height: 34px;
+  }
+
+  .chat-composer .composer-input-row > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }

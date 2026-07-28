@@ -37,9 +37,3 @@ export const buildSuggestions = (files, stores) => {
   if (stores.length) suggestions.push(`What do I know about ${stores[0].title.toLowerCase()}?`);
   return [...new Set(suggestions)].slice(0, 4);
 };
-
-export const resizeTextarea = (element) => {
-  if (!element) return;
-  element.style.height = 'auto';
-  element.style.height = `${Math.min(element.scrollHeight, 110)}px`;
-};

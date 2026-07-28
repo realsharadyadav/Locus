@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
+import TextareaAutosize from 'react-textarea-autosize';
+import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
-import { parseServerTime, resizeTextarea } from '../../utils';
-import { useVisualViewportShell } from '../../hooks/useVisualViewportShell';
+import { parseServerTime } from '../../utils';
+import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 export default function SecretChatStandalone({ token }) {
   const [session, setSession] = useState(null);
@@ -15,13 +17,16 @@ export default function SecretChatStandalone({ token }) {
   })());
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
-  const [showJump, setShowJump] = useState(false);
-  const bottomRef = useRef(null);
-  const messagesRef = useRef(null);
   const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
-  const setRootEl = useVisualViewportShell();
+
+  useChatViewportLock();
+  const compactViewport = useCompactViewport();
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
+    initial: 'instant',
+    resize: 'smooth',
+  });
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -87,40 +92,22 @@ export default function SecretChatStandalone({ token }) {
     };
   }, [token, loading]);
 
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); return; }
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    else setShowJump(true);
-  }, [messages]);
-
-  const handleMessagesScroll = () => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) setShowJump(false);
-  };
-
-  const jumpToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    setShowJump(false);
-  };
-
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return undefined;
-    const scrollToBottom = () => bottomRef.current?.scrollIntoView({ behavior: 'auto' });
-    vv.addEventListener('resize', scrollToBottom);
-    return () => vv.removeEventListener('resize', scrollToBottom);
-  }, []);
+  // Keyboard, rotation and a resizing composer all change the list container's height
+  // rather than its content; see useRepinOnResize.
+  const setMessagesResizeTarget = useRepinOnResize(scrollToBottom);
+  const messagesScrollRef = useCallback(node => {
+    scrollRef(node);
+    setMessagesResizeTarget(node);
+  }, [scrollRef, setMessagesResizeTarget]);
 
   const send = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     const content = input.trim();
     setInput('');
-    window.setTimeout(() => resizeTextarea(inputRef.current), 0);
+    // Stay focused so the on-screen keyboard does not collapse between messages.
+    inputRef.current?.focus();
+    scrollToBottom({ ignoreEscapes: true });
     try {
       const msg = await secretChatApi.sendMessage(token, `${sender}|||${clientId}`, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
@@ -153,7 +140,7 @@ export default function SecretChatStandalone({ token }) {
   }
 
   return (
-    <div className="scs" ref={setRootEl}>
+    <div className="scs">
       <header className="scs-header">
         <div className="scs-header-left">
           <Users size={16} className="scs-header-icon" />
@@ -171,52 +158,63 @@ export default function SecretChatStandalone({ token }) {
         </div>
       </header>
 
-      <div className="scs-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
-        {messages.length === 0 && (
-          <div className="scs-empty">
-            <MessageCircle size={36} />
-            <p>No messages yet</p>
-            <small>Send the first message to start the conversation</small>
-          </div>
-        )}
-        {messages.map(msg => {
-          const [displayName, msgClientId] = (msg.sender || '').split('|||');
-          const isSelf = msgClientId === clientId;
-          return (
-            <div key={msg.id} className={`scs-msg ${isSelf ? 'self' : 'other'}`}>
-              <div className="scs-msg-meta">
-                {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-              <div className={`scs-msg-bubble ${isSelf ? 'self' : 'other'}`}>
-                {msg.content}
-              </div>
+      <div className="scs-messages" ref={messagesScrollRef}>
+        <div className="scs-messages-inner" ref={contentRef}>
+          {messages.length === 0 && (
+            <div className="scs-empty">
+              <MessageCircle size={36} />
+              <p>No messages yet</p>
+              <small>Send the first message to start the conversation</small>
             </div>
-          );
-        })}
-        <div ref={bottomRef} />
+          )}
+          {messages.map(msg => {
+            const [displayName, msgClientId] = (msg.sender || '').split('|||');
+            const isSelf = msgClientId === clientId;
+            return (
+              <div key={msg.id} className={`scs-msg ${isSelf ? 'self' : 'other'}`}>
+                <div className="scs-msg-meta">
+                  {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div className={`scs-msg-bubble ${isSelf ? 'self' : 'other'}`}>
+                  {msg.content}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {showJump && (
-        <button type="button" className="scs-jump-btn" onClick={jumpToBottom} aria-label="Jump to latest message">
-          <ChevronDown size={16} /> New messages
-        </button>
-      )}
-
       <form className="scs-composer" onSubmit={send}>
-        <textarea
+        {!isAtBottom && messages.length > 0 && (
+          <button
+            type="button"
+            className="scs-jump-btn"
+            onPointerDown={e => e.preventDefault()}
+            onClick={() => scrollToBottom()}
+            aria-label="Jump to latest message"
+          >
+            <ChevronDown size={16} /> Latest
+          </button>
+        )}
+        <TextareaAutosize
           ref={inputRef}
           className="scs-input"
           value={input}
-          onChange={e => { setInput(e.target.value); resizeTextarea(e.target); }}
+          onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); } }}
           placeholder="Type a message..."
           maxLength={2000}
-          rows={1}
+          minRows={1}
+          maxRows={compactViewport ? 3 : 5}
+          enterKeyHint="send"
         />
         <button
           type="submit"
           disabled={!input.trim()}
           className={`scs-send ${input.trim() ? 'active' : ''}`}
+          // Swallow the focus change on press: without this the textarea blurs and the
+          // on-screen keyboard slams shut the moment the message is sent.
+          onPointerDown={e => e.preventDefault()}
           onMouseDown={e => e.preventDefault()}
         >
           <Send size={18} />
