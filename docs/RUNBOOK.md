@@ -107,8 +107,16 @@ LOCUS_AUTH_PASSWORD='something long' npm run dev:api
   a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
 
 To lock the Render deployment, set `LOCUS_AUTH_PASSWORD` on `locus-backend` and
-`LOCUS_ALLOWED_ORIGINS` to the frontend URL. Both are deliberately absent from `render.yaml` —
-a password does not belong in the repo.
+`LOCUS_ALLOWED_ORIGINS` to the frontend URL. Both are declared in `render.yaml` with
+`sync: false`, so the key names are in the repo but the values are not — Render keeps those in
+the dashboard.
+
+Render has no separate "secrets" screen for this: environment variables *are* the secret
+store. Dashboard → the `locus-backend` service → **Environment** in the left nav → **Add
+Environment Variable**. ("Secret Files" on the same page is for mounting whole files and is not
+what this needs.) Note that `sync: false` values are only prompted for during the *initial*
+Blueprint creation — on an existing service the dashboard is the only place to set them, and
+Render will not overwrite them on a later Blueprint sync.
 
 ## Running Postgres Locally (optional, for pgvector parity with prod)
 
