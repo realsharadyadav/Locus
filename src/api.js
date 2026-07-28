@@ -1,10 +1,21 @@
 import { API_BASE } from './apiBase';
+import { authHeaders, handleUnauthorized } from './auth';
+
+/**
+ * A 401 means the shared password gate turned us away — an expired token, or a
+ * password rotated under us. Hand off to the auth layer so the app returns to
+ * the login screen instead of surfacing a generic error inside the workspace.
+ */
+const checkAuthorized = response => {
+  if (response.status === 401) handleUnauthorized();
+  return response;
+};
 
 const request = async (path, options = {}) => {
-  const response = await fetch(`${API_BASE}/api${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+  const response = checkAuthorized(await fetch(`${API_BASE}/api${path}`, {
     ...options,
-  });
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
+  }));
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = body.detail;
@@ -21,6 +32,21 @@ const request = async (path, options = {}) => {
 };
 
 export const api = {
+  // Public endpoint: it tells the app whether a login screen is needed at all.
+  authStatus: () => request('/auth/status'),
+  authMe: () => request('/auth/me'),
+  // Deliberately bypasses checkAuthorized — a 401 here is a wrong password, not
+  // a dead session, and must not bounce the login screen it came from.
+  login: async (password) => {
+    const response = await fetch(`${API_BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Sign in failed');
+    return body;
+  },
   llmConfig: () => request('/llm/config'),
   systemLimits: () => request('/system/limits'),
   preference: (key) => request(`/preferences/${key}`),
@@ -33,7 +59,8 @@ export const api = {
     const body = new FormData();
     body.append('store_id', storeId);
     body.append('file', file);
-    const response = await fetch(`${API_BASE}/api/files`, { method: 'POST', body });
+    // No Content-Type here on purpose: the browser sets the multipart boundary.
+    const response = checkAuthorized(await fetch(`${API_BASE}/api/files`, { method: 'POST', body, headers: authHeaders() }));
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Upload failed');
     return response.json();
   },
@@ -55,7 +82,7 @@ export const api = {
   markChatJobSeen: (id) => request(`/chat/jobs/${id}/seen`, { method: 'PATCH' }),
   cancelChatJob: (id) => request(`/chat/jobs/${id}/cancel`, { method: 'POST' }),
   chatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, webSourceLimit, webSearch, onEvent, options = {}) => {
-    const response = await fetch(`${API_BASE}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal });
+    const response = checkAuthorized(await fetch(`${API_BASE}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal }));
     if (!response.ok) throw new Error('Unable to start the answer pipeline');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -77,12 +104,12 @@ export const api = {
     return result;
   },
   directChatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, onEvent, options = {}) => {
-    const response = await fetch(`${API_BASE}/api/chat/direct-stream`, {
+    const response = checkAuthorized(await fetch(`${API_BASE}/api/chat/direct-stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: [], web_search: false }),
       signal: options.signal,
-    });
+    }));
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       throw new Error(body.detail || 'Unable to start direct chat stream');

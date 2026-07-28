@@ -227,3 +227,18 @@ class SecretChatSessionRead(BaseModel):
     created_at: datetime
     last_activity: datetime
     messages: list[SecretChatMessageRead] = []
+
+
+class AuthStatusRead(BaseModel):
+    auth_required: bool
+    authenticated: bool = False
+    expires_at: datetime | None = None
+
+
+class AuthLoginRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AuthLoginResponse(BaseModel):
+    token: str
+    expires_at: datetime

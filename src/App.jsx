@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
+import { clearAuthToken, getAuthToken, onUnauthorized } from './auth';
 import { readStorage, writeStorage } from './brand';
 import { CommandPalette } from './components/CommandPalette';
 import { ConfirmModal } from './components/ConfirmModal';
 import { CreateStoreModal } from './components/CreateStoreModal';
 import { Header } from './components/Header';
+import { LoginPage } from './components/LoginPage';
 import { Sidebar } from './components/Sidebar';
 import { SplashScreen } from './components/SplashScreen';
 import { ToastStack } from './components/Toast';
@@ -17,6 +19,12 @@ import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { SecretChatPage, secretChatApi, useSecretChatRoute } from './secret-chat';
 
 export function App({ initialSecretChatToken = null }) {
+  // 'checking' until the backend says whether a password is configured, then
+  // 'required' (show the gate) or 'ready' (workspace may load its data).
+  const [authState, setAuthState] = useState('checking');
+  // Whether this deployment has a password at all — Settings only offers a sign
+  // out when there is a session to end.
+  const [authRequired, setAuthRequired] = useState(false);
   const [page, setPage] = useState('home');
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -105,7 +113,40 @@ export function App({ initialSecretChatToken = null }) {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    // Any 401 from anywhere in the app lands here — the token is already gone
+    // by this point, so all that is left is to show the gate again.
+    onUnauthorized(() => setAuthState('required'));
+    return () => onUnauthorized(null);
+  }, []);
+
+  useEffect(() => {
+    const resolveAuth = async () => {
+      try {
+        const { auth_required: required } = await api.authStatus();
+        setAuthRequired(required);
+        if (!required) return setAuthState('ready');
+        if (!getAuthToken()) return setAuthState('required');
+        try {
+          await api.authMe();
+          setAuthState('ready');
+        } catch {
+          clearAuthToken();
+          setAuthState('required');
+        }
+      } catch {
+        // Backend unreachable: fall through to the workspace so the existing
+        // offline banner explains it, rather than a login screen nobody can
+        // get past.
+        setAuthState('ready');
+      }
+    };
+    resolveAuth();
+  }, []);
+
+  useEffect(() => {
+    if (authState === 'ready') loadData();
+  }, [authState]);
 
   useEffect(() => {
     if (!preferencesLoaded) return undefined;
@@ -136,6 +177,8 @@ export function App({ initialSecretChatToken = null }) {
   }, [theme]);
 
   useEffect(() => {
+    // Polling before sign-in would just 401 twice a second.
+    if (authState !== 'ready') return undefined;
     const poll = async () => {
       try {
         const nextJobs = await refreshJobs();
@@ -146,7 +189,7 @@ export function App({ initialSecretChatToken = null }) {
     };
     const timer = window.setInterval(poll, 1500);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [authState]);
 
   useEffect(() => {
     const onKeyDown = (event) => {
@@ -285,6 +328,10 @@ export function App({ initialSecretChatToken = null }) {
     },
   });
 
+  if (authState === 'checking') return <SplashScreen progress={8} status="Checking session" />;
+  // Signing in flips authState to 'ready', which is what kicks off loadData —
+  // the splash below then covers that first load as it would on an open app.
+  if (authState === 'required') return <LoginPage onSignedIn={() => setAuthState('ready')} />;
   if (!booted) return <SplashScreen progress={bootProgress} />;
 
   return (
@@ -390,7 +437,16 @@ export function App({ initialSecretChatToken = null }) {
             }}
           />
         )}
-        {page === 'settings' && <SettingsPage toast={toast} />}
+        {page === 'settings' && (
+          <SettingsPage
+            toast={toast}
+            authRequired={authRequired}
+            onSignOut={() => {
+              clearAuthToken();
+              setAuthState('required');
+            }}
+          />
+        )}
       </main>
 
       <CreateStoreModal open={createOpen} close={() => setCreateOpen(false)} onCreate={create} />

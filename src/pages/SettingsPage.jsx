@@ -7,6 +7,7 @@ import {
   Database,
   Info,
   KeyRound,
+  LogOut,
   Radio,
   Sparkles,
   Zap,
@@ -31,7 +32,7 @@ export const REASONING_MODE_META = [
   { id: 'ticket_analysis', label: 'Ticket Analysis', icon: Database, desc: 'Group incidents by problem pattern' },
 ];
 
-export function SettingsPage({ toast }) {
+export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -280,6 +281,19 @@ export function SettingsPage({ toast }) {
           })}
         </div>
       </section>
+
+      {authRequired && (
+        <section className="settings-section">
+          <h3>Session</h3>
+          {/* One shared password guards this workspace, so there is no account
+              to show — just the way out. */}
+          <p className="settings-hint-text">Signed in with the workspace password. Signing out only clears this browser.</p>
+          <button type="button" className="settings-signout" onClick={onSignOut}>
+            <LogOut size={15} />
+            Sign out
+          </button>
+        </section>
+      )}
 
       <div className="settings-save-bar">
         <button type="button" className="btn-primary" onClick={save} disabled={saving}>

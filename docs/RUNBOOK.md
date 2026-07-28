@@ -82,6 +82,33 @@ Important settings:
 - `SEMANTIC_RETRIEVAL_ENABLED`
 - `VECTOR_FALLBACK_PATH`
 - `TICKET_ANALYSIS_ENABLED`
+- `LOCUS_AUTH_PASSWORD`: unset (the default) leaves the API open, which is what local dev wants;
+  set it to put the whole app behind a password
+
+## Sign-in Gate
+
+Locus can sit behind one shared password. It is a deployment lock, not user accounts: everyone
+who signs in shares the same libraries, files and chats.
+
+```bash
+LOCUS_AUTH_PASSWORD='something long' npm run dev:api
+```
+
+- Unset `LOCUS_AUTH_PASSWORD` and the gate disappears entirely — no login screen, no headers,
+  which is why the test suite needs no special handling.
+- `LOCUS_AUTH_SESSION_DAYS` (default 30) sets how long a browser stays signed in.
+- `LOCUS_AUTH_SECRET` is optional. Left unset, the signing key derives from the password, so
+  changing the password signs everyone out.
+- `LOCUS_ALLOWED_ORIGINS` should list the frontend origin on a real deployment (comma
+  separated). It defaults to `*`, fine for local dev.
+- Public regardless of the gate: `/api/health`, `/api/auth/status`, `/api/auth/login`, and all
+  of `/api/secret-chat` — those rooms are shared with outsiders by link.
+- Signing out is client-side only (Settings → Session). The backend keeps no session state, so
+  a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
+
+To lock the Render deployment, set `LOCUS_AUTH_PASSWORD` on `locus-backend` and
+`LOCUS_ALLOWED_ORIGINS` to the frontend URL. Both are deliberately absent from `render.yaml` —
+a password does not belong in the repo.
 
 ## Running Postgres Locally (optional, for pgvector parity with prod)
 

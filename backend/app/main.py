@@ -419,16 +419,26 @@ CHAT_JOB_MAX_RETRIES = int(os.getenv("CHAT_JOB_MAX_RETRIES", "3"))
 CHAT_JOB_RETRY_DELAY_SECONDS = float(os.getenv("CHAT_JOB_RETRY_DELAY_SECONDS", "2"))
 OPENAI_MODEL_FALLBACKS = ["gpt-5.4-mini", "gpt-5.5"]
 GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-pro"]
+from .auth import require_auth, router as auth_router
+# Registered before CORS so CORS ends up the outer layer — otherwise a 401 would
+# come back without CORS headers and the browser would report it as a network
+# error instead of a sign-in prompt.
+app.middleware("http")(require_auth)
+
+# "*" cannot be combined with credentials, and the Bearer-token gate does not
+# need them. Set LOCUS_ALLOWED_ORIGINS once the frontend origin is known.
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("LOCUS_ALLOWED_ORIGINS", "*").split(",") if origin.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=ALLOWED_ORIGINS != ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 from .secret_chat import router as secret_chat_router
 app.include_router(secret_chat_router)
+app.include_router(auth_router)
 
 
 @app.get("/api/health")

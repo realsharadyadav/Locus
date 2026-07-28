@@ -25,7 +25,7 @@ npm run dev -- --host 127.0.0.1 --port 5173   # frontend on :5173
 ```bash
 npm run lint     # catches imports missed when moving code between modules
 npm run build
-.venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py
+.venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py backend/tests/test_auth.py
 ```
 
 Broader tests when touching file parsing, vector search, tickets, or LLM behavior:
@@ -72,6 +72,10 @@ Keep these notes so future sessions don't repeat mistakes:
 
 11. **tenacity dependency** — Added to `backend/requirements.txt`. LiteLLM needs it for retries. Without it, evidence validation in `_validate_evidence_with_llm` silently falls back to `_fallback_evidence_filter` which caps at 15 sources.
 
+12. **Sign-in gate (Phase 1)** — One shared password, not user accounts. `LOCUS_AUTH_PASSWORD` unset = gate absent, which is why no existing test needed changing. `auth.py` signs a stateless `{"exp"}` token with an HMAC derived from the password; the frontend sends it as a Bearer header (not a cookie — frontend and backend are separate origins on Render). The auth middleware is registered **before** `CORSMiddleware` in `main.py` on purpose: register it after and CORS is no longer the outer layer, so a 401 comes back without CORS headers and the browser reports a network error instead. Public paths: `/api/health`, `/api/auth/status`, `/api/auth/login`, `/api/secret-chat/*` (shared links, and `EventSource` cannot send headers anyway). Dark theme paints every `<p>` muted with `!important`, so `.login-error` needs `!important` to show red.
+
+13. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -84,6 +88,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `agentic_pipeline.py` (865 lines) | LLM planner, agentic pipeline with dynamic source_limit, planned web answer, evidence validation, fallback paths | `run_agentic_pipeline()` — main entry; `_plan_with_llm()` — LLM planner with JSON schema; `_plan_from_json()` — extract source_limit/route/entities; `_execute_plan()` — dispatch with `effective_limit=min(plan.source_limit, user_source_limit)`; `_planned_web_answer()` — use LLM queries + dynamic source_limit; `_web_fallback()` — broad fallback; `_validate_evidence_with_llm()` — LLM evidence filter |
 | `llm.py` (682 lines) | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction, unrestricted/jailbreak pipeline | `enhance_question()` (line 373) — query planner; `generate_answer()` (line 482) — main answer gen; `verify_response()` (line 449) — quality check; `repair_response()` (line 466) — answer repair; `answer_planned_question()` (line ~590) — full pipeline; `generate_unrestricted_answer()` — jailbreak pipeline with 7 strategies + auto-rephrase; `clean_final_answer()` (line 398) — post-processing; `get_llm_client()` — provider factory |
 | `modes.py` | Reasoning mode configs: light, thinking, deep_summary, ticket_analysis, web_research, unrestricted | `MODE_CONFIG` dict, `ModeConfig` dataclass |
+| `auth.py` | Phase 1 sign-in gate: one shared password, stateless HMAC tokens, brute-force throttle. Off unless `LOCUS_AUTH_PASSWORD` is set | `require_auth()` — middleware, registered before CORS; `issue_token()`, `token_expiry()`, `is_public_path()`, `PUBLIC_PATHS` |
 
 ### File Processing
 
@@ -138,7 +143,8 @@ Keep these notes so future sessions don't repeat mistakes:
 | File | Purpose | Key Components |
 |---|---|---|
 | `main.jsx` | Entry point only — mounts `<App />` and imports the stylesheet | — |
-| `App.jsx` | Root component: app shell, page routing, global state, boot load, toasts, confirm dialogs | `App` |
+| `App.jsx` | Root component: app shell, page routing, global state, boot load, toasts, confirm dialogs, sign-in gating | `App` |
+| `auth.js` | Client half of the password gate: token storage, `Authorization` header, 401 handoff | `authHeaders()`, `handleUnauthorized()`, `onUnauthorized()`, `setAuthToken()` |
 | `api.js` | Frontend API client wrapping all REST endpoints | `api.createChatJob()`, `api.chatJobs()`, `api.chatStream()`, `api.chats()`, `api.chatMessages()`, `api.uploadFile()`, `api.collections()`, `api.preference()` |
 | `utils.js` | Shared UI utilities | `displayTime()`, `STORE_COLORS`, `buildSuggestions()`, `resizeTextarea()` |
 | `styles.css` | Ordered `@import` list only — the real CSS lives in `src/styles/` | — |
@@ -236,6 +242,7 @@ and visiting the app root or any app path sends it back to its own chat instead 
 |---|---|
 | `backend/tests/test_api.py` (881 lines) | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
 | `backend/tests/test_diagnostics.py` | Secret redaction, job log cleanup |
+| `backend/tests/test_auth.py` | Sign-in gate: absent without a password, token issue/verify/expiry, wrong-password throttle, public paths |
 | `backend/tests/test_vector_store.py` | chunk_text overlap, embed_text determinism |
 | `backend/tests/test_groq.py` | Groq auth, rate-limit, retry, model listing |
 | `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |
