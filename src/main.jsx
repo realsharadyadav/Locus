@@ -220,6 +220,14 @@ function Header({ query, setQuery, openMenu, openCreate, openCommand, page }) {
   );
 }
 
+function greetingForHour(hour) {
+  if (hour < 5) return 'Still up?';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Good night';
+}
+
 function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
   if (loading) {
     return (
@@ -232,20 +240,37 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
   }
 
   const empty = !files.length;
+  const greeting = greetingForHour(new Date().getHours());
+  const goToStat = target => () => onNavigate(target);
+  const onStatKeyDown = target => event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onNavigate(target);
+    }
+  };
 
   return (
     <div className="page home-page">
       <section className="home-hero">
         <div className="welcome-mark"><Sparkles size={24} /></div>
         <span className="kicker">YOUR SECOND BRAIN</span>
-        <h1>{empty ? `Welcome to ${BRAND.name}` : 'Welcome back'}</h1>
-        <p>{empty ? 'Upload files to a library, then ask a question.' : 'Your knowledge is ready to explore.'}</p>
+        <h1>{empty ? `Welcome to ${BRAND.name}` : greeting}</h1>
+        <p>{empty ? 'Upload files to a library, then ask a question.' : 'Your second brain is ready — ask it anything.'}</p>
       </section>
 
       <section className="stat-grid">
-        <article><strong>{stores.length}</strong><span>Libraries</span></article>
-        <article><strong>{files.length}</strong><span>Files</span></article>
-        <article><strong>{chats.length}</strong><span>Chats</span></article>
+        <article role="button" tabIndex={0} onClick={goToStat('library')} onKeyDown={onStatKeyDown('library')}>
+          <Folder size={16} className="stat-icon" />
+          <strong>{stores.length}</strong><span>Libraries</span>
+        </article>
+        <article role="button" tabIndex={0} onClick={goToStat('library')} onKeyDown={onStatKeyDown('library')}>
+          <FileText size={16} className="stat-icon" />
+          <strong>{files.length}</strong><span>Files</span>
+        </article>
+        <article role="button" tabIndex={0} onClick={goToStat('ask')} onKeyDown={onStatKeyDown('ask')}>
+          <Compass size={16} className="stat-icon" />
+          <strong>{chats.length}</strong><span>Chats</span>
+        </article>
       </section>
 
       <section className="quick-actions">
@@ -265,7 +290,10 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
       ) : (
         <section className="home-panels">
           <div className="panel">
-            <div className="panel-head"><h2>Recent files</h2></div>
+            <div className="panel-head">
+              <h2>Recent files</h2>
+              <button type="button" className="panel-view-all" onClick={() => onNavigate('library')}>View all</button>
+            </div>
             {files.slice(0, 5).map(file => (
               <button key={file.id} className="panel-row" onClick={() => onNavigate('library', { storeId: file.store_id })}>
                 <FileText size={15} />
@@ -278,7 +306,10 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
             ))}
           </div>
           <div className="panel">
-            <div className="panel-head"><h2>Recent chats</h2></div>
+            <div className="panel-head">
+              <h2>Recent chats</h2>
+              <button type="button" className="panel-view-all" onClick={() => onNavigate('ask')}>View all</button>
+            </div>
             {!chats.length && <p className="panel-empty">No chats yet. Start one in Ask.</p>}
             {chats.slice(0, 5).map(chat => (
               <button key={chat.id} className="panel-row" onClick={() => onOpenChat(chat.id)}>
