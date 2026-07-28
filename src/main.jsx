@@ -18,7 +18,7 @@ import { api } from './api';
 import { CommandPalette } from './components/CommandPalette';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ToastStack } from './components/Toast';
-import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, secretChatApi } from './secret-chat';
+import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, resolveSecretChatEntry, secretChatApi } from './secret-chat';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { BRAND, assistantLabel, readStorage, readSessionFlag, storageKey, writeSessionFlag, writeStorage } from './brand';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -3384,7 +3384,7 @@ function CreateStoreModal({ open, close, onCreate }) {
   );
 }
 
-function App() {
+function App({ initialSecretChatToken = null }) {
   const [page, setPage] = useState('home');
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -3394,7 +3394,7 @@ function App() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const { token: secretChatToken, isSharedLink, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute();
+  const { token: secretChatToken, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -3644,10 +3644,6 @@ function App() {
     },
   });
 
-  if (isSharedLink && page === 'secret-chat' && secretChatToken) {
-    return <SecretChatStandalone token={secretChatToken} />;
-  }
-
   return (
     <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'ask' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''} ${page === 'secret-chat' ? 'secretchat-active' : ''}`}>
       <Sidebar
@@ -3771,4 +3767,12 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+// Resolved before mount: a shared-link guest gets the standalone chat only, never the app
+// shell, so no app data is requested from their browser.
+const secretChatEntry = resolveSecretChatEntry();
+
+createRoot(document.getElementById('root')).render(
+  secretChatEntry.mode === 'guest'
+    ? <SecretChatStandalone token={secretChatEntry.token} />
+    : <App initialSecretChatToken={secretChatEntry.token} />,
+);

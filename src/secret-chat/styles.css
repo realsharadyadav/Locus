@@ -581,3 +581,155 @@
 .scs-send.active:hover {
   opacity: .85;
 }
+
+/* ─── Share menu (in-app header and standalone header) ─── */
+
+.share-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.share-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+
+.share-menu-trigger:hover,
+.share-menu-trigger.open {
+  border-color: var(--violet);
+  color: var(--violet);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 15%, transparent);
+}
+
+.share-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  width: 288px;
+  max-width: calc(100vw - 24px);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 18px 44px rgba(0,0,0,.24);
+  animation: share-menu-in .16s ease;
+}
+
+@keyframes share-menu-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.share-menu-head {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+
+.share-menu-head strong { font-size: 13px; color: var(--ink); }
+.share-menu-head small { font-size: 11px; color: var(--muted); }
+
+.share-menu-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.share-menu-link input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+  color: var(--muted);
+  font-size: 16px; /* iOS Safari zooms the page on focus below 16px. */
+  transform-origin: left center;
+  text-overflow: ellipsis;
+}
+
+.share-menu-link button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .18s ease, color .18s ease;
+}
+
+.share-menu-link button:hover { border-color: var(--violet); color: var(--violet); }
+.share-menu-link button.copied { border-color: #3fb950; color: #3fb950; }
+
+.share-menu-targets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.share-target {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .18s ease, transform .18s ease;
+}
+
+.share-target:hover { border-color: var(--line); transform: translateY(-1px); }
+
+.share-target-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--violet);
+}
+
+.share-target-whatsapp .share-target-icon { background: #25d366; }
+.share-target-telegram .share-target-icon { background: #2aabee; }
+.share-target-sms .share-target-icon { background: #5b8def; }
+.share-target-email .share-target-icon { background: #d97757; }
+.share-target-x .share-target-icon { background: #14171a; }
+.share-target-more .share-target-icon { background: var(--muted); }
+
+/* The url preview beside the in-app Share button is decorative — it must never win space
+   from the chat title next to it. */
+.secret-chat-url-preview {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The share popover hangs out of the header; the message list paints over it otherwise. */
+.secret-chat-header,
+.scs-header {
+  position: relative;
+  z-index: 6;
+}
