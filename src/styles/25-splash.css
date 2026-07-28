@@ -1,0 +1,86 @@
+/* Boot splash.
+
+   Shown only for the first workspace load. It fades in on a delay so a fast
+   local boot never flashes a screen at you — if the backend answers in under
+   ~180ms the user sees the shell directly. */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f5f3ee;
+  opacity: 0;
+  animation: splash-in .28s ease .18s forwards;
+}
+
+html[data-theme='dark'] .splash {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(118, 99, 170, .13), transparent 58%),
+    #0d1217;
+}
+
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 0 24px;
+  width: min(340px, 100%);
+  text-align: center;
+}
+
+/* The wordmark is the same component used in the rail, just scaled up. */
+.splash .logo {
+  transform: scale(1.35);
+  transform-origin: center;
+  margin-bottom: 10px;
+}
+
+.splash-progress {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(23, 38, 58, .12);
+}
+
+html[data-theme='dark'] .splash-progress { background: rgba(255, 255, 255, .09); }
+
+.splash-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--violet), #9d86e8);
+  transition: width .32s cubic-bezier(.22, .61, .36, 1);
+}
+
+.splash-status {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  color: var(--muted);
+}
+
+.splash-tagline {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: .62;
+}
+
+html[data-theme='dark'] .splash-status { color: #8b949e; }
+html[data-theme='dark'] .splash-tagline { color: #6e7681; }
+
+@keyframes splash-in {
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash { animation-delay: 0s; animation-duration: .01s; }
+  .splash-progress-fill { transition: none; }
+}

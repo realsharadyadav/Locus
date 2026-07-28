@@ -6,6 +6,7 @@ import { ConfirmModal } from './components/ConfirmModal';
 import { CreateStoreModal } from './components/CreateStoreModal';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
+import { SplashScreen } from './components/SplashScreen';
 import { ToastStack } from './components/Toast';
 import { APP_DATA_CACHE_KEY, APP_PAGES, normalizePageId, readCachedAppData } from './lib/appState';
 import { ExplorePage } from './pages/ExplorePage';
@@ -31,6 +32,8 @@ export function App() {
   const [chats, setChats] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [booted, setBooted] = useState(false);
+  const [bootProgress, setBootProgress] = useState(0);
   const [apiError, setApiError] = useState('');
   const [toasts, setToasts] = useState([]);
   const [confirm, setConfirm] = useState(null);
@@ -60,9 +63,14 @@ export function App() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [nextFiles, nextCollections, nextChats, nextJobs, layoutPreference] = await Promise.all([
-        api.files(), api.collections(), api.chats(), api.chatJobs(), api.preference('layout'),
-      ]);
+      // Track the boot requests individually so the splash bar reflects real
+      // progress rather than an animated guess.
+      const bootRequests = [api.files(), api.collections(), api.chats(), api.chatJobs(), api.preference('layout')];
+      let settled = 0;
+      const countSettled = () => setBootProgress(Math.round((++settled / bootRequests.length) * 100));
+      bootRequests.forEach(request => request.then(countSettled, countSettled));
+
+      const [nextFiles, nextCollections, nextChats, nextJobs, layoutPreference] = await Promise.all(bootRequests);
       const savedLayout = layoutPreference.value || {};
       setFiles(nextFiles);
       setCollections(nextCollections);
@@ -92,6 +100,8 @@ export function App() {
       setApiError('Backend is offline. Start it with npm run dev:api');
     } finally {
       setLoading(false);
+      setBootProgress(100);
+      setBooted(true);
     }
   };
 
@@ -278,6 +288,8 @@ export function App() {
   if (isSharedLink && page === 'secret-chat' && secretChatToken) {
     return <SecretChatStandalone token={secretChatToken} />;
   }
+
+  if (!booted) return <SplashScreen progress={bootProgress} />;
 
   return (
     <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'ask' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''} ${page === 'secret-chat' ? 'secretchat-active' : ''}`}>
