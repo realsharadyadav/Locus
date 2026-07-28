@@ -1,0 +1,301 @@
+/* Model control dark mode */
+html[data-theme='dark'] .desktop-controls .model-control {
+  border-color: rgba(122, 98, 255, .18) !important;
+  background:
+    linear-gradient(180deg, rgba(18, 24, 32, .96), rgba(12, 16, 24, .94)) !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, .28),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+html[data-theme='dark'] .desktop-controls .model-control:hover {
+  border-color: rgba(139, 123, 255, .35) !important;
+  box-shadow:
+    0 14px 36px rgba(0, 0, 0, .32),
+    0 0 0 1px rgba(139, 123, 255, .08),
+    inset 0 1px 0 rgba(255,255,255,.05) !important;
+  transform: translateY(-1px);
+}
+html[data-theme='dark'] .desktop-controls .model-control:focus-within {
+  border-color: rgba(139, 123, 255, .5) !important;
+  box-shadow:
+    0 16px 38px rgba(0, 0, 0, .34),
+    0 0 0 4px rgba(139, 123, 255, .16),
+    inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-trigger {
+  border-color: rgba(139, 123, 255, .14) !important;
+  background: linear-gradient(180deg, rgba(22, 28, 38, .96), rgba(14, 18, 28, .92)) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.04),
+    0 4px 16px rgba(0, 0, 0, .16) !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-trigger:hover {
+  border-color: rgba(139, 123, 255, .22) !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-label {
+  color: #8c97a9 !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-value {
+  color: #eef2ff !important;
+  text-shadow: 0 1px 0 rgba(0,0,0,.28);
+}
+html[data-theme='dark'] .desktop-controls .mc-chevron {
+  color: #7d8a9c !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-divider {
+  background: linear-gradient(180deg, rgba(139,123,255,.08), rgba(139,123,255,.26), rgba(139,123,255,.08)) !important;
+}
+html[data-theme='dark'] .desktop-controls .mc-icon {
+  background: rgba(139,123,255,.12);
+  filter: saturate(.95);
+}
+html[data-theme='dark'] .desktop-controls .mc-menu {
+  border-color: rgba(139,123,255,.16);
+  background: rgba(16, 22, 30, .98);
+  box-shadow: 0 24px 54px rgba(0, 0, 0, .36);
+}
+html[data-theme='dark'] .desktop-controls .mc-option {
+  color: #d0d7de;
+}
+html[data-theme='dark'] .desktop-controls .mc-option:hover {
+  background: rgba(139,123,255,.12);
+}
+html[data-theme='dark'] .desktop-controls .mc-option.active {
+  background: linear-gradient(135deg, rgba(139,123,255,.16), rgba(139,123,255,.08));
+}
+html[data-theme='dark'] .desktop-controls .mc-option-icon {
+  background: rgba(139,123,255,.14);
+}
+html[data-theme='dark'] .desktop-controls .mc-option-text small {
+  color: #8b949e;
+}
+html[data-theme='dark'] .desktop-controls .mc-option-check {
+  color: #d7ccff;
+}
+html[data-theme='dark'] .desktop-controls .mc-model-search {
+  border-color: rgba(139,123,255,.2);
+  background: rgba(139,123,255,.08);
+}
+html[data-theme='dark'] .desktop-controls .mc-model-search input {
+  color: #d0d7de;
+}
+html[data-theme='dark'] .desktop-controls .mc-free-toggle {
+  border-color: rgba(139,123,255,.26);
+  color: #b9adff;
+}
+html[data-theme='dark'] .desktop-controls .mc-free-toggle.active {
+  background: #7a68e0;
+  border-color: #7a68e0;
+  color: #fff;
+}
+html[data-theme='dark'] .desktop-controls .mc-model-empty {
+  color: #8b949e;
+}
+html[data-theme='dark'] .desktop-controls .mc-free-tag {
+  background: rgba(63,185,80,.16);
+  color: #7ee787;
+}
+
+/* Explore active model control */
+.app-shell.explore-active .workspace-actions .model-control {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: min(520px, 48vw);
+  min-width: 360px;
+  height: 42px;
+  padding: 5px;
+  border: 1px solid rgba(138, 118, 255, .18);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,246,255,.92));
+  box-shadow: 0 10px 28px rgba(77, 61, 140, .08), inset 0 1px 0 rgba(255,255,255,.92);
+  overflow: visible;
+  color: #5f6170;
+  font-size: 10px;
+}
+
+.app-shell.explore-active .workspace-actions .model-control-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  min-width: 0;
+}
+
+.app-shell.explore-active .workspace-actions .mc-provider {
+  flex: 0 0 130px;
+}
+
+.app-shell.explore-active .workspace-actions .mc-model {
+  flex: 1 1 auto;
+}
+
+.app-shell.explore-active .workspace-actions .mc-trigger {
+  appearance: none;
+  border: 1px solid rgba(116,92,255,.1);
+  background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(247,244,255,.86));
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border-radius: 12px;
+}
+
+.app-shell.explore-active .workspace-actions .mc-icon {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: rgba(116,92,255,.12);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.app-shell.explore-active .workspace-actions .mc-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.05;
+}
+
+.app-shell.explore-active .workspace-actions .mc-label {
+  color: #8c86a7;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.app-shell.explore-active .workspace-actions .mc-value {
+  max-width: 100%;
+  overflow: hidden;
+  color: #2d214f;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.app-shell.explore-active .workspace-actions .mc-chevron,
+.app-shell.explore-active .workspace-actions .mc-option-check {
+  flex: 0 0 auto;
+}
+
+.app-shell.explore-active .workspace-actions .mc-divider {
+  width: 1px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(116,92,255,.08), rgba(116,92,255,.28), rgba(116,92,255,.08));
+}
+
+.app-shell.explore-active .workspace-actions .mc-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 80;
+  min-width: 220px;
+  max-height: min(420px, 70vh);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid rgba(116,92,255,.16);
+  border-radius: 16px;
+  background: rgba(255,255,255,.97);
+  box-shadow: 0 18px 42px rgba(41, 31, 79, .16);
+}
+
+.app-shell.explore-active .workspace-actions .mc-menu-model {
+  right: 0;
+  left: auto;
+  width: min(420px, 42vw);
+}
+
+.app-shell.explore-active .workspace-actions .mc-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #24313d;
+  cursor: pointer;
+  text-align: left;
+}
+
+.app-shell.explore-active .workspace-actions .mc-option:hover,
+.app-shell.explore-active .workspace-actions .mc-option.active {
+  background: rgba(116,92,255,.08);
+}
+
+.app-shell.explore-active .workspace-actions .mc-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.app-shell.explore-active .workspace-actions .mc-option-text strong,
+.app-shell.explore-active .workspace-actions .mc-option-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.app-shell.explore-active .workspace-actions .mc-option-text strong {
+  color: #24313d;
+  font-size: 11px;
+}
+
+.app-shell.explore-active .workspace-actions .mc-option-text small {
+  color: #8f98a3;
+  font-size: 9px;
+}
+
+.app-shell.explore-active .desktop-controls .model-control {
+  height: 36px;
+  border-color: #e0ddd6;
+}
+.app-shell.explore-active .desktop-controls .mc-provider,
+.app-shell.explore-active .desktop-controls .mc-model {
+  padding: 0 8px;
+}
+.app-shell.explore-active .desktop-controls .model-control-section select {
+  font-size: 9px;
+}
+html[data-theme='dark'] .app-shell.explore-active .desktop-controls .model-control {
+  border-color: rgba(122, 98, 255, .18) !important;
+  background:
+    linear-gradient(180deg, rgba(18, 24, 32, .96), rgba(12, 16, 24, .94)) !important;
+}
+html[data-theme='dark'] .app-shell.explore-active .desktop-controls .mc-value { color: #eef2ff !important; }
+
+html[data-theme='dark'] .app-shell.explore-active .workspace-actions .model-control,
+html[data-theme='dark'] .app-shell.explore-active .workspace-actions .mc-menu {
+  border-color: rgba(122, 98, 255, .18);
+  background: linear-gradient(180deg, rgba(18, 24, 32, .96), rgba(12, 16, 24, .94));
+}
+
+html[data-theme='dark'] .app-shell.explore-active .workspace-actions .mc-trigger {
+  border-color: rgba(148, 163, 184, .12);
+  background: linear-gradient(180deg, rgba(25, 32, 43, .9), rgba(18, 24, 35, .9));
+}
+
+html[data-theme='dark'] .app-shell.explore-active .workspace-actions .mc-value,
+html[data-theme='dark'] .app-shell.explore-active .workspace-actions .mc-option-text strong {
+  color: #eef2ff;
+}

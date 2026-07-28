@@ -1,0 +1,786 @@
+/* Calm GitHub-inspired dark theme */
+html[data-theme='dark'] {
+  --ink: #c9d1d9;
+  --muted: #8b949e;
+  --line: #30363d;
+  --paper: #161b22;
+  --canvas: #0d1117;
+  --violet: #58a6ff;
+  --violet-dark: #1f6feb;
+  --lime: #3fb950;
+  --sidebar: #010409;
+  --dark-canvas: #0d1117;
+  --dark-inset: #010409;
+  --dark-surface: #161b22;
+  --dark-surface-raised: #1c2128;
+  --dark-surface-hover: #21262d;
+  --dark-border: #30363d;
+  --dark-border-muted: #21262d;
+  --dark-text: #c9d1d9;
+  --dark-heading: #dce4ee;
+  --dark-muted: #8b949e;
+  --dark-subtle: #6e7681;
+  --dark-accent: #58a6ff;
+  --dark-accent-strong: #1f6feb;
+  --dark-accent-soft: rgba(56, 139, 253, .16);
+  --dark-success: #3fb950;
+  --dark-danger: #f85149;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] body,
+html[data-theme='dark'] .app-shell,
+html[data-theme='dark'] main,
+html[data-theme='dark'] .page,
+html[data-theme='dark'] .home-page,
+html[data-theme='dark'] .inner-page,
+html[data-theme='dark'] .explore-shell,
+html[data-theme='dark'] .chat-page,
+html[data-theme='dark'] .chat-thread {
+  background: var(--dark-canvas) !important;
+  color: var(--dark-text) !important;
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at 82% 0%, rgba(88, 166, 255, .08), transparent 24%),
+    linear-gradient(180deg, #0d1117 0%, #0b0f14 100%) !important;
+}
+
+html[data-theme='dark'] header,
+html[data-theme='dark'] .sidebar,
+html[data-theme='dark'] .chat-history,
+html[data-theme='dark'] .file-tree-panel {
+  background: var(--dark-inset) !important;
+  border-color: var(--dark-border-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] header {
+  background: rgba(13, 17, 23, .88) !important;
+  backdrop-filter: blur(16px) saturate(145%);
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .store-card,
+html[data-theme='dark'] .simple-files,
+html[data-theme='dark'] .simple-files article,
+html[data-theme='dark'] .onboarding-card,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .global-search,
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .markdown-answer,
+html[data-theme='dark'] .message-body > p,
+html[data-theme='dark'] .source-chip,
+html[data-theme='dark'] .stat-grid article,
+html[data-theme='dark'] .drop-zone,
+html[data-theme='dark'] .options-popover,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .pipeline-operation,
+html[data-theme='dark'] .workspace-actions .file-scope-button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .desktop-controls .model-control,
+html[data-theme='dark'] .reasoning-switch,
+html[data-theme='dark'] .suggestion-grid button,
+html[data-theme='dark'] .chat-history > div > .new-chat-button,
+html[data-theme='dark'] .chat-history-item,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-foot,
+html[data-theme='dark'] .file-picker-foot,
+html[data-theme='dark'] .composer-meta span,
+html[data-theme='dark'] .chat-controls select,
+html[data-theme='dark'] .model-control input,
+html[data-theme='dark'] .capture-form > input,
+html[data-theme='dark'] .capture-form textarea {
+  background: var(--dark-surface) !important;
+  background-image: none !important;
+  border-color: var(--dark-border) !important;
+  color: var(--dark-text) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .chat-empty {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .file-picker {
+  box-shadow: 0 16px 40px rgba(1, 4, 9, .36) !important;
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .pipeline-card {
+  background:
+    linear-gradient(180deg, rgba(88, 166, 255, .035), rgba(88, 166, 255, 0)),
+    var(--dark-surface) !important;
+}
+
+html[data-theme='dark'] h1,
+html[data-theme='dark'] h2,
+html[data-theme='dark'] h3,
+html[data-theme='dark'] .logo,
+html[data-theme='dark'] .inner-title h1,
+html[data-theme='dark'] .home-hero h1,
+html[data-theme='dark'] .chat-top h1,
+html[data-theme='dark'] .chat-empty h2,
+html[data-theme='dark'] .modal h2,
+html[data-theme='dark'] .store-card strong,
+html[data-theme='dark'] .stat-grid strong,
+html[data-theme='dark'] .panel-head h2,
+html[data-theme='dark'] .chat-history-heading > div > strong,
+html[data-theme='dark'] .message-head > span {
+  color: var(--dark-heading) !important;
+}
+
+html[data-theme='dark'] p,
+html[data-theme='dark'] small,
+html[data-theme='dark'] .global-search span,
+html[data-theme='dark'] .kicker,
+html[data-theme='dark'] .workspace-label,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .panel-empty,
+html[data-theme='dark'] .store-card small,
+html[data-theme='dark'] .simple-files p,
+html[data-theme='dark'] .store-empty p,
+html[data-theme='dark'] .home-hero p,
+html[data-theme='dark'] .inner-title p,
+html[data-theme='dark'] .chat-empty > p,
+html[data-theme='dark'] .chat-top-left p,
+html[data-theme='dark'] .chat-history-meta small,
+html[data-theme='dark'] .composer-meta small,
+html[data-theme='dark'] .file-tree-head small,
+html[data-theme='dark'] .file-tree-store summary small,
+html[data-theme='dark'] .file-tree-empty,
+html[data-theme='dark'] .command-empty,
+html[data-theme='dark'] .pipeline-heading small,
+html[data-theme='dark'] .pipeline-operation small,
+html[data-theme='dark'] .pipeline-meta span,
+html[data-theme='dark'] .file-tree-foot span,
+html[data-theme='dark'] .file-picker-head small,
+html[data-theme='dark'] .file-picker-list small,
+html[data-theme='dark'] .chat-sources span {
+  color: var(--dark-muted) !important;
+}
+
+html[data-theme='dark'] .sidebar nav button,
+html[data-theme='dark'] .chat-history-open strong,
+html[data-theme='dark'] .file-tree-store summary strong,
+html[data-theme='dark'] .file-tree-children label > span:last-child,
+html[data-theme='dark'] .suggestion-grid button,
+html[data-theme='dark'] .reasoning-switch button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .workspace-actions .file-scope-button span,
+html[data-theme='dark'] .composer-meta span {
+  color: var(--dark-muted) !important;
+}
+
+html[data-theme='dark'] .sidebar nav button:hover,
+html[data-theme='dark'] .sidebar nav button.active,
+html[data-theme='dark'] .panel-row:hover,
+html[data-theme='dark'] .chat-history-item:hover,
+html[data-theme='dark'] .chat-history-item.active,
+html[data-theme='dark'] .suggestion-grid button:hover,
+html[data-theme='dark'] .quick-actions button:hover,
+html[data-theme='dark'] .source-chip:hover,
+html[data-theme='dark'] .command-results button:hover,
+html[data-theme='dark'] .command-results button.active,
+html[data-theme='dark'] .file-picker-list label:hover,
+html[data-theme='dark'] .file-picker-list label.selected,
+html[data-theme='dark'] .file-tree-children label:hover,
+html[data-theme='dark'] .file-tree-children label.selected {
+  background: var(--dark-surface-hover) !important;
+  border-color: var(--dark-border) !important;
+}
+
+html[data-theme='dark'] .sidebar nav button.active,
+html[data-theme='dark'] .chat-history-item.active {
+  box-shadow: inset 2px 0 0 var(--dark-accent) !important;
+}
+
+html[data-theme='dark'] .theme-toggle,
+html[data-theme='dark'] .icon-button,
+html[data-theme='dark'] .chat-delete,
+html[data-theme='dark'] .delete-button,
+html[data-theme='dark'] .store-delete,
+html[data-theme='dark'] .copy-button {
+  color: var(--dark-muted) !important;
+}
+
+html[data-theme='dark'] .theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--dark-border);
+  border-radius: 8px;
+  background: var(--dark-surface) !important;
+}
+
+html[data-theme='dark'] .theme-toggle:hover,
+html[data-theme='dark'] .global-search:hover,
+html[data-theme='dark'] .workspace-actions .file-scope-button:hover {
+  border-color: var(--dark-accent) !important;
+  background: var(--dark-surface-raised) !important;
+}
+
+html[data-theme='dark'] .theme-toggle span {
+  color: var(--dark-text) !important;
+}
+
+html[data-theme='dark'] .workspace-label,
+html[data-theme='dark'] .kicker,
+html[data-theme='dark'] .chat-history-item.active .chat-history-open strong,
+html[data-theme='dark'] .workspace-actions .file-scope-button strong,
+html[data-theme='dark'] .file-tree-foot strong,
+html[data-theme='dark'] .source-chip strong,
+html[data-theme='dark'] .model-control select:first-child,
+html[data-theme='dark'] .chat-controls select:first-child,
+html[data-theme='dark'] .file-tree-actions button,
+html[data-theme='dark'] .file-picker-actions button,
+html[data-theme='dark'] .new-chat-button,
+html[data-theme='dark'] .delete-all-chats:hover {
+  color: var(--dark-accent) !important;
+}
+
+html[data-theme='dark'] .new-button,
+html[data-theme='dark'] .chat-composer .composer-input-row button,
+html[data-theme='dark'] .save-button,
+html[data-theme='dark'] .file-picker-foot button,
+html[data-theme='dark'] .api-banner {
+  background: var(--dark-accent-strong) !important;
+  color: #f0f6fc !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .new-button:hover,
+html[data-theme='dark'] .chat-composer .composer-input-row button:hover:not(:disabled),
+html[data-theme='dark'] .save-button:hover {
+  background: #388bfd !important;
+}
+
+html[data-theme='dark'] .reasoning-switch button.active {
+  background: var(--dark-accent-soft) !important;
+  color: #dbeafe !important;
+  box-shadow: inset 0 0 0 1px rgba(88, 166, 255, .45) !important;
+}
+
+html[data-theme='dark'] .knowledge-button.active,
+html[data-theme='dark'] .composer-meta span.enabled {
+  background: rgba(46, 160, 67, .14) !important;
+  border-color: rgba(63, 185, 80, .35) !important;
+  color: #8ddb8c !important;
+}
+
+html[data-theme='dark'] .knowledge-button.active small,
+html[data-theme='dark'] .composer-meta span.enabled {
+  color: #8ddb8c !important;
+}
+
+html[data-theme='dark'] .workspace-label i,
+html[data-theme='dark'] .nav-ready-dot,
+html[data-theme='dark'] .chat-ready-dot,
+html[data-theme='dark'] .knowledge-dot,
+html[data-theme='dark'] .operation-live i,
+html[data-theme='dark'] .event-pulse,
+html[data-theme='dark'] .composer-meta span.enabled i {
+  background: var(--dark-success) !important;
+  box-shadow: 0 0 0 4px rgba(63, 185, 80, .12) !important;
+}
+
+html[data-theme='dark'] .welcome-mark,
+html[data-theme='dark'] .assistant-avatar,
+html[data-theme='dark'] .chat-orb,
+html[data-theme='dark'] .modal-symbol,
+html[data-theme='dark'] .file-icon,
+html[data-theme='dark'] .store-folder,
+html[data-theme='dark'] .agent-icon,
+html[data-theme='dark'] .suggestion-grid button i,
+html[data-theme='dark'] .pipeline-core {
+  background: var(--dark-accent-soft) !important;
+  color: var(--dark-accent) !important;
+  box-shadow: none !important;
+}
+
+html[data-theme='dark'] .store-folder.green {
+  background: var(--dark-success) !important;
+  color: #0d1117 !important;
+}
+
+html[data-theme='dark'] .file-tree-check,
+html[data-theme='dark'] .file-picker-check,
+html[data-theme='dark'] input[type='checkbox'] {
+  background: var(--dark-surface-raised) !important;
+  border-color: var(--dark-border) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme='dark'] .file-tree-check.selected,
+html[data-theme='dark'] .file-tree-children label.selected .file-tree-check,
+html[data-theme='dark'] .file-picker-list label.selected .file-picker-check {
+  background: var(--dark-success) !important;
+  border-color: var(--dark-success) !important;
+  color: #0d1117 !important;
+  box-shadow: 0 0 0 3px rgba(63, 185, 80, .12) !important;
+}
+
+html[data-theme='dark'] .chat-message.user .message-body > p {
+  background: var(--dark-accent-strong) !important;
+  color: #f0f6fc !important;
+  border-color: transparent !important;
+}
+
+html[data-theme='dark'] .chat-message.error .message-body,
+html[data-theme='dark'] .toast-error {
+  background: rgba(248, 81, 73, .12) !important;
+  border-color: rgba(248, 81, 73, .38) !important;
+  color: #ffb3ad !important;
+}
+
+html[data-theme='dark'] .toast-success {
+  background: rgba(46, 160, 67, .13) !important;
+  border-color: rgba(63, 185, 80, .35) !important;
+  color: #8ddb8c !important;
+}
+
+html[data-theme='dark'] .markdown-answer table,
+html[data-theme='dark'] .markdown-answer th,
+html[data-theme='dark'] .markdown-answer td,
+html[data-theme='dark'] .composer-meta,
+html[data-theme='dark'] .panel-head,
+html[data-theme='dark'] .chat-top,
+html[data-theme='dark'] .file-tree-head,
+html[data-theme='dark'] .file-tree-foot,
+html[data-theme='dark'] .file-picker-head,
+html[data-theme='dark'] .file-picker-foot,
+html[data-theme='dark'] .simple-files article,
+html[data-theme='dark'] .panel-row {
+  border-color: var(--dark-border-muted) !important;
+}
+
+html[data-theme='dark'] .markdown-answer th,
+html[data-theme='dark'] .markdown-answer tbody tr:nth-child(even),
+html[data-theme='dark'] .markdown-answer code,
+html[data-theme='dark'] .composer-meta kbd,
+html[data-theme='dark'] .global-search kbd,
+html[data-theme='dark'] .command-input kbd {
+  background: var(--dark-surface-hover) !important;
+  color: var(--dark-text) !important;
+  border-color: var(--dark-border) !important;
+}
+
+html[data-theme='dark'] .markdown-answer pre {
+  background: var(--dark-inset) !important;
+  color: var(--dark-heading) !important;
+  border: 1px solid var(--dark-border) !important;
+}
+
+html[data-theme='dark'] input,
+html[data-theme='dark'] textarea,
+html[data-theme='dark'] select {
+  color: var(--dark-text) !important;
+}
+
+html[data-theme='dark'] input::placeholder,
+html[data-theme='dark'] textarea::placeholder {
+  color: var(--dark-subtle) !important;
+}
+
+html[data-theme='dark'] ::selection {
+  background: rgba(88, 166, 255, .32);
+  color: var(--dark-heading);
+}
+
+/* Developer research pipeline */
+.pipeline-message {
+  max-width: 980px;
+}
+
+.pipeline-card {
+  width: min(820px, 100%);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.pipeline-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .42;
+  background:
+    linear-gradient(90deg, transparent, rgba(88, 166, 255, .18), transparent),
+    repeating-linear-gradient(180deg, transparent 0 17px, rgba(255,255,255,.035) 18px);
+  transform: translateX(-100%);
+  animation: pipeline-scan 3.6s linear infinite;
+  z-index: -1;
+}
+
+.pipeline-head,
+.pipeline-operation,
+.pipeline-track,
+.pipeline-progress,
+.pipeline-dev-grid,
+.pipeline-telemetry,
+.pipeline-console,
+.pipeline-lower {
+  position: relative;
+  z-index: 1;
+}
+
+.pipeline-dev-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 1fr;
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.pipeline-panel {
+  min-width: 0;
+  border: 1px solid rgba(48, 54, 61, .9);
+  border-radius: 12px;
+  background: rgba(13, 17, 23, .72);
+  padding: 12px;
+}
+
+.pipeline-panel code {
+  display: block;
+  color: #dce4ee;
+  font-size: 14px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #58a6ff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  margin-bottom: 9px;
+  text-transform: uppercase;
+}
+
+.call-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.call-flow span,
+.pipeline-telemetry span,
+.console-feed b,
+.console-feed em {
+  border: 1px solid rgba(48, 54, 61, .9);
+  border-radius: 999px;
+  background: rgba(33, 38, 45, .8);
+  color: #8b949e;
+  padding: 4px 7px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+}
+
+.call-flow .outbound { color: #79c0ff; border-color: rgba(88, 166, 255, .35); }
+.call-flow .inbound { color: #8ddb8c; border-color: rgba(63, 185, 80, .38); }
+.call-flow .internal { color: #d2a8ff; border-color: rgba(188, 140, 255, .34); }
+
+.packet-panel p {
+  min-height: 52px;
+  margin: 0;
+  color: #c9d1d9;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.pipeline-telemetry {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.pipeline-telemetry span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 10px;
+  padding: 8px 7px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pipeline-telemetry strong {
+  color: #dce4ee;
+  font-size: 12px;
+}
+
+.pipeline-console {
+  border: 1px solid rgba(48, 54, 61, .92);
+  border-radius: 14px;
+  background: rgba(1, 4, 9, .56);
+  overflow: hidden;
+}
+
+.console-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(48, 54, 61, .8);
+  background: rgba(13, 17, 23, .78);
+}
+
+.console-head span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #dce4ee;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.console-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8b949e;
+  font-size: 8px;
+}
+
+.console-feed {
+  height: 116px;
+  max-height: 116px;
+  overflow-y: auto;
+  padding: 8px;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  scrollbar-width: thin;
+}
+
+.console-feed > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 18px 52px 44px minmax(120px, .82fr) minmax(0, 1.2fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px 9px;
+  color: #8b949e;
+  font-size: 12px;
+  animation: console-row-in .28s ease both;
+}
+
+.console-feed > div.live {
+  border-color: rgba(88, 166, 255, .35);
+  background: rgba(88, 166, 255, .08);
+}
+
+.console-feed > div.event-http-get,
+.console-feed > div.event-retrieval,
+.console-feed > div.event-chunk {
+  border-color: rgba(88, 166, 255, .22);
+  background: linear-gradient(90deg, rgba(88, 166, 255, .08), transparent 72%);
+}
+
+.console-feed > div.event-http-post,
+.console-feed > div.event-request {
+  border-color: rgba(63, 185, 80, .22);
+  background: linear-gradient(90deg, rgba(63, 185, 80, .08), transparent 72%);
+}
+
+.console-feed > div.event-llm_call,
+.console-feed > div.event-quality {
+  border-color: rgba(188, 140, 255, .26);
+  background: linear-gradient(90deg, rgba(188, 140, 255, .1), transparent 72%);
+}
+
+.console-feed > div.event-llm_result,
+.console-feed > div.event-http-put,
+.console-feed > div.event-http-patch {
+  border-color: rgba(86, 211, 255, .24);
+  background: linear-gradient(90deg, rgba(86, 211, 255, .08), transparent 72%);
+}
+
+.console-feed > div.event-complete {
+  border-color: rgba(63, 185, 80, .28);
+  background: linear-gradient(90deg, rgba(63, 185, 80, .11), transparent 72%);
+}
+
+.console-feed > div.event-error,
+.console-feed > div.event-http-delete {
+  border-color: rgba(248, 81, 73, .32);
+  background: linear-gradient(90deg, rgba(248, 81, 73, .1), transparent 72%);
+}
+
+.console-feed i {
+  display: grid;
+  place-items: center;
+  color: #58a6ff;
+}
+
+.console-feed time {
+  color: #6e7681;
+  font-size: 11px;
+}
+
+.console-feed b {
+  justify-self: start;
+  color: #79c0ff;
+  padding: 3px 6px;
+}
+
+.console-feed b.console-badge {
+  min-width: 42px;
+  text-align: center;
+}
+
+.console-feed b.http-get,
+.console-feed b.retrieval,
+.console-feed b.chunk {
+  color: #79c0ff;
+  border-color: rgba(88, 166, 255, .42);
+  background: rgba(88, 166, 255, .14);
+}
+
+.console-feed b.http-post,
+.console-feed b.request,
+.console-feed b.complete {
+  color: #7ee787;
+  border-color: rgba(63, 185, 80, .44);
+  background: rgba(63, 185, 80, .14);
+}
+
+.console-feed b.llm_call,
+.console-feed b.quality,
+.console-feed b.reduce,
+.console-feed b.synthesis {
+  color: #d2a8ff;
+  border-color: rgba(188, 140, 255, .44);
+  background: rgba(188, 140, 255, .14);
+}
+
+.console-feed b.llm_result,
+.console-feed b.http-put,
+.console-feed b.http-patch {
+  color: #56d3ff;
+  border-color: rgba(86, 211, 255, .42);
+  background: rgba(86, 211, 255, .14);
+}
+
+.console-feed b.error,
+.console-feed b.http-delete {
+  color: #ffaaa5;
+  border-color: rgba(248, 81, 73, .44);
+  background: rgba(248, 81, 73, .14);
+}
+
+.console-feed b.heartbeat,
+.console-feed b.status {
+  color: #ffa657;
+  border-color: rgba(255, 166, 87, .36);
+  background: rgba(255, 166, 87, .12);
+}
+
+.console-feed code {
+  color: #dce4ee;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.console-feed span {
+  min-width: 0;
+  color: #8b949e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.console-feed em {
+  justify-self: end;
+  max-width: 135px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8ddb8c;
+  border-color: rgba(63, 185, 80, .24);
+  font-style: normal;
+  text-transform: none;
+}
+
+.pipeline-track .active i {
+  animation: stage-pop 1.2s ease-in-out infinite, trace-orbit 2.2s linear infinite;
+}
+
+.pipeline-progress span {
+  animation: trace-progress 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes pipeline-scan {
+  to { transform: translateX(100%); }
+}
+
+@keyframes console-row-in {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes trace-orbit {
+  0%, 100% { outline: 0 solid rgba(88,166,255,0); }
+  50% { outline: 5px solid rgba(88,166,255,.08); }
+}
+
+@keyframes trace-progress {
+  from { filter: saturate(1); }
+  to { filter: saturate(1.6) brightness(1.12); }
+}
+
+html[data-theme='dark'] .pipeline-panel,
+html[data-theme='dark'] .pipeline-console {
+  background: rgba(13, 17, 23, .78) !important;
+  border-color: var(--dark-border) !important;
+}
+
+html[data-theme='dark'] .web-source-link {
+  color: var(--dark-accent) !important;
+  border-color: var(--dark-border) !important;
+  background: rgba(88, 166, 255, .08) !important;
+}
+html[data-theme='dark'] .web-source-link:hover {
+  background: rgba(88, 166, 255, .18) !important;
+  color: var(--dark-heading) !important;
+}
+
+html[data-theme='dark'] .pipeline-operation {
+  background: rgba(88, 166, 255, .08) !important;
+  border-color: rgba(88, 166, 255, .24) !important;
+}
+
+html[data-theme='dark'] .pipeline-progress {
+  background: #21262d !important;
+}
+
+html[data-theme='dark'] .pipeline-progress span {
+  background: linear-gradient(90deg, #58a6ff, #3fb950, #d2a8ff) !important;
+}
