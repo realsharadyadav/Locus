@@ -2826,13 +2826,24 @@ function ExplorePage({
                   </div>
                 )}
               </div>
-              <button type="button" className="composer-tool-btn" onClick={() => setSelectFilesOpen(true)}>
+              <button
+                type="button"
+                className={`composer-tool-btn composer-tool-btn-icon ${selectedCount > 0 ? 'active' : ''}`}
+                onClick={() => setSelectFilesOpen(true)}
+                aria-label={selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''} selected` : 'Select files'}
+                {...tip(selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''} selected` : 'Select files to scope this chat')}
+              >
                 <FileText size={13} />
-                <span>{selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''}` : 'Select files'}</span>
+                {selectedCount > 0 && <span className="tool-count-badge">{selectedCount}</span>}
               </button>
-              <button type="button" className="composer-tool-btn" onClick={openUpload}>
+              <button
+                type="button"
+                className="composer-tool-btn composer-tool-btn-icon"
+                onClick={openUpload}
+                aria-label="Upload a file"
+                {...tip('Upload a file')}
+              >
                 <FilePlus2 size={13} />
-                <span>Upload</span>
               </button>
               <button
                 type="button"
