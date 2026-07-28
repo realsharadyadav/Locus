@@ -410,7 +410,7 @@ function TicketAnalysisPage({ files, openMenu }) {
               <label>Ticket file</label>
               <select value={selectedFileId || ''} onChange={e => setSelectedFileId(e.target.value ? Number(e.target.value) : null)} disabled={filesLoading || ticketFiles.length === 0}>
                 <option value="">{filesLoading ? 'Loading files...' : ticketFiles.length ? 'Select a ticket file...' : 'No ticket files found'}</option>
-                {ticketFiles.map(f => <option key={f.id} value={f.id}>{f.name} \u2014 {fileMetaLine(f)}</option>)}
+                {ticketFiles.map(f => <option key={f.id} value={f.id}>{f.name} — {fileMetaLine(f)}</option>)}
               </select>
               <div className="ti-select-meta">{selectedFile ? `${fileMetaLine(selectedFile)} \u00B7 hash ${shortHash(trace.input?.file_hash)}` : ticketFiles.length ? 'Choose one uploaded CSV/XLSX/JSON/TXT/MD ticket export' : 'Upload a CSV, TSV, XLSX, JSON, TXT, or MD ticket export in Library, then refresh.'}</div>
             </div>
@@ -483,7 +483,7 @@ function TicketAnalysisPage({ files, openMenu }) {
               <div className="htext">
                 <div className="ti-eyebrow">Before you run analysis</div>
                 <h2>Four decisions, not forty toggles</h2>
-                <p>Collapsed by default \u2014 expand to change what claims a ticket first, how it\'s vectorized, how it clusters, and when the LLM steps in.</p>
+                <p>Collapsed by default — expand to change what claims a ticket first, how it’s vectorized, how it clusters, and when the LLM steps in.</p>
               </div>
             </div>
 
@@ -939,7 +939,7 @@ function TicketAnalysisPage({ files, openMenu }) {
           {/* ─── FOOTER ─── */}
           <footer style={{ padding: '40px 0', borderTop: '1px solid var(--line-soft)' }}>
             <div className="ti-wrap" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: 0 }}>
-              <p style={{ fontSize: 12.5, color: 'var(--muted-dim)', fontFamily: 'var(--mono)', margin: 0 }}>Patterns \u00B7 pipeline explainability</p>
+              <p style={{ fontSize: 12.5, color: 'var(--muted-dim)', fontFamily: 'var(--mono)', margin: 0 }}>Patterns · pipeline explainability</p>
               <p style={{ fontSize: 12.5, color: 'var(--muted-dim)', fontFamily: 'var(--mono)', margin: 0 }}>ticket_analysis.py</p>
             </div>
           </footer>
@@ -967,8 +967,8 @@ function TicketAnalysisPage({ files, openMenu }) {
                   <div className="ti-history-icon"><CheckCircle size={14} /></div>
                   <div className="ti-history-info">
                     <span className="ti-history-file">{item.file_name}</span>
-                    <span className="ti-history-meta">{item.manifest?.problemGroups || 0} groups \u00B7 {v} tickets</span>
-                    <span className="ti-history-meta">taxonomy {pct(it?.coverage?.taxonomy_matched, v)} \u00B7 clustered {pct(it?.coverage?.clustered, v)}</span>
+                    <span className="ti-history-meta">{item.manifest?.problemGroups || 0} groups · {v} tickets</span>
+                    <span className="ti-history-meta">taxonomy {pct(it?.coverage?.taxonomy_matched, v)} · clustered {pct(it?.coverage?.clustered, v)}</span>
                     <span className="ti-history-meta">top: {(item.config?.summary?.topGroups || (item.groups || []).slice(0, 3).map(g => g.groupName)).join(', ') || 'none'}</span>
                     <span className="ti-history-time"><Clock size={10} />{new Date(item.created_at).toLocaleString()}</span>
                   </div>

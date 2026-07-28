@@ -5,8 +5,9 @@
   display: grid;
   grid-template-rows: auto 1fr auto;
   min-height: 0;
-  height: calc(100vh - 72px);
-  height: calc(100dvh - 72px);
+  height: 100%;
+  flex: 1 1 auto;
+  overflow: hidden;
   background: var(--canvas);
   color: var(--ink);
   font-family: -apple-system, BlinkMacSystemFont, sans-serif;

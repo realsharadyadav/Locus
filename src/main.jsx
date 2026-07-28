@@ -45,8 +45,8 @@ const NAV_SECTIONS = [
     label: 'Workspace',
     items: [
       { id: 'home', Icon: LayoutDashboard, label: 'Home', accent: '166 84% 55%' },
-      { id: 'hub', Icon: Library, label: 'Library', accent: '38 94% 60%' },
-      { id: 'explore', Icon: MessagesSquare, label: 'Ask', accent: '255 88% 74%' },
+      { id: 'library', Icon: Library, label: 'Library', accent: '38 94% 60%' },
+      { id: 'ask', Icon: MessagesSquare, label: 'Ask', accent: '255 88% 74%' },
     ],
   },
   {
@@ -88,7 +88,7 @@ function Sidebar({
 
   return (
     <>
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${compact ? 'compact' : ''} ${page === 'explore' ? 'sidebar-explore' : ''}`}>
+      <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${compact ? 'compact' : ''} ${page === 'ask' ? 'sidebar-explore' : ''}`}>
         <div className="side-top">
           <Logo />
           <button className="mobile-close icon-button" onClick={close} aria-label="Close navigation">
@@ -126,8 +126,8 @@ function Sidebar({
                     <Icon size={18} strokeWidth={1.9} />
                   </span>
                   <span className="nav-label">{label}</span>
-                  {id === 'hub' && <span className="nav-count">{fileCount}</span>}
-                  {id === 'explore' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
+                  {id === 'library' && <span className="nav-count">{fileCount}</span>}
+                  {id === 'ask' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
                 </button>
               ))}
             </div>
@@ -211,9 +211,9 @@ function Header({ query, setQuery, openMenu, openCreate, openCommand, page }) {
         <span>{query || 'Search everything you know...'}</span>
         <kbd>⌘ K</kbd>
       </button>
-      {page === 'hub' && (
+      {page === 'library' && (
         <button className="new-button" onClick={openCreate}>
-          <Plus size={17} /> New store
+          <Plus size={17} /> New library
         </button>
       )}
     </header>
@@ -239,26 +239,26 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
         <div className="welcome-mark"><Sparkles size={24} /></div>
         <span className="kicker">YOUR SECOND BRAIN</span>
         <h1>{empty ? `Welcome to ${BRAND.name}` : 'Welcome back'}</h1>
-        <p>{empty ? 'Upload files to a store, then ask a question.' : 'Your knowledge is ready to explore.'}</p>
+        <p>{empty ? 'Upload files to a library, then ask a question.' : 'Your knowledge is ready to explore.'}</p>
       </section>
 
       <section className="stat-grid">
-        <article><strong>{stores.length}</strong><span>Stores</span></article>
+        <article><strong>{stores.length}</strong><span>Libraries</span></article>
         <article><strong>{files.length}</strong><span>Files</span></article>
         <article><strong>{chats.length}</strong><span>Chats</span></article>
       </section>
 
       <section className="quick-actions">
-        <button onClick={() => onNavigate('hub', { create: true })}><Folder size={16} /> Create store</button>
-        <button onClick={() => onNavigate('hub')}><Upload size={16} /> Upload files</button>
-        <button onClick={() => onNavigate('explore')}><Compass size={16} /> Ask a question</button>
+        <button onClick={() => onNavigate('library', { create: true })}><Folder size={16} /> Create library</button>
+        <button onClick={() => onNavigate('library')}><Upload size={16} /> Upload files</button>
+        <button onClick={() => onNavigate('ask')}><Compass size={16} /> Ask a question</button>
       </section>
 
       {empty ? (
         <section className="onboarding-card">
           <h2>Get started in two steps</h2>
           <ol>
-            <li>Create a store in Library and upload your documents.</li>
+            <li>Create a library and upload your documents.</li>
             <li>Open Ask and ask questions grounded in those files.</li>
           </ol>
         </section>
@@ -267,7 +267,7 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
           <div className="panel">
             <div className="panel-head"><h2>Recent files</h2></div>
             {files.slice(0, 5).map(file => (
-              <button key={file.id} className="panel-row" onClick={() => onNavigate('hub', { storeId: file.store_id })}>
+              <button key={file.id} className="panel-row" onClick={() => onNavigate('library', { storeId: file.store_id })}>
                 <FileText size={15} />
                 <span>
                   <strong>{file.name}</strong>
@@ -279,7 +279,7 @@ function HomePage({ stores, files, chats, loading, onNavigate, onOpenChat }) {
           </div>
           <div className="panel">
             <div className="panel-head"><h2>Recent chats</h2></div>
-            {!chats.length && <p className="panel-empty">No chats yet. Start one in Explore.</p>}
+            {!chats.length && <p className="panel-empty">No chats yet. Start one in Ask.</p>}
             {chats.slice(0, 5).map(chat => (
               <button key={chat.id} className="panel-row" onClick={() => onOpenChat(chat.id)}>
                 <Compass size={15} />
@@ -345,9 +345,12 @@ const DEFAULT_PROVIDER_MODELS = { ollama: 'llama3.2:latest', groq: 'openai/gpt-o
 const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
 const ACTIVE_CHAT_STORAGE_KEY = storageKey('explore-active-chat');
 const APP_DATA_CACHE_KEY = storageKey('last-data');
-const APP_PAGES = ['home', 'hub', 'explore', 'ticket-analysis', 'secret-chat', 'settings'];
+const APP_PAGES = ['home', 'library', 'ask', 'ticket-analysis', 'secret-chat', 'settings'];
 const normalizePageId = pageId => {
   if (pageId === 'ticketinsight' || pageId === 'ticket-analysis-lab') return 'ticket-analysis';
+  // Legacy route/page ids kept working for old bookmarks and shared links.
+  if (pageId === 'hub') return 'library';
+  if (pageId === 'explore') return 'ask';
   return pageId;
 };
 
@@ -1459,13 +1462,13 @@ function HubPage({
     return (
       <div className="page inner-page">
         <button className="back-button" onClick={() => setActiveStore(null)}>
-          <ArrowLeft size={15} /> All stores
+          <ArrowLeft size={15} /> All libraries
         </button>
         <div className="inner-title store-title">
           <div>
-            <span className="kicker">STORE</span>
+            <span className="kicker">LIBRARY</span>
             <h1>{activeStore.title}</h1>
-            <p>{activeStore.description || 'Files in this store are available to Explore.'}</p>
+            <p>{activeStore.description || 'Files in this library are available in Ask.'}</p>
           </div>
           <label className={`new-button upload-button ${uploading ? 'disabled' : ''}`}>
             <Upload size={16} />{uploading ? 'Uploading...' : 'Upload file'}
@@ -1532,7 +1535,7 @@ function HubPage({
             <div className="store-empty">
               <Upload size={24} />
               <h3>No files yet</h3>
-              <p>Upload a document or spreadsheet to make it available in Explore.</p>
+              <p>Upload a document or spreadsheet to make it available in Ask.</p>
             </div>
           )}
         </div>
@@ -1545,11 +1548,11 @@ function HubPage({
       <div className="inner-title">
         <div>
           <span className="kicker">LIBRARY</span>
-          <h1>Your stores</h1>
-          <p>Create a store, then add the files you want {BRAND.name} to understand.</p>
-          {query && <p className="filter-note">Showing stores matching “{query}”</p>}
+          <h1>Your libraries</h1>
+          <p>Create a library, then add the files you want {BRAND.name} to understand.</p>
+          {query && <p className="filter-note">Showing libraries matching “{query}”</p>}
         </div>
-        <button className="new-button" onClick={openCreate}><Plus size={17} /> New store</button>
+        <button className="new-button" onClick={openCreate}><Plus size={17} /> New library</button>
       </div>
       <div className="stores-grid">
         {visibleStores.map(store => (
@@ -1572,7 +1575,7 @@ function HubPage({
         ))}
         <button className="store-card create-store" onClick={openCreate}>
           <span className="store-folder"><Plus size={22} /></span>
-          <span><strong>Create a store</strong><small>Organize a new topic</small></span>
+          <span><strong>Create a library</strong><small>Organize a new topic</small></span>
         </button>
       </div>
     </div>
@@ -3201,14 +3204,14 @@ function CreateStoreModal({ open, close, onCreate }) {
           <X size={18} />
         </button>
         <div className="modal-symbol"><Folder /></div>
-        <span className="kicker">NEW STORE</span>
+        <span className="kicker">NEW LIBRARY</span>
         <h2>Create a home for your files</h2>
         <p>Group related files so your knowledge stays organized.</p>
         <form onSubmit={submit} className="capture-form">
           <input
             required
             autoFocus
-            placeholder="Store name"
+            placeholder="Library name"
             value={form.title}
             onChange={event => setForm({ ...form, title: event.target.value })}
           />
@@ -3230,7 +3233,7 @@ function CreateStoreModal({ open, close, onCreate }) {
           </div>
           {error && <p className="form-error">{error}</p>}
           <button className="save-button" disabled={saving}>
-            {saving ? 'Creating...' : 'Create store'} <ArrowRight size={16} />
+            {saving ? 'Creating...' : 'Create library'} <ArrowRight size={16} />
           </button>
         </form>
       </div>
@@ -3384,6 +3387,8 @@ function App() {
     const pageFromUrl = normalizePageId(path === '/' ? 'home' : path.replace(/^\//, ''));
     if (APP_PAGES.includes(pageFromUrl) && pageFromUrl !== 'secret-chat') {
       setPage(pageFromUrl);
+      const canonicalPath = pageFromUrl === 'home' ? '/' : `/${pageFromUrl}`;
+      if (path !== canonicalPath) window.history.replaceState({}, '', canonicalPath);
     }
     const onPopState = () => {
       const p = window.location.pathname;
@@ -3405,10 +3410,10 @@ function App() {
 
   const handleCommandSelect = (item) => {
     if (item.type === 'page') navigate(item.id);
-    if (item.type === 'store') navigate('hub', { storeId: item.id });
-    if (item.type === 'file') navigate('hub', { storeId: item.storeId });
+    if (item.type === 'store') navigate('library', { storeId: item.id });
+    if (item.type === 'file') navigate('library', { storeId: item.storeId });
     if (item.type === 'chat') {
-      navigate('explore');
+      navigate('ask');
       setExploreChatId(item.id);
     }
   };
@@ -3416,7 +3421,7 @@ function App() {
   const create = async payload => {
     await api.createCollection(payload);
     await loadData();
-    toast('Store created');
+    toast('Library created');
   };
 
   const uploadFile = async (storeId, file) => {
@@ -3434,7 +3439,7 @@ function App() {
   const deleteStore = async id => {
     await api.deleteCollection(id);
     await loadData();
-    toast('Store deleted');
+    toast('Library deleted');
   };
 
   const deleteChat = async id => {
@@ -3502,7 +3507,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'explore' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''}`}>
+    <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'ask' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''} ${page === 'secret-chat' ? 'secretchat-active' : ''}`}>
       <Sidebar
         page={page}
         setPage={(id) => navigate(id)}
@@ -3515,18 +3520,18 @@ function App() {
         files={files}
         historyCollapsed={historyCollapsed}
         setHistoryCollapsed={setHistoryCollapsed}
-        onOpenFile={file => navigate('hub', { storeId: file.store_id })}
+        onOpenFile={file => navigate('library', { storeId: file.store_id })}
         onOpenSecretChat={openSecretChat}
         onNewChat={() => {
           setExploreChatId(null);
           setNewChatSignal(value => value + 1);
-          navigate('explore');
+          navigate('ask');
         }}
         theme={theme}
         setTheme={setTheme}
       />
-      <main ref={page === 'explore' ? setExploreShellEl : undefined}>
-        {!['explore', 'ticket-analysis'].includes(page) && (
+      <main ref={page === 'ask' ? setExploreShellEl : undefined}>
+        {!['ask', 'ticket-analysis', 'secret-chat'].includes(page) && (
           <Header
             query={query}
             setQuery={setQuery}
@@ -3546,10 +3551,10 @@ function App() {
             chats={chats}
             loading={loading}
             onNavigate={navigate}
-            onOpenChat={id => { navigate('explore'); setExploreChatId(id); }}
+            onOpenChat={id => { navigate('ask'); setExploreChatId(id); }}
           />
         )}
-        {page === 'hub' && (
+        {page === 'library' && (
           <HubPage
             query={query}
             files={files}
@@ -3560,18 +3565,18 @@ function App() {
             uploadFile={uploadFile}
             requestDeleteFile={file => setConfirm({
               title: 'Delete file?',
-              message: `“${file.name}” will be removed from this store.`,
+              message: `“${file.name}” will be removed from this library.`,
               onConfirm: () => deleteFile(file.id),
             })}
             requestDeleteStore={store => setConfirm({
-              title: 'Delete store?',
+              title: 'Delete library?',
               message: `“${store.title}” and all its files will be permanently removed.`,
               onConfirm: () => deleteStore(store.id),
             })}
             toast={toast}
           />
         )}
-        {page === 'explore' && (
+        {page === 'ask' && (
           <ExplorePage
             files={files}
             stores={collections}
@@ -3583,7 +3588,7 @@ function App() {
             initialChatId={exploreChatId}
             clearInitialChat={() => setExploreChatId(null)}
             newChatSignal={newChatSignal}
-            onOpenStore={storeId => navigate('hub', { storeId })}
+            onOpenStore={storeId => navigate('library', { storeId })}
             toast={toast}
             requestDeleteChat={requestDeleteChat}
             requestDeleteAllChats={requestDeleteAllChats}

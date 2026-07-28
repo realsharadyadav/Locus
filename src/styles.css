@@ -6745,7 +6745,8 @@ html[data-theme='dark'] .explore-shell.history-collapsed.file-panel-collapsed {
    its own space instead of pushing the shell past the viewport — that extra, unaccounted
    height was what made the outer page scrollable and dragged the whole layout upward on
    scroll (most visible on iOS/iPadOS). .explore-shell then just fills what's left. */
-.app-shell.explore-active main {
+.app-shell.explore-active main,
+.app-shell.secretchat-active main {
   display: flex;
   flex-direction: column;
   height: 100vh;
