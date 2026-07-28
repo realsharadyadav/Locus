@@ -4092,17 +4092,11 @@ html[data-theme='dark'] .chat-composer .composer-controls .knowledge-button.acti
   align-items: center;
   gap: 4px;
 }
-.composer-tools-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--line);
-  flex-shrink: 0;
-}
 .composer-tool-btn {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
+  gap: 4px;
+  padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--paper);
@@ -4111,7 +4105,7 @@ html[data-theme='dark'] .chat-composer .composer-controls .knowledge-button.acti
   cursor: pointer;
   transition: all .15s;
   white-space: nowrap;
-  min-height: 28px;
+  min-height: 26px;
   width: auto !important;
   height: auto !important;
   box-shadow: none !important;
@@ -4119,6 +4113,22 @@ html[data-theme='dark'] .chat-composer .composer-controls .knowledge-button.acti
 .composer-tool-btn:hover { border-color: var(--violet); color: var(--ink); background: rgba(116,92,255,.04); }
 .composer-tool-btn.active { border-color: rgba(67,166,109,.3); color: #376c52; background: rgba(67,166,109,.06); }
 .composer-tool-btn svg { flex-shrink: 0; }
+.composer-tool-btn-icon {
+  padding: 4px 6px;
+  gap: 3px;
+}
+.tool-count-badge {
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: rgba(67,166,109,.16);
+  color: #2f684d;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 14px;
+  text-align: center;
+}
 .web-effort-chip {
   display: inline-flex;
   align-items: center;
@@ -4470,6 +4480,10 @@ html[data-theme='dark'] .web-effort-chip {
 }
 html[data-theme='dark'] .web-effort-chip:hover {
   background: rgba(67,166,109,.24);
+}
+html[data-theme='dark'] .tool-count-badge {
+  background: rgba(67,166,109,.2);
+  color: #7ee787;
 }
 html[data-theme='dark'] .tool-dot.on { background: #3fb950; box-shadow: 0 0 0 3px rgba(63,185,80,.14); }
 html[data-theme='dark'] .file-select-modal {
@@ -8357,20 +8371,16 @@ html[data-theme='dark'] .app-shell.explore-active .explore-shell.history-collaps
   min-width: 0;
 }
 
-.explore-shell .composer-tools-group:last-child {
-  justify-content: flex-end;
-}
-
-.explore-shell .composer-tools-divider {
-  display: none;
-}
-
 .explore-shell .composer-tool-btn {
-  min-height: 32px;
+  min-height: 28px;
   max-width: 100%;
-  padding: 6px 10px;
-  border-radius: 10px;
+  padding: 5px 9px;
+  border-radius: 9px;
   line-height: 1;
+}
+
+.explore-shell .composer-tool-btn-icon {
+  padding: 5px 7px;
 }
 
 .explore-shell .composer-tool-btn span:not(.tool-dot):not(.web-effort-chip) {

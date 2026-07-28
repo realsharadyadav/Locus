@@ -2857,25 +2857,35 @@ function ExplorePage({
                   </div>
                 )}
               </div>
-              <button type="button" className="composer-tool-btn" onClick={() => setSelectFilesOpen(true)}>
-                <FileText size={13} />
-                <span>{selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''}` : 'Select files'}</span>
-              </button>
-              <button type="button" className="composer-tool-btn" onClick={openUpload}>
-                <FilePlus2 size={13} />
-                <span>Upload</span>
-              </button>
-            </div>
-            <div className="composer-tools-divider" />
-            <div className="composer-tools-group">
               <button
                 type="button"
-                className={`composer-tool-btn ${allowGeneralKnowledge ? 'active' : ''}`}
+                className={`composer-tool-btn composer-tool-btn-icon ${selectedCount > 0 ? 'active' : ''}`}
+                onClick={() => setSelectFilesOpen(true)}
+                aria-label={selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''} selected` : 'Select files'}
+                {...tip(selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''} selected` : 'Select files to scope this chat')}
+              >
+                <FileText size={13} />
+                {selectedCount > 0 && <span className="tool-count-badge">{selectedCount}</span>}
+              </button>
+              <button
+                type="button"
+                className="composer-tool-btn composer-tool-btn-icon"
+                onClick={openUpload}
+                aria-label="Upload a file"
+                {...tip('Upload a file')}
+              >
+                <FilePlus2 size={13} />
+              </button>
+              <button
+                type="button"
+                className={`composer-tool-btn composer-tool-btn-icon ${allowGeneralKnowledge ? 'active' : ''}`}
                 onClick={() => setAllowGeneralKnowledge(v => !v)}
+                aria-pressed={allowGeneralKnowledge}
+                aria-label={`LLM knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
                 {...tip('Allow the model to use general knowledge beyond your files')}
               >
+                <BrainCircuit size={13} />
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
-                <span>LLM Knowledge</span>
               </button>
             </div>
           </div>
