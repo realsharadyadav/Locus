@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Link2, MessageCircle, Send, User, Users } from 'lucide-react';
+import TextareaAutosize from 'react-textarea-autosize';
+import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
-import { parseServerTime, resizeTextarea } from '../../utils';
-import { useVisualViewportShell } from '../../hooks/useVisualViewportShell';
+import { parseServerTime } from '../../utils';
+import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 export default function SecretChatPage({ token, onBack }) {
   const [session, setSession] = useState(null);
@@ -11,13 +13,16 @@ export default function SecretChatPage({ token, onBack }) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
   const [copyMsg, setCopyMsg] = useState('');
-  const [showJump, setShowJump] = useState(false);
-  const bottomRef = useRef(null);
-  const messagesRef = useRef(null);
   const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
-  const setShellEl = useVisualViewportShell();
+
+  useChatViewportLock();
+  const compactViewport = useCompactViewport();
+  const { scrollRef, contentRef, isAtBottom, scrollToBottom } = useStickToBottom({
+    initial: 'instant',
+    resize: 'smooth',
+  });
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -83,32 +88,22 @@ export default function SecretChatPage({ token, onBack }) {
     };
   }, [token, loading]);
 
-  useEffect(() => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    else setShowJump(true);
-  }, [messages]);
-
-  const handleMessagesScroll = () => {
-    const el = messagesRef.current;
-    if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    if (nearBottom) setShowJump(false);
-  };
-
-  const jumpToBottom = () => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    setShowJump(false);
-  };
+  // Keyboard, rotation and a resizing composer all change the list container's height
+  // rather than its content; see useRepinOnResize.
+  const setMessagesResizeTarget = useRepinOnResize(scrollToBottom);
+  const messagesScrollRef = useCallback(node => {
+    scrollRef(node);
+    setMessagesResizeTarget(node);
+  }, [scrollRef, setMessagesResizeTarget]);
 
   const send = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
     const content = input.trim();
     setInput('');
-    window.setTimeout(() => resizeTextarea(inputRef.current), 0);
+    // Stay focused so the on-screen keyboard does not collapse between messages.
+    inputRef.current?.focus();
+    scrollToBottom({ ignoreEscapes: true });
     try {
       const msg = await secretChatApi.sendMessage(token, sender, content);
       setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
@@ -139,7 +134,7 @@ export default function SecretChatPage({ token, onBack }) {
   }
 
   return (
-    <div className="secret-chat-shell" ref={setShellEl}>
+    <div className="secret-chat-shell">
       <header className="secret-chat-header">
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
@@ -166,51 +161,62 @@ export default function SecretChatPage({ token, onBack }) {
         </div>
       </header>
 
-      <div className="secret-chat-messages" ref={messagesRef} onScroll={handleMessagesScroll}>
-        {messages.length === 0 && (
-          <div className="secret-chat-empty">
-            <MessageCircle size={40} />
-            <p>No messages yet</p>
-            <small>Share the link and start chatting</small>
-          </div>
-        )}
-        {messages.map(msg => {
-          const [displayName] = (msg.sender || '').split('|||');
-          return (
-            <div key={msg.id} className={`secret-chat-msg-wrap${msg.sender === sender ? ' self' : ' other'}`}>
-              <div className="secret-chat-msg-sender">
-                {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </div>
-              <div className={`secret-chat-msg-bubble${msg.sender === sender ? ' self' : ' other'}`}>
-                {msg.content}
-              </div>
+      <div className="secret-chat-messages" ref={messagesScrollRef}>
+        <div className="secret-chat-messages-inner" ref={contentRef}>
+          {messages.length === 0 && (
+            <div className="secret-chat-empty">
+              <MessageCircle size={40} />
+              <p>No messages yet</p>
+              <small>Share the link and start chatting</small>
             </div>
-          );
-        })}
-        <div ref={bottomRef} />
+          )}
+          {messages.map(msg => {
+            const [displayName] = (msg.sender || '').split('|||');
+            return (
+              <div key={msg.id} className={`secret-chat-msg-wrap${msg.sender === sender ? ' self' : ' other'}`}>
+                <div className="secret-chat-msg-sender">
+                  {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+                <div className={`secret-chat-msg-bubble${msg.sender === sender ? ' self' : ' other'}`}>
+                  {msg.content}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      {showJump && (
-        <button type="button" className="secret-chat-jump-btn" onClick={jumpToBottom} aria-label="Jump to latest message">
-          <ChevronDown size={16} /> New messages
-        </button>
-      )}
-
       <form className="secret-chat-composer" onSubmit={send}>
-        <textarea
+        {!isAtBottom && messages.length > 0 && (
+          <button
+            type="button"
+            className="secret-chat-jump-btn"
+            onPointerDown={e => e.preventDefault()}
+            onClick={() => scrollToBottom()}
+            aria-label="Jump to latest message"
+          >
+            <ChevronDown size={16} /> Latest
+          </button>
+        )}
+        <TextareaAutosize
           ref={inputRef}
           className="secret-chat-input"
           value={input}
-          onChange={e => { setInput(e.target.value); resizeTextarea(e.target); }}
+          onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); } }}
           placeholder="Type a message..."
           maxLength={2000}
-          rows={1}
+          minRows={1}
+          maxRows={compactViewport ? 3 : 5}
+          enterKeyHint="send"
         />
         <button
           type="submit"
           disabled={!input.trim()}
           className={`secret-chat-send-btn${input.trim() ? ' active' : ' disabled'}`}
+          // Swallow the focus change on press: without this the textarea blurs and the
+          // on-screen keyboard slams shut the moment the message is sent.
+          onPointerDown={e => e.preventDefault()}
           onMouseDown={e => e.preventDefault()}
         >
           <Send size={18} />

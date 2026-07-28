@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
@@ -21,8 +21,10 @@ import { ToastStack } from './components/Toast';
 import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, secretChatApi } from './secret-chat';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { BRAND, assistantLabel, readStorage, readSessionFlag, storageKey, writeSessionFlag, writeStorage } from './brand';
-import { displayTime, parseServerTime, resizeTextarea, STORE_COLORS } from './utils';
-import { useVisualViewportShell } from './hooks/useVisualViewportShell';
+import TextareaAutosize from 'react-textarea-autosize';
+import { useStickToBottom } from 'use-stick-to-bottom';
+import { displayTime, parseServerTime, STORE_COLORS } from './utils';
+import { useChatViewportLock, useCompactViewport, useRepinOnResize } from './hooks/useChatViewport';
 
 function Logo() {
   return (
@@ -1863,10 +1865,18 @@ function ExplorePage({
   const [modePickerOpen, setModePickerOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
-  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
-  const threadRef = useRef(null);
   const composerRef = useRef(null);
+
+  useChatViewportLock();
+  const compactViewport = useCompactViewport();
+  const {
+    scrollRef: threadRef,
+    contentRef: threadContentRef,
+    isAtBottom,
+    scrollToBottom,
+    stopScroll,
+  } = useStickToBottom({ initial: 'instant', resize: 'smooth' });
   const loadedCompletedJob = useRef(null);
   const aiPreferenceReady = useRef(false);
   const revealTimerRef = useRef(null);
@@ -2078,24 +2088,37 @@ function ExplorePage({
     if (chat) openChat(chat);
   }, [initialChatId, activeChat, chats]);
 
+  // Streaming answers grow the thread continuously; use-stick-to-bottom's ResizeObserver
+  // keeps us pinned to the newest content while still letting the user scroll away.
+  // Opening a conversation is the exception: jump to the newest message unconditionally,
+  // including out of the released lock the empty landing screen leaves behind.
+  const previousMessageCount = useRef(0);
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, thinking, activeJob?.detail, directStreaming]);
+    const openedTranscript = previousMessageCount.current === 0 && messages.length > 0;
+    previousMessageCount.current = messages.length;
+    if (openedTranscript) scrollToBottom({ animation: 'instant', ignoreEscapes: true });
+    else scrollToBottom({ preserveScrollPosition: true });
+  }, [messages.length, thinking, directStreaming]);
 
+  // Keyboard, rotation and a resizing composer all change the thread container's height
+  // rather than its content; see useRepinOnResize.
+  const setThreadResizeTarget = useRepinOnResize(scrollToBottom);
+  const threadScrollRef = useCallback(node => {
+    threadRef(node);
+    setThreadResizeTarget(node);
+  }, [threadRef, setThreadResizeTarget]);
+
+  // An empty thread is a landing screen, not a transcript - start it at the top so the
+  // prompt and the mode hints are what the user actually sees. Runs after the paint that
+  // stick-to-bottom pins on, hence the timeout plus stopScroll.
   useEffect(() => {
-    const el = threadRef.current;
-    if (!el) return undefined;
-    const onScroll = () => {
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      setShowScrollToBottom(distanceFromBottom > 240);
-    };
-    el.addEventListener('scroll', onScroll);
-    return () => el.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const scrollToBottom = () => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: 'smooth' });
-  };
+    if (messages.length) return undefined;
+    const timer = window.setTimeout(() => {
+      stopScroll();
+      threadRef.current?.scrollTo({ top: 0 });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [messages.length, activeChat, stopScroll]);
 
   useEffect(() => () => {
     stopReveal();
@@ -2180,7 +2203,10 @@ function ExplorePage({
       return;
     }
     setQuestion('');
-    resizeTextarea(composerRef.current);
+    // Keep the composer focused so the mobile keyboard does not collapse on send, and
+    // re-arm stick-to-bottom in case the landing screen released it.
+    composerRef.current?.focus();
+    scrollToBottom({ ignoreEscapes: true });
     const canDirectStream = false;
     if (canDirectStream) {
       const streamId = crypto.randomUUID();
@@ -2361,10 +2387,7 @@ function ExplorePage({
         await truncateFromMessage(message);
       }
       setQuestion(message.text);
-      window.setTimeout(() => {
-        composerRef.current?.focus();
-        resizeTextarea(composerRef.current);
-      }, 0);
+      window.setTimeout(() => composerRef.current?.focus(), 0);
     } catch (error) {
       toast(error.message, 'error');
     }
@@ -2402,7 +2425,6 @@ function ExplorePage({
   const handleComposerInput = (event) => {
     const val = event.target.value;
     setQuestion(val);
-    resizeTextarea(event.target);
     if (val.match(/^\/(\w*)$/) && val.length > 0) {
       const partial = val.slice(1).toLowerCase();
       const matches = SLASH_COMMANDS.filter(c => c.label.slice(1).toLowerCase().startsWith(partial));
@@ -2647,154 +2669,161 @@ function ExplorePage({
         </div>
 
         <div
-          ref={threadRef}
+          ref={threadScrollRef}
           className={`chat-thread ${messages.length ? 'has-messages' : ''}`}
           aria-live="polite"
           aria-relevant="additions"
         >
-          {!messages.length && (
-            <div className="chat-empty">
-              <div className="chat-orb"><Sparkles size={29} /></div>
-              <h2>What do you want to ask?</h2>
-              <p>Ask directly, attach files, or switch modes when the question needs deeper work.</p>
-              {stores.length > 0 && (
-                <div className="quick-start-chips">
-                  {stores.slice(0, 3).map(store => (
-                    <button
-                      key={store.id}
-                      type="button"
-                      className="quick-start-chip"
-                      onClick={() => {
-                        setQuestion(`What can you tell me about ${store.title}?`);
-                        window.setTimeout(() => { composerRef.current?.focus(); resizeTextarea(composerRef.current); }, 0);
-                      }}
-                    >
-                      <Folder size={12} /> Ask about {store.title}
-                    </button>
-                  ))}
+          <div className="chat-thread-inner" ref={threadContentRef}>
+            {!messages.length && (
+              <div className="chat-empty">
+                <div className="chat-orb"><Sparkles size={29} /></div>
+                <h2>What do you want to ask?</h2>
+                <p>Ask directly, attach files, or switch modes when the question needs deeper work.</p>
+                {stores.length > 0 && (
+                  <div className="quick-start-chips">
+                    {stores.slice(0, 3).map(store => (
+                      <button
+                        key={store.id}
+                        type="button"
+                        className="quick-start-chip"
+                        onClick={() => {
+                          setQuestion(`What can you tell me about ${store.title}?`);
+                          window.setTimeout(() => composerRef.current?.focus(), 0);
+                        }}
+                      >
+                        <Folder size={12} /> Ask about {store.title}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="slash-hints">
+                  {SLASH_COMMANDS.map(cmd => {
+                    const Icon = cmd.icon;
+                    return (
+                      <button type="button" key={cmd.id} className="slash-hint" onClick={() => applySlashCommand(cmd)}>
+                        <Icon size={13} style={{ color: cmd.color }} />
+                        <span className="slash-hint-key">{cmd.label}</span>
+                        <span className="slash-hint-desc">{cmd.desc}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-              <div className="slash-hints">
-                {SLASH_COMMANDS.map(cmd => {
-                  const Icon = cmd.icon;
-                  return (
-                    <button type="button" key={cmd.id} className="slash-hint" onClick={() => applySlashCommand(cmd)}>
-                      <Icon size={13} style={{ color: cmd.color }} />
-                      <span className="slash-hint-key">{cmd.label}</span>
-                      <span className="slash-hint-desc">{cmd.desc}</span>
-                    </button>
-                  );
-                })}
               </div>
-            </div>
-          )}
-          {messages.map((message, index) => (
-            <div className={`chat-message ${message.role} ${message.error ? 'error' : ''}`} key={message.id || message.streamId || index}>
-              {message.role === 'assistant' && <div className="assistant-avatar"><Sparkles size={15} /></div>}
-              <div className="message-body">
-                <div className="message-head">
-                  <span className="message-head-label">
-                    <span>{message.role === 'assistant' ? assistantLabel(message.model, message.provider, PROVIDER_LABELS) : 'You'}</span>
-                    {message.role === 'assistant' && message.totalTokens > 0 && (
-                      <span className="message-tokens" title={`${message.promptTokens.toLocaleString()} prompt + ${message.completionTokens.toLocaleString()} completion tokens`}>
-                        {message.totalTokens.toLocaleString()} tokens
-                      </span>
-                    )}
-                  </span>
-                  <div className="message-actions">
-                    {message.id && (
-                      <>
-                        {message.role === 'user' && (
-                          <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => editMessage(message)} aria-label="Edit question" title="Edit question">
-                            <PenLine size={13} />
+            )}
+            {messages.map((message, index) => (
+              <div className={`chat-message ${message.role} ${message.error ? 'error' : ''}`} key={message.id || message.streamId || index}>
+                {message.role === 'assistant' && <div className="assistant-avatar"><Sparkles size={15} /></div>}
+                <div className="message-body">
+                  <div className="message-head">
+                    <span className="message-head-label">
+                      <span>{message.role === 'assistant' ? assistantLabel(message.model, message.provider, PROVIDER_LABELS) : 'You'}</span>
+                      {message.role === 'assistant' && message.totalTokens > 0 && (
+                        <span className="message-tokens" title={`${message.promptTokens.toLocaleString()} prompt + ${message.completionTokens.toLocaleString()} completion tokens`}>
+                          {message.totalTokens.toLocaleString()} tokens
+                        </span>
+                      )}
+                    </span>
+                    <div className="message-actions">
+                      {message.id && (
+                        <>
+                          {message.role === 'user' && (
+                            <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => editMessage(message)} aria-label="Edit question" title="Edit question">
+                              <PenLine size={13} />
+                            </button>
+                          )}
+                          {(message.role === 'user' || message.error) && (
+                            <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => askAgain(message, index)} aria-label="Ask again" title="Ask again with current model">
+                              <RotateCcw size={13} />
+                            </button>
+                          )}
+                          <button className="copy-button icon-button" type="button" onClick={() => copyAnswer(message.text, index)} aria-label="Copy query" title="Copy query">
+                            {copiedIndex === index ? <Check size={14} /> : <Copy size={14} />}
                           </button>
-                        )}
-                        {(message.role === 'user' || message.error) && (
-                          <button className="message-action icon-button" type="button" disabled={thinking} onClick={() => askAgain(message, index)} aria-label="Ask again" title="Ask again with current model">
-                            <RotateCcw size={13} />
-                          </button>
-                        )}
-                        <button className="copy-button icon-button" type="button" onClick={() => copyAnswer(message.text, index)} aria-label="Copy query" title="Copy query">
-                          {copiedIndex === index ? <Check size={14} /> : <Copy size={14} />}
-                        </button>
-                      </>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {message.role === 'assistant' ? (
+                    <>
+                      <DirectStreamTrace activity={message.activity} model={message.model} provider={message.provider} text={message.text} streaming={message.streaming} />
+                      <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><AssistantMarkdown text={message.text} streaming={message.streaming} messageKey={message.id || message.streamId || index} /></div>
+                    </>
+                  ) : (
+                    <p>{message.text}</p>
+                  )}
+  {message.sources?.length > 0 && (
+                      <CollapsibleSources
+                        sources={message.sources}
+                        index={index}
+                        isExpanded={expandedSources[index]}
+                        onToggle={() => toggleSources(index)}
+                        onOpenStore={onOpenStore}
+                        model={message.model}
+                        provider={message.provider}
+                        llmHits={message.llmHits}
+                        webQueries={message.webQueries}
+                      />
                     )}
+                </div>
+              </div>
+            ))}
+            {!thinking && (followups.loading || followups.items.length > 0) && (
+              <div className="chat-suggestions" aria-label="Suggested follow-up questions">
+                {followups.loading
+                  ? Array.from({ length: 3 }).map((_, index) => <span className="chat-suggestion-skeleton" key={index} />)
+                  : followups.items.map((suggestion, index) => (
+                      <button type="button" className="chat-suggestion-chip" key={index} onClick={() => askSuggestion(suggestion)}>
+                        <Sparkles size={12} />
+                        <span>{suggestion}</span>
+                      </button>
+                    ))}
+              </div>
+            )}
+            {activeJob && (
+              <PipelineActivity
+                pipeline={{ stage: activeJob.stage, detail: activeJob.detail }}
+                model={activeJob.model}
+                provider={activeJob.provider}
+                events={activeJob.events || []}
+                startedAt={parseServerTime(activeJob.created_at)}
+                reasoningMode={activeJob.reasoning_mode}
+                webSearch={activeJob.web_search}
+                fileCount={activeJob.file_ids === null ? files.length : (activeJob.file_ids?.length ?? selectedCount)}
+                question={activeJob.question}
+                liveLlmHits={activeJob.llm_hits}
+                liveWebQueries={activeJob.web_queries}
+                liveTotalTokens={activeJob.total_tokens}
+              />
+            )}
+            {activeJob?.partial_answer && (
+              <div className="chat-message assistant">
+                <div className="assistant-avatar"><Sparkles size={15} /></div>
+                <div className="message-body">
+                  <div className="markdown-answer streaming">
+                    <AssistantMarkdown text={activeJob.partial_answer} streaming messageKey={`job-${activeJob.id}`} />
                   </div>
                 </div>
-                {message.role === 'assistant' ? (
-                  <>
-                    <DirectStreamTrace activity={message.activity} model={message.model} provider={message.provider} text={message.text} streaming={message.streaming} />
-                    <div className={`markdown-answer ${message.streaming ? 'streaming' : ''}`}><AssistantMarkdown text={message.text} streaming={message.streaming} messageKey={message.id || message.streamId || index} /></div>
-                  </>
-                ) : (
-                  <p>{message.text}</p>
-                )}
-{message.sources?.length > 0 && (
-                    <CollapsibleSources
-                      sources={message.sources}
-                      index={index}
-                      isExpanded={expandedSources[index]}
-                      onToggle={() => toggleSources(index)}
-                      onOpenStore={onOpenStore}
-                      model={message.model}
-                      provider={message.provider}
-                      llmHits={message.llmHits}
-                      webQueries={message.webQueries}
-                    />
-                  )}
               </div>
-            </div>
-          ))}
-          {!thinking && (followups.loading || followups.items.length > 0) && (
-            <div className="chat-suggestions" aria-label="Suggested follow-up questions">
-              {followups.loading
-                ? Array.from({ length: 3 }).map((_, index) => <span className="chat-suggestion-skeleton" key={index} />)
-                : followups.items.map((suggestion, index) => (
-                    <button type="button" className="chat-suggestion-chip" key={index} onClick={() => askSuggestion(suggestion)}>
-                      <Sparkles size={12} />
-                      <span>{suggestion}</span>
-                    </button>
-                  ))}
-            </div>
-          )}
-          {activeJob && (
-            <PipelineActivity
-              pipeline={{ stage: activeJob.stage, detail: activeJob.detail }}
-              model={activeJob.model}
-              provider={activeJob.provider}
-              events={activeJob.events || []}
-              startedAt={parseServerTime(activeJob.created_at)}
-              reasoningMode={activeJob.reasoning_mode}
-              webSearch={activeJob.web_search}
-              fileCount={activeJob.file_ids === null ? files.length : (activeJob.file_ids?.length ?? selectedCount)}
-              question={activeJob.question}
-              liveLlmHits={activeJob.llm_hits}
-              liveWebQueries={activeJob.web_queries}
-              liveTotalTokens={activeJob.total_tokens}
-            />
-          )}
-          {activeJob?.partial_answer && (
-            <div className="chat-message assistant">
-              <div className="assistant-avatar"><Sparkles size={15} /></div>
-              <div className="message-body">
-                <div className="markdown-answer streaming">
-                  <AssistantMarkdown text={activeJob.partial_answer} streaming messageKey={`job-${activeJob.id}`} />
-                </div>
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-
-        {showScrollToBottom && (
-          <button type="button" className="scroll-to-bottom-btn" onClick={scrollToBottom} aria-label="Scroll to latest message">
-            <ChevronDown size={14} /> New messages
-          </button>
-        )}
 
         <form
           className="chat-composer"
           onSubmit={event => { event.preventDefault(); ask(question); }}
         >
+          {!isAtBottom && messages.length > 0 && (
+            <button
+              type="button"
+              className="scroll-to-bottom-btn"
+              onPointerDown={event => event.preventDefault()}
+              onClick={() => scrollToBottom()}
+              aria-label="Scroll to latest message"
+            >
+              <ChevronDown size={14} /> Latest
+            </button>
+          )}
           {slashOpen && matchedCommands.length > 0 && (
             <div className="slash-popup">
               {matchedCommands.map((cmd, i) => {
@@ -2891,13 +2920,15 @@ function ExplorePage({
           </div>
           <div className="composer-input-row">
             <div className="input-wrap">
-              <textarea
+              <TextareaAutosize
                 ref={composerRef}
-                rows="1"
+                minRows={1}
+                maxRows={compactViewport ? 3 : 6}
                 value={question}
                 onChange={handleComposerInput}
                 onKeyDown={handleComposerKeyDown}
                 placeholder="Ask or type / for commands..."
+                enterKeyHint="send"
               />
             </div>
             {thinking ? (
@@ -2905,7 +2936,15 @@ function ExplorePage({
                 <Square size={15} />
               </button>
             ) : (
-              <button type="submit" disabled={!question.trim()} aria-label="Send question" onMouseDown={e => e.preventDefault()}><Send size={17} /></button>
+              <button
+                type="submit"
+                disabled={!question.trim()}
+                aria-label="Send question"
+                onPointerDown={e => e.preventDefault()}
+                onMouseDown={e => e.preventDefault()}
+              >
+                <Send size={17} />
+              </button>
             )}
           </div>
           <div className="composer-meta">
@@ -3293,7 +3332,6 @@ function App() {
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const { token: secretChatToken, isSharedLink, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute();
-  const setExploreShellEl = useVisualViewportShell();
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -3571,7 +3609,7 @@ function App() {
         theme={theme}
         setTheme={setTheme}
       />
-      <main ref={page === 'ask' ? setExploreShellEl : undefined}>
+      <main>
         {!['ask', 'ticket-analysis', 'secret-chat'].includes(page) && (
           <Header
             query={query}
