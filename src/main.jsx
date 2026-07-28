@@ -2834,17 +2834,16 @@ function ExplorePage({
                 <FilePlus2 size={13} />
                 <span>Upload</span>
               </button>
-            </div>
-            <div className="composer-tools-divider" />
-            <div className="composer-tools-group">
               <button
                 type="button"
-                className={`composer-tool-btn ${allowGeneralKnowledge ? 'active' : ''}`}
+                className={`composer-tool-btn composer-tool-btn-icon ${allowGeneralKnowledge ? 'active' : ''}`}
                 onClick={() => setAllowGeneralKnowledge(v => !v)}
+                aria-pressed={allowGeneralKnowledge}
+                aria-label={`LLM knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
                 {...tip('Allow the model to use general knowledge beyond your files')}
               >
+                <BrainCircuit size={13} />
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
-                <span>LLM Knowledge</span>
               </button>
             </div>
           </div>
