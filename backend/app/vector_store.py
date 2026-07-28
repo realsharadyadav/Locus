@@ -14,6 +14,7 @@ from sqlalchemy import text
 
 from .brand import LEGACY_VECTOR_INDEX_FILENAME, VECTOR_INDEX_FILENAME
 from .config import (
+    EMBEDDING_BATCH_SIZE,
     EMBEDDING_DIMENSIONS,
     SEMANTIC_CHUNK_CHARS,
     SEMANTIC_CHUNK_OVERLAP,
@@ -109,7 +110,7 @@ def embed_passages(texts: list[str]) -> list[list[float]]:
     model = _get_fastembed_model()
     if model is not None:
         try:
-            return [_normalize(list(vector)) for vector in model.passage_embed(texts)]
+            return [_normalize(list(vector)) for vector in model.passage_embed(texts, batch_size=EMBEDDING_BATCH_SIZE)]
         except Exception:
             pass
     return [_hash_embed(text) for text in texts]

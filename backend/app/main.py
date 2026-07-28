@@ -27,7 +27,7 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
 from .config import (
     GROQ_MODEL_PRESETS, TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-    SEMANTIC_MIN_SCORE, TICKET_ANALYSIS_ENABLED, TICKET_ANALYSIS_MAX_GROUPS,
+    MAX_UPLOAD_FILE_MB, SEMANTIC_MIN_SCORE, TICKET_ANALYSIS_ENABLED, TICKET_ANALYSIS_MAX_GROUPS,
     TICKET_ANALYSIS_MIN_GROUP_SIZE, TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
     configured_model, llm_provider,
 )
@@ -579,14 +579,15 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
         raise HTTPException(status_code=415, detail="Supported files: XLSX, XLSM, CSV, TSV, TXT, MD, PDF, DOCX, JSON, HTML and source code")
     stored_name = f"{uuid4().hex}{extension}"
     stored_path = UPLOAD_DIR / stored_name
+    max_upload_bytes = MAX_UPLOAD_FILE_MB * 1024 * 1024
     size = 0
     with stored_path.open("wb") as destination:
         while chunk := await file.read(1024 * 1024):
             size += len(chunk)
-            if size > 250 * 1024 * 1024:
+            if size > max_upload_bytes:
                 destination.close()
                 stored_path.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail="Files must be 250 MB or smaller")
+                raise HTTPException(status_code=413, detail=f"Files must be {MAX_UPLOAD_FILE_MB} MB or smaller")
             destination.write(chunk)
     try:
         text = await asyncio.to_thread(extract_text_from_path, file.filename or stored_name, stored_path)

@@ -336,6 +336,8 @@ function formatElapsedTime(totalSeconds) {
   return `${seconds}s`;
 }
 
+const MAX_UPLOAD_FILE_MB = 25;
+
 function formatFileSize(bytes = 0) {
   const size = Number(bytes) || 0;
   if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
@@ -1459,6 +1461,10 @@ function HubPage({
   const handleUpload = async (fileList) => {
     const file = fileList?.[0];
     if (!file || !activeStore) return;
+    if (file.size > MAX_UPLOAD_FILE_MB * 1024 * 1024) {
+      toast(`Files must be ${MAX_UPLOAD_FILE_MB} MB or smaller`, 'error');
+      return;
+    }
     setUploading(true);
     setUploadStage({
       step: 0,
@@ -1525,7 +1531,7 @@ function HubPage({
           <Upload size={18} />
           <div>
             <span>{uploadStage?.title || 'Drop files here to upload'}</span>
-            {uploadStage ? <small>{uploadStage.detail}</small> : <small>PDF, DOCX, XLSX, XLSM, CSV, TSV and text · up to 250 MB</small>}
+            {uploadStage ? <small>{uploadStage.detail}</small> : <small>PDF, DOCX, XLSX, XLSM, CSV, TSV and text · up to {MAX_UPLOAD_FILE_MB} MB</small>}
           </div>
           {uploadStage && (
             <div className="upload-pipeline" aria-live="polite">

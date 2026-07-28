@@ -25,6 +25,13 @@ SEMANTIC_CHUNK_CHARS = max(300, int(os.getenv("SEMANTIC_CHUNK_CHARS", "1200")))
 SEMANTIC_CHUNK_OVERLAP = max(0, int(os.getenv("SEMANTIC_CHUNK_OVERLAP", "180")))
 SEMANTIC_TOP_K = max(1, int(os.getenv("SEMANTIC_TOP_K", "6")))
 SEMANTIC_MIN_SCORE = float(os.getenv("SEMANTIC_MIN_SCORE", "0.18"))
+# Uploads are parsed and embedded synchronously in-process (see main.py's upload_file), so the
+# cap needs to fit the deployment's memory budget, not just reasonable document sizes. Default is
+# sized for a 512MB host; raise via env on a larger plan.
+MAX_UPLOAD_FILE_MB = max(1, int(os.getenv("MAX_UPLOAD_FILE_MB", "25")))
+# Bounds how many chunks fastembed encodes per onnxruntime forward pass. Lower values trade
+# indexing speed for a smaller peak memory footprint during embedding.
+EMBEDDING_BATCH_SIZE = max(1, int(os.getenv("EMBEDDING_BATCH_SIZE", "16")))
 
 WEB_RESEARCH_MAX_SOURCES = max(5, int(os.getenv("WEB_RESEARCH_MAX_SOURCES", "50")))
 WEB_RESEARCH_RESULTS_PER_QUERY = max(3, min(50, int(os.getenv("WEB_RESEARCH_RESULTS_PER_QUERY", "10"))))
