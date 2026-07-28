@@ -14,9 +14,9 @@ import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
-import { SecretChatPage, SecretChatStandalone, secretChatApi, useSecretChatRoute } from './secret-chat';
+import { SecretChatPage, secretChatApi, useSecretChatRoute } from './secret-chat';
 
-export function App() {
+export function App({ initialSecretChatToken = null }) {
   const [page, setPage] = useState('home');
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -26,7 +26,7 @@ export function App() {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const { token: secretChatToken, isSharedLink, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute();
+  const { token: secretChatToken, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -284,10 +284,6 @@ export function App() {
       onDeleted?.();
     },
   });
-
-  if (isSharedLink && page === 'secret-chat' && secretChatToken) {
-    return <SecretChatStandalone token={secretChatToken} />;
-  }
 
   if (!booted) return <SplashScreen progress={bootProgress} />;
 

@@ -3,8 +3,11 @@ import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
+import { chatShareUrl } from '../links';
+import ShareMenu from './ShareMenu';
 import { parseServerTime } from '../../utils';
 import { timeLabel, withMessageGrouping } from '../messageGroups';
+import { readStorage } from '../../brand';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 export default function SecretChatStandalone({ token }) {
@@ -28,6 +31,17 @@ export default function SecretChatStandalone({ token }) {
     initial: 'instant',
     resize: 'smooth',
   });
+
+  // Guests never mount the app shell, so the theme attribute and the tab title it normally
+  // sets have to be applied here. The title stays about the chat, not the product.
+  useEffect(() => {
+    document.documentElement.dataset.theme = readStorage('theme') || 'dark';
+  }, []);
+
+  useEffect(() => {
+    const title = session?.title?.trim();
+    document.title = title && title !== 'Private' ? `${title} · Private chat` : 'Private chat';
+  }, [session?.title]);
 
   useEffect(() => {
     secretChatApi.get(token).then(data => {
@@ -156,6 +170,7 @@ export default function SecretChatStandalone({ token }) {
             maxLength={60}
             placeholder="Your name"
           />
+          <ShareMenu url={chatShareUrl(token)} title={session.title} variant="standalone" />
         </div>
       </header>
 

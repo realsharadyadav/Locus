@@ -191,10 +191,18 @@ reorder them, and add new overrides as a new highest-numbered file.
 | File | Purpose |
 |---|---|
 | `secret-chat/api.js` | Secret Chat API client |
+| `secret-chat/index.js` | Guest-vs-app entry resolution (`resolveSecretChatEntry`) and the in-app route hook |
+| `secret-chat/links.js` | Share link shape — guests join on `/j/<token>`; `/secret-chat/<token>` still resolves |
 | `secret-chat/components/SecretChatPage.jsx` | In-app secret chat room with SSE real-time |
 | `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors |
+| `secret-chat/components/ShareMenu.jsx` | Share popover — copy link, WhatsApp, Telegram, SMS, email, X, native share sheet |
 | `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
+
+Link guests never mount the app shell: `resolveSecretChatEntry()` runs before `createRoot`, so a
+visitor arriving on a share link only ever loads the standalone chat and only calls
+`/api/secret-chat/*`. A browser that has only ever followed a share link is remembered as a guest,
+and visiting the app root or any app path sends it back to its own chat instead of into Locus.
 
 ---
 

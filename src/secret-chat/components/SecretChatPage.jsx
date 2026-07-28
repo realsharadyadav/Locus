@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Link2, MessageCircle, Send, User, Users } from 'lucide-react';
+import { ChevronDown, MessageCircle, Send, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
+import { chatShareUrl } from '../links';
+import ShareMenu from './ShareMenu';
 import { parseServerTime } from '../../utils';
 import { timeLabel, withMessageGrouping } from '../messageGroups';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
@@ -13,7 +15,6 @@ export default function SecretChatPage({ token, onBack }) {
   const [sender, setSender] = useState(() => window.localStorage.getItem('secret-chat-sender') || 'Anonymous');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(true);
-  const [copyMsg, setCopyMsg] = useState('');
   const inputRef = useRef(null);
   const eventSourceRef = useRef(null);
   const lastIdRef = useRef(0);
@@ -112,14 +113,7 @@ export default function SecretChatPage({ token, onBack }) {
     } catch {}
   };
 
-  const shareUrl = `${window.location.origin}/secret-chat/${token}`;
-
-  const copyLink = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopyMsg('Copied!');
-      setTimeout(() => setCopyMsg(''), 2000);
-    });
-  };
+  const shareUrl = chatShareUrl(token);
 
   const updateSender = (name) => {
     setSender(name);
@@ -155,10 +149,8 @@ export default function SecretChatPage({ token, onBack }) {
           </div>
         </div>
         <div className="secret-chat-actions">
-          <span className="secret-chat-url-preview">{shareUrl.slice(0, 40)}…</span>
-          <button className={`secret-chat-copy-btn${copyMsg ? ' copied' : ''}`} onClick={copyLink}>
-            {copyMsg ? <span>{copyMsg}</span> : <><Link2 size={14} /> Share link</>}
-          </button>
+          <span className="secret-chat-url-preview">{shareUrl.replace(/^https?:\/\//, '')}</span>
+          <ShareMenu url={shareUrl} title={session?.title} />
         </div>
       </header>
 

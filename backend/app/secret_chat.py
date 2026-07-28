@@ -34,7 +34,8 @@ def create_secret_chat(db: Session = Depends(get_db)):
     db.add(session)
     db.commit()
     host = os.getenv("SECRET_CHAT_HOST", "http://127.0.0.1:5173")
-    return SecretChatCreateResponse(token=token, url=f"{host}/secret-chat/{token}")
+    # Guests join on the short neutral path; see src/secret-chat/links.js.
+    return SecretChatCreateResponse(token=token, url=f"{host}/j/{token}")
 
 
 @router.get("/{token}", response_model=SecretChatSessionRead)
