@@ -26,7 +26,7 @@ from .database import Base, SessionLocal, engine, get_db
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
 from .config import (
-    GROQ_MODEL_PRESETS, TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
+    EMBEDDING_BATCH_SIZE, GROQ_MODEL_PRESETS, TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
     MAX_UPLOAD_FILE_MB, SEMANTIC_MIN_SCORE, TICKET_ANALYSIS_ENABLED, TICKET_ANALYSIS_MAX_GROUPS,
     TICKET_ANALYSIS_MIN_GROUP_SIZE, TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
     configured_model, llm_provider,
@@ -560,6 +560,41 @@ def delete_collection(store_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+UPLOAD_LIMIT_PREFERENCE_KEY = "upload_limits"
+
+
+def _effective_upload_limit_mb(db: Session) -> int:
+    """The upload cap actually enforced: the user's saved preference, clamped to
+    MAX_UPLOAD_FILE_MB (the deployment's memory-safe ceiling, set via env). Users can
+    dial the limit down for faster feedback, but never raise it past what the host
+    can safely embed in-process — that requires an operator to raise the env var."""
+    preference = db.get(UserPreference, UPLOAD_LIMIT_PREFERENCE_KEY)
+    if preference and isinstance(preference.value, dict):
+        try:
+            requested = int(preference.value.get("max_mb"))
+        except (TypeError, ValueError):
+            requested = None
+        if requested and requested > 0:
+            return min(requested, MAX_UPLOAD_FILE_MB)
+    return MAX_UPLOAD_FILE_MB
+
+
+@app.get("/api/system/limits")
+def system_limits(db: Session = Depends(get_db)):
+    return {
+        "upload_max_mb": _effective_upload_limit_mb(db),
+        "upload_ceiling_mb": MAX_UPLOAD_FILE_MB,
+        "embedding_batch_size": EMBEDDING_BATCH_SIZE,
+        "reason": (
+            "Uploaded files are parsed and embedded in-process before the upload request "
+            "finishes, so a large file can exhaust the backend's memory and crash it. The "
+            "ceiling matches what this deployment can safely handle; you can set your own "
+            "limit at or below it, but raising the ceiling itself requires more memory on "
+            "the host (MAX_UPLOAD_FILE_MB env var)."
+        ),
+    }
+
+
 @app.get("/api/files", response_model=list[StoredFileRead])
 def list_files(store_id: int | None = None, db: Session = Depends(get_db)):
     statement = select(StoredFile)
@@ -579,7 +614,8 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
         raise HTTPException(status_code=415, detail="Supported files: XLSX, XLSM, CSV, TSV, TXT, MD, PDF, DOCX, JSON, HTML and source code")
     stored_name = f"{uuid4().hex}{extension}"
     stored_path = UPLOAD_DIR / stored_name
-    max_upload_bytes = MAX_UPLOAD_FILE_MB * 1024 * 1024
+    upload_limit_mb = _effective_upload_limit_mb(db)
+    max_upload_bytes = upload_limit_mb * 1024 * 1024
     size = 0
     with stored_path.open("wb") as destination:
         while chunk := await file.read(1024 * 1024):
@@ -587,7 +623,7 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
             if size > max_upload_bytes:
                 destination.close()
                 stored_path.unlink(missing_ok=True)
-                raise HTTPException(status_code=413, detail=f"Files must be {MAX_UPLOAD_FILE_MB} MB or smaller")
+                raise HTTPException(status_code=413, detail=f"Files must be {upload_limit_mb} MB or smaller")
             destination.write(chunk)
     try:
         text = await asyncio.to_thread(extract_text_from_path, file.filename or stored_name, stored_path)

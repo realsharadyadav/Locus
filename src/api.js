@@ -22,6 +22,7 @@ const request = async (path, options = {}) => {
 
 export const api = {
   llmConfig: () => request('/llm/config'),
+  systemLimits: () => request('/system/limits'),
   preference: (key) => request(`/preferences/${key}`),
   updatePreference: (key, value) => request(`/preferences/${key}`, { method: 'PATCH', body: JSON.stringify({ value }) }),
   collections: () => request('/collections'),

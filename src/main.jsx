@@ -336,7 +336,7 @@ function formatElapsedTime(totalSeconds) {
   return `${seconds}s`;
 }
 
-const MAX_UPLOAD_FILE_MB = 25;
+const DEFAULT_UPLOAD_LIMIT_MB = 25;
 
 function formatFileSize(bytes = 0) {
   const size = Number(bytes) || 0;
@@ -1440,6 +1440,15 @@ function HubPage({
   const [uploading, setUploading] = useState(false);
   const [uploadStage, setUploadStage] = useState(null);
   const [dragging, setDragging] = useState(false);
+  const [uploadLimitMb, setUploadLimitMb] = useState(DEFAULT_UPLOAD_LIMIT_MB);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.systemLimits()
+      .then(limits => { if (!cancelled && limits?.upload_max_mb) setUploadLimitMb(limits.upload_max_mb); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (focusStoreId) {
@@ -1461,8 +1470,8 @@ function HubPage({
   const handleUpload = async (fileList) => {
     const file = fileList?.[0];
     if (!file || !activeStore) return;
-    if (file.size > MAX_UPLOAD_FILE_MB * 1024 * 1024) {
-      toast(`Files must be ${MAX_UPLOAD_FILE_MB} MB or smaller`, 'error');
+    if (file.size > uploadLimitMb * 1024 * 1024) {
+      toast(`Files must be ${uploadLimitMb} MB or smaller`, 'error');
       return;
     }
     setUploading(true);
@@ -1531,7 +1540,7 @@ function HubPage({
           <Upload size={18} />
           <div>
             <span>{uploadStage?.title || 'Drop files here to upload'}</span>
-            {uploadStage ? <small>{uploadStage.detail}</small> : <small>PDF, DOCX, XLSX, XLSM, CSV, TSV and text · up to {MAX_UPLOAD_FILE_MB} MB</small>}
+            {uploadStage ? <small>{uploadStage.detail}</small> : <small>PDF, DOCX, XLSX, XLSM, CSV, TSV and text · up to {uploadLimitMb} MB</small>}
           </div>
           {uploadStage && (
             <div className="upload-pipeline" aria-live="polite">
@@ -3012,11 +3021,18 @@ function SettingsPage({ toast }) {
   const [draft, setDraft] = useState(null);
   const [customModel, setCustomModel] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
+  const [limits, setLimits] = useState(null);
+  const [limitInput, setLimitInput] = useState('');
+  const [savingLimit, setSavingLimit] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([api.llmConfig(), api.preference('explore_ai').catch(() => ({ value: {} }))])
-      .then(([llmConfig, preference]) => {
+    Promise.all([
+      api.llmConfig(),
+      api.preference('explore_ai').catch(() => ({ value: {} })),
+      api.systemLimits().catch(() => null),
+    ])
+      .then(([llmConfig, preference, systemLimits]) => {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
@@ -3026,10 +3042,31 @@ function SettingsPage({ toast }) {
           reasoning_mode: saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'),
           web_source_limit: saved.web_source_limit || 200,
         });
+        if (systemLimits) {
+          setLimits(systemLimits);
+          setLimitInput(String(systemLimits.upload_max_mb));
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const saveUploadLimit = async () => {
+    if (!limits) return;
+    const requested = Math.max(1, Math.min(Math.round(Number(limitInput) || 0), limits.upload_ceiling_mb));
+    setSavingLimit(true);
+    try {
+      await api.updatePreference('upload_limits', { max_mb: requested });
+      const refreshed = await api.systemLimits();
+      setLimits(refreshed);
+      setLimitInput(String(refreshed.upload_max_mb));
+      toast(`Upload limit set to ${refreshed.upload_max_mb} MB`, 'success');
+    } catch (error) {
+      toast(error.message || 'Could not save the upload limit', 'error');
+    } finally {
+      setSavingLimit(false);
+    }
+  };
 
   if (loading || !draft) {
     return (
@@ -3181,6 +3218,26 @@ function SettingsPage({ toast }) {
           <span>Current default: <strong>{PROVIDER_LABELS[draft.provider]} / {draft.model || 'none selected'}</strong></span>
         </div>
       </section>
+
+      {limits && (
+        <section className="settings-section">
+          <h3>File upload limit</h3>
+          <p className="settings-hint-text">{limits.reason}</p>
+          <div className="settings-limit-row">
+            <input
+              type="number"
+              min={1}
+              max={limits.upload_ceiling_mb}
+              value={limitInput}
+              onChange={e => setLimitInput(e.target.value)}
+            />
+            <span>MB (max {limits.upload_ceiling_mb} MB on this deployment)</span>
+            <button type="button" className="btn-primary" onClick={saveUploadLimit} disabled={savingLimit}>
+              {savingLimit ? 'Saving...' : 'Save limit'}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="settings-section">
         <h3>Default reasoning mode</h3>

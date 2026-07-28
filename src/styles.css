@@ -9746,6 +9746,33 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
   justify-content: flex-start;
 }
 
+.settings-hint-text {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.settings-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settings-limit-row input {
+  width: 84px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+}
+.settings-limit-row input:focus { outline: none; border-color: var(--violet); }
+.settings-limit-row span {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
 @media (max-width: 640px) {
   .settings-provider-grid { grid-template-columns: 1fr; }
 }
@@ -9754,7 +9781,8 @@ html[data-theme='dark'] .settings-provider-card,
 html[data-theme='dark'] .settings-model-chip,
 html[data-theme='dark'] .settings-mode-card,
 html[data-theme='dark'] .settings-custom-model input,
-html[data-theme='dark'] .settings-custom-model button {
+html[data-theme='dark'] .settings-custom-model button,
+html[data-theme='dark'] .settings-limit-row input {
   background: rgba(16,22,30,.92);
   border-color: #30363d;
 }
