@@ -4,13 +4,14 @@ import {
 } from 'lucide-react';
 import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS } from '../lib/appState';
 import { formatContextLength } from '../lib/format';
+import { useClickOutside } from '../hooks/useClickOutside';
 
 export function ModelControl({ config, provider, setProvider, model, setModel }) {
   const providerIcons = { ollama: '🦙', groq: '⚡', openai: '🤖', gemini: '✨' };
   const [openMenu, setOpenMenu] = useState(null);
   const [modelQuery, setModelQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
-  const controlRef = useRef(null);
+  const controlRef = useClickOutside(openMenu !== null, () => setOpenMenu(null));
   const modelSearchRef = useRef(null);
   const fallbackModels = {
     ollama: [],
@@ -18,13 +19,6 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
     openai: [],
     gemini: [],
   };
-  useEffect(() => {
-    const onPointerDown = event => {
-      if (controlRef.current && !controlRef.current.contains(event.target)) setOpenMenu(null);
-    };
-    window.addEventListener('mousedown', onPointerDown);
-    return () => window.removeEventListener('mousedown', onPointerDown);
-  }, []);
   useEffect(() => {
     if (openMenu === 'model') modelSearchRef.current?.focus();
     else { setModelQuery(''); setFreeOnly(false); }

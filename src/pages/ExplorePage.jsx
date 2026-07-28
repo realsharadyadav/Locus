@@ -30,6 +30,7 @@ import { DirectStreamTrace } from '../components/DirectStreamTrace';
 import { ModelControl } from '../components/ModelControl';
 import { PipelineActivity } from '../components/PipelineActivity';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../hooks/useChatViewport';
+import { useClickOutside } from '../hooks/useClickOutside';
 import {
   ACTIVE_CHAT_STORAGE_KEY,
   AI_PREFERENCE_STORAGE_KEY,
@@ -88,26 +89,9 @@ export function ExplorePage({
   const revealTimerRef = useRef(null);
   const directAbortRef = useRef(null);
   const stopRequestedRef = useRef(false);
-  const modePickerRef = useRef(null);
-  const optionsPopoverRef = useRef(null);
-
-  useEffect(() => {
-    if (!modePickerOpen) return undefined;
-    const onPointerDown = event => {
-      if (modePickerRef.current && !modePickerRef.current.contains(event.target)) setModePickerOpen(false);
-    };
-    window.addEventListener('mousedown', onPointerDown);
-    return () => window.removeEventListener('mousedown', onPointerDown);
-  }, [modePickerOpen]);
-
-  useEffect(() => {
-    if (!optionsOpen) return undefined;
-    const onPointerDown = event => {
-      if (optionsPopoverRef.current && !optionsPopoverRef.current.contains(event.target)) setOptionsOpen(false);
-    };
-    window.addEventListener('mousedown', onPointerDown);
-    return () => window.removeEventListener('mousedown', onPointerDown);
-  }, [optionsOpen]);
+  const modePickerRef = useClickOutside(modePickerOpen, () => setModePickerOpen(false));
+  const optionsPopoverRef = useClickOutside(optionsOpen, () => setOptionsOpen(false));
+  const slashScopeRef = useClickOutside(slashOpen, () => { setSlashOpen(false); setSlashIndex(-1); });
 
   const toggleSources = (messageIndex) => {
     setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
@@ -1017,6 +1001,7 @@ export function ExplorePage({
 
         <form
           className="chat-composer"
+          ref={slashScopeRef}
           onSubmit={event => { event.preventDefault(); ask(question); }}
         >
           {!isAtBottom && messages.length > 0 && (
