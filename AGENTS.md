@@ -23,6 +23,7 @@ npm run dev -- --host 127.0.0.1 --port 5173   # frontend on :5173
 ## Verification
 
 ```bash
+npm run lint     # catches imports missed when moving code between modules
 npm run build
 .venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py
 ```
@@ -136,18 +137,54 @@ Keep these notes so future sessions don't repeat mistakes:
 
 | File | Purpose | Key Components |
 |---|---|---|
-| `main.jsx` (1925 lines) | Entire React SPA: app shell, all pages, routing, state, pipeline viz, model controls, file selection | `App` — root; `Sidebar` — nav; `Header` — top bar; `HomePage` — landing; `HubPage` — collections; `ExplorePage` — chat; `PipelineActivity` (line 388-596) — live pipeline; `ModelControl` — model picker; `CollapsibleSources` — source display |
+| `main.jsx` | Entry point only — mounts `<App />` and imports the stylesheet | — |
+| `App.jsx` | Root component: app shell, page routing, global state, boot load, toasts, confirm dialogs | `App` |
 | `api.js` | Frontend API client wrapping all REST endpoints | `api.createChatJob()`, `api.chatJobs()`, `api.chatStream()`, `api.chats()`, `api.chatMessages()`, `api.uploadFile()`, `api.collections()`, `api.preference()` |
 | `utils.js` | Shared UI utilities | `displayTime()`, `STORE_COLORS`, `buildSuggestions()`, `resizeTextarea()` |
-| `styles.css` (7204 lines) | Complete CSS theme: light/dark modes, layout, pipeline, chat, modals, command palette, responsive | Dark mode: purple-accented, calm, polished |
+| `styles.css` | Ordered `@import` list only — the real CSS lives in `src/styles/` | — |
 
-### Components
+### Pages — `src/pages/`
 
 | File | Purpose |
 |---|---|
-| `components/ConfirmModal.jsx` | Reusable destructive-action confirmation modal |
-| `components/CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
-| `components/Toast.jsx` | Auto-dismissing toast notification stack |
+| `HomePage.jsx` | Landing dashboard |
+| `HubPage.jsx` | Library / collections |
+| `ExplorePage.jsx` | Ask — chat, composer, slash commands, reasoning modes |
+| `SettingsPage.jsx` | Settings |
+| `TicketAnalysisPage.jsx` | Patterns — ticket grouping cockpit |
+
+### Components — `src/components/`
+
+| File | Purpose |
+|---|---|
+| `Sidebar.jsx` / `Header.jsx` / `Logo.jsx` | App shell chrome |
+| `SplashScreen.jsx` | Boot screen with real load progress |
+| `ModelControl.jsx` | Provider + model picker |
+| `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
+| `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering |
+| `CollapsibleSources.jsx` | Source/evidence display |
+| `CreateStoreModal.jsx` / `ConfirmModal.jsx` | Modals |
+| `CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
+| `Toast.jsx` | Auto-dismissing toast notification stack |
+
+### Helpers — `src/lib/` and `src/hooks/`
+
+| File | Purpose |
+|---|---|
+| `lib/format.js` | File size, elapsed time, context length, embedding meta, job failure text |
+| `lib/appState.js` | Storage keys, page ids, provider defaults, cached app data |
+| `lib/pipelineNotes.js` | Turns pipeline events into human-readable working notes |
+| `lib/mermaid.js` / `lib/highlight.js` | Lazy-loaded diagram and syntax-highlighting integration |
+| `lib/ask.js` | Slash commands and auto web-search heuristics |
+| `hooks/useChatViewport.js` | Mobile keyboard / viewport locking for chat surfaces |
+| `hooks/useClickOutside.js` | Shared popover dismissal (outside click + Escape) |
+
+### Styles — `src/styles/`
+
+25+ numbered files imported in order by `src/styles.css`. **The numbering is
+load-bearing:** these are chronological override layers (later layers
+deliberately re-style earlier ones), not independent component sheets. Do not
+reorder them, and add new overrides as a new highest-numbered file.
 
 ### Secret Chat
 
@@ -156,6 +193,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `secret-chat/api.js` | Secret Chat API client |
 | `secret-chat/components/SecretChatPage.jsx` | In-app secret chat room with SSE real-time |
 | `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors |
+| `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
 
 ---
