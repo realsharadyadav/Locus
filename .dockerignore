@@ -21,6 +21,5 @@ backend/vector_fallback/
 backend/uploads/
 backend/diagnostics/jobs/
 tmp/
-docs/
 public/
 src/
