@@ -4,6 +4,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
 import { parseServerTime } from '../../utils';
+import { timeLabel, withMessageGrouping } from '../messageGroups';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 export default function SecretChatPage({ token, onBack }) {
@@ -170,17 +171,28 @@ export default function SecretChatPage({ token, onBack }) {
               <small>Share the link and start chatting</small>
             </div>
           )}
-          {messages.map(msg => {
+          {withMessageGrouping(messages).map(({ msg, at, newDay, startsRun, day }) => {
             const [displayName] = (msg.sender || '').split('|||');
+            const side = msg.sender === sender ? 'self' : 'other';
             return (
-              <div key={msg.id} className={`secret-chat-msg-wrap${msg.sender === sender ? ' self' : ' other'}`}>
-                <div className="secret-chat-msg-sender">
-                  {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <React.Fragment key={msg.id}>
+                {newDay && (
+                  <div className="secret-chat-day"><span>{day}</span></div>
+                )}
+                <div className={`secret-chat-msg-wrap ${side} ${startsRun ? 'run-start' : 'run-cont'}`}>
+                  {startsRun && (
+                    <div className="secret-chat-msg-sender">
+                      {displayName || msg.sender} · {timeLabel(at)}
+                    </div>
+                  )}
+                  <div
+                    className={`secret-chat-msg-bubble ${side}`}
+                    title={`${displayName || msg.sender} · ${timeLabel(at)}`}
+                  >
+                    {msg.content}
+                  </div>
                 </div>
-                <div className={`secret-chat-msg-bubble${msg.sender === sender ? ' self' : ' other'}`}>
-                  {msg.content}
-                </div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>

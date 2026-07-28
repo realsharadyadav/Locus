@@ -4,6 +4,7 @@ import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
 import { parseServerTime } from '../../utils';
+import { timeLabel, withMessageGrouping } from '../messageGroups';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 export default function SecretChatStandalone({ token }) {
@@ -167,18 +168,29 @@ export default function SecretChatStandalone({ token }) {
               <small>Send the first message to start the conversation</small>
             </div>
           )}
-          {messages.map(msg => {
+          {withMessageGrouping(messages).map(({ msg, at, newDay, startsRun, day }) => {
             const [displayName, msgClientId] = (msg.sender || '').split('|||');
             const isSelf = msgClientId === clientId;
+            const side = isSelf ? 'self' : 'other';
             return (
-              <div key={msg.id} className={`scs-msg ${isSelf ? 'self' : 'other'}`}>
-                <div className="scs-msg-meta">
-                  {displayName || msg.sender} · {new Date(parseServerTime(msg.created_at)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              <React.Fragment key={msg.id}>
+                {newDay && (
+                  <div className="scs-day"><span>{day}</span></div>
+                )}
+                <div className={`scs-msg ${side} ${startsRun ? 'run-start' : 'run-cont'}`}>
+                  {startsRun && (
+                    <div className="scs-msg-meta">
+                      {displayName || msg.sender} · {timeLabel(at)}
+                    </div>
+                  )}
+                  <div
+                    className={`scs-msg-bubble ${side}`}
+                    title={`${displayName || msg.sender} · ${timeLabel(at)}`}
+                  >
+                    {msg.content}
+                  </div>
                 </div>
-                <div className={`scs-msg-bubble ${isSelf ? 'self' : 'other'}`}>
-                  {msg.content}
-                </div>
-              </div>
+              </React.Fragment>
             );
           })}
         </div>
