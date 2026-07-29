@@ -13,6 +13,10 @@ import {
   Moon,
 } from 'lucide-react';
 import { Logo } from './Logo';
+import { useMediaQuery } from '../hooks/useMediaQuery';
+
+/* Keep in sync with the drawer breakpoint in the stylesheets (08-responsive.css). */
+const DRAWER_QUERY = '(max-width: 980px)';
 
 export const NAV_SECTIONS = [
   {
@@ -39,6 +43,11 @@ export function Sidebar({
 }) {
   const railRef = useRef(null);
   const [marker, setMarker] = useState(null);
+  // Below the breakpoint the sidebar is an off-canvas drawer, so the icon-rail
+  // (compact) mode has nothing to collapse into — the collapse control closes the
+  // drawer instead, and the drawer always renders in its full-width form.
+  const isDrawer = useMediaQuery(DRAWER_QUERY);
+  const railCompact = compact && !isDrawer;
 
   // Measure the active nav button so a single indicator can glide between items
   // instead of each button popping its own highlight.
@@ -58,11 +67,11 @@ export function Sidebar({
     const observer = new ResizeObserver(measure);
     observer.observe(rail);
     return () => observer.disconnect();
-  }, [page, compact]);
+  }, [page, railCompact, mobileOpen]);
 
   return (
     <>
-      <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${compact ? 'compact' : ''} ${page === 'ask' ? 'sidebar-explore' : ''}`}>
+      <aside className={`sidebar ${mobileOpen ? 'open' : ''} ${railCompact ? 'compact' : ''} ${page === 'ask' ? 'sidebar-explore' : ''}`}>
         <div className="side-top">
           <Logo />
           <button className="mobile-close icon-button" onClick={close} aria-label="Close navigation">
@@ -112,15 +121,15 @@ export function Sidebar({
           <button
             className="sidebar-collapse-btn nav-item"
             style={{ '--nav-accent': '220 12% 66%' }}
-            onClick={toggleCompact}
-            aria-label={compact ? 'Expand sidebar' : 'Collapse sidebar'}
+            onClick={isDrawer ? close : toggleCompact}
+            aria-label={isDrawer ? 'Close navigation' : railCompact ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <span className="nav-icon">
-              {compact ? <PanelLeftOpen size={17} strokeWidth={1.9} /> : <PanelLeftClose size={17} strokeWidth={1.9} />}
+              {railCompact ? <PanelLeftOpen size={17} strokeWidth={1.9} /> : <PanelLeftClose size={17} strokeWidth={1.9} />}
             </span>
-            <span className="nav-label">Collapse</span>
+            <span className="nav-label">{isDrawer ? 'Close menu' : 'Collapse'}</span>
           </button>
-          {compact ? (
+          {railCompact ? (
             <button
               className="theme-nav-toggle nav-item"
               style={{ '--nav-accent': theme === 'dark' ? '45 96% 62%' : '235 70% 66%' }}
