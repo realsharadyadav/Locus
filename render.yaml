@@ -31,6 +31,15 @@ services:
         sync: false
       - key: LOCUS_ALLOWED_ORIGINS
         sync: false
+      # Telegram bridge for Private chats. The session string is equivalent to being
+      # logged into the account, so it never goes in the repo — dashboard only. All
+      # three unset (the default) leaves the bridge off and hidden in the UI.
+      - key: LOCUS_TELEGRAM_API_ID
+        sync: false
+      - key: LOCUS_TELEGRAM_API_HASH
+        sync: false
+      - key: LOCUS_TELEGRAM_SESSION
+        sync: false
 
   - type: web
     name: locus-frontend

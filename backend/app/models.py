@@ -130,6 +130,9 @@ class SecretChatSession(Base):
     ai_mimic_me: Mapped[bool] = mapped_column(Boolean, default=True)
     messages: Mapped[list["SecretChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
     participants: Mapped[list["SecretChatParticipant"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    bridge: Mapped["SecretChatBridge | None"] = relationship(
+        back_populates="session", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class SecretChatMessage(Base):
@@ -143,6 +146,35 @@ class SecretChatMessage(Base):
     # Set when the author was the AI copilot on someone's behalf, so the UI can label it.
     via_ai: Mapped[bool] = mapped_column(Boolean, default=False)
     session: Mapped[SecretChatSession] = relationship(back_populates="messages")
+
+
+class SecretChatBridge(Base):
+    """Links one private chat room to one person on an outside messenger.
+
+    One row per room (the token is the primary key): a room talks to exactly one bridged
+    guest, which is what lets the host address them by phone number instead of a link.
+    `peer_id` is the platform's own id for that person, resolved once at link time —
+    the phone number is only ever an input, never how messages are routed.
+    """
+
+    __tablename__ = "secret_chat_bridges"
+
+    session_token: Mapped[str] = mapped_column(
+        ForeignKey("secret_chat_sessions.token"), primary_key=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), default="telegram")
+    phone: Mapped[str] = mapped_column(String(24), default="")
+    peer_id: Mapped[str] = mapped_column(String(40), default="", index=True)
+    peer_name: Mapped[str] = mapped_column(String(80), default="")
+    peer_username: Mapped[str] = mapped_column(String(64), default="")
+    # The synthetic participant this bridge writes as, so the guest shows up in the
+    # host's room like any other participant.
+    client_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_outbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str] = mapped_column(String(300), default="")
+    session: Mapped[SecretChatSession] = relationship(back_populates="bridge")
 
 
 class SecretChatParticipant(Base):

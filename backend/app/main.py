@@ -53,6 +53,7 @@ from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
 from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
+from . import telegram_bridge
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
 from .ticket_taxonomy_data import DEFAULT_TAXONOMY, DEFAULT_TAXONOMY_V2, TaxonomyRule
 from .vector_store import EMBEDDING_MODEL, VectorStoreUnavailable, active_embedding_model, delete_file_embeddings, ensure_vector_schema, index_file_with_status, search as semantic_search
@@ -478,6 +479,12 @@ async def lifespan(_: FastAPI):
         # health check timed out and the service tripped its memory limit on boot. It is
         # catch-up work, not a precondition for serving, so it goes to a background thread.
         Thread(target=_startup_maintenance, name="locus-startup-maintenance", daemon=True).start()
+    # Connecting the Telegram account is a network handshake, so it goes on its own thread
+    # for the same reason as the maintenance pass: nothing here should delay /api/health.
+    # It matters at boot rather than on first use because a bridged room has to keep
+    # receiving the guest's replies even when nobody has Locus open.
+    if telegram_bridge.configured():
+        Thread(target=telegram_bridge.start, name="locus-telegram-start", daemon=True).start()
     yield
 
 

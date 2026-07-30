@@ -125,6 +125,24 @@ Keep these notes so future sessions don't repeat mistakes:
     skip it entirely. Anything added to lifespan should be a precondition for serving, not
     housekeeping.
 
+21. **The Telegram bridge is an account, not a bot** — "give me a number and I'll talk to
+    them from Locus" is only possible over MTProto with the host's own Telegram account
+    (`telegram_bridge.py`, Telethon): the Bot API cannot open a conversation by phone number,
+    the person has to press start on the bot first. Consequences to keep in mind when
+    editing: the session string in `LOCUS_TELEGRAM_SESSION` is full access to that account,
+    Telegram rate-limits contact resolution hard, and automated sending can get an account
+    restricted. Three structural rules hold the design together — (a) nothing imports
+    telethon at module scope, so an unconfigured deployment behaves exactly as before;
+    (b) `secret_chat` registers an inbound callback via `set_inbound_handler()` rather than
+    the transport importing it back, which both breaks the import cycle and is what lets the
+    tests run with a fake transport; (c) outbound delivery goes through
+    `_deliver_to_bridge()` from **two** places — the post endpoint and the autopilot writer,
+    because autopilot inserts straight into the table and would otherwise reply into a room
+    nobody is reading. The echo guard is `_sender_client(message.sender) == bridge.client_id`;
+    drop it and every inbound message bounces straight back to the guest. Also note the room's
+    own `GET` is public to link guests, so the bridge is deliberately *not* on
+    `SecretChatSessionRead` — the phone number would leak to anyone holding a share link.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -182,6 +200,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `diagnostics.py` | Per-job diagnostic event logging to JSONL with secret sanitization | `diagnostic_event()` — log event; `initialize_job_log()` — create log file; `sanitize()` — redact secrets |
 | `seed.py` | Seeds database with three default collections on first launch | `seed_database()` |
 | `secret_chat.py` | Real-time SSE private chat rooms: host-owned rooms, presence, disappearing messages, expiring links, reply copilot | APIRouter with `create_secret_chat()`, `list_secret_chats()`, `update_secret_chat()`, `delete_secret_chat()`, `clear_secret_chat_messages()`, `update_secret_chat_presence()`, `assist_secret_chat()`, `stream_secret_chat()` |
+| `telegram_bridge.py` | Optional Telegram transport for private chats: connects the host's own account over MTProto (Telethon) on one background loop, resolves a phone number to a peer, sends, and hands inbound DMs to a callback | `configured()`, `status()`, `resolve_contact()`, `send_text()`, `set_inbound_handler()`, `normalize_phone()` |
 
 ---
 

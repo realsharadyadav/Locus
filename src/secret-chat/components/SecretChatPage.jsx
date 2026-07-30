@@ -10,6 +10,7 @@ import ShareMenu from './ShareMenu';
 import ChatThread from './ChatThread';
 import GuestsPanel from './GuestsPanel';
 import AiCopilot from './AiCopilot';
+import TelegramConnect from './TelegramConnect';
 import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS, ttlLabel } from './PrivateChatsPage';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
@@ -268,6 +269,7 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
               />
             )}
           </div>
+          <TelegramConnect token={token} hostKey={hostKey} toast={toast} onChanged={onChanged} />
           <ShareMenu url={shareUrl} title={room.session?.title} />
         </div>
       </header>

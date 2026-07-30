@@ -289,6 +289,38 @@ class SecretChatParticipantDetail(SecretChatParticipantRead):
     minutes_in_room: int = 0
 
 
+class SecretChatBridgeLink(BaseModel):
+    """Connect a room to someone on an outside messenger, by phone number."""
+
+    host_key: str = Field(default="", max_length=64)
+    platform: str = Field(default="telegram", pattern="^(telegram)$")
+    phone: str = Field(min_length=6, max_length=24)
+    # Optional first message, so the guest sees why a chat just appeared.
+    greeting: str = Field(default="", max_length=2000)
+
+
+class SecretChatBridgeRead(BaseModel):
+    platform: str
+    phone: str
+    peer_name: str = ""
+    peer_username: str = ""
+    client_id: str = ""
+    created_at: datetime | None = None
+    last_outbound_at: datetime | None = None
+    last_inbound_at: datetime | None = None
+    last_error: str = ""
+
+
+class SecretChatBridgeStatus(BaseModel):
+    """Whether this deployment can bridge at all — asked before showing the UI."""
+
+    platform: str = "telegram"
+    configured: bool = False
+    connected: bool = False
+    account: str = ""
+    error: str = ""
+
+
 class SecretChatSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -327,6 +359,10 @@ class SecretChatRoomSummary(BaseModel):
     link_expires_at: datetime | None = None
     expires_at: datetime | None = None
     link_expired: bool = False
+    # Host-only listing, so naming the bridged guest here is safe. The room's own
+    # GET is public to link guests and deliberately says nothing about the bridge.
+    bridge_platform: str = ""
+    bridge_name: str = ""
 
 
 class SecretChatAssistRequest(BaseModel):

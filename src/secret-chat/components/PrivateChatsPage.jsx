@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Clock, Fingerprint, Flame, Link2, Menu, Plus, Trash2, X } from 'lucide-react';
+import { Clock, Fingerprint, Flame, Link2, Menu, Plus, Send, Trash2, X } from 'lucide-react';
 import { secretChatApi } from '../api';
 import { clientId as readClientId, hostKey as readHostKey } from '../identity';
 import { parseServerTime } from '../../utils';
@@ -201,6 +201,11 @@ export default function PrivateChatsPage({ token, onSelect, requestConfirm, toas
                 {room.last_message_preview ? `${room.last_sender}: ${room.last_message_preview}` : 'No messages yet'}
               </span>
               <span className="chat-rail-facts">
+                {room.bridge_platform && (
+                  <span className="chat-rail-bridge" title={`Connected to ${room.bridge_name} on Telegram`}>
+                    <Send size={10} /> {room.bridge_name}
+                  </span>
+                )}
                 {room.online_count > 0 && (
                   <span className="chat-rail-online"><span className="live-dot" aria-hidden="true" />{room.online_count}</span>
                 )}

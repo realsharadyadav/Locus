@@ -31,13 +31,23 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from . import telegram_bridge
 from .config import configured_model, llm_provider
 from .database import SessionLocal, get_db
 from .llm import LLMProviderError, _chat, llm_provider_context
-from .models import SecretChatMessage, SecretChatParticipant, SecretChatSession, UserPreference
+from .models import (
+    SecretChatBridge,
+    SecretChatMessage,
+    SecretChatParticipant,
+    SecretChatSession,
+    UserPreference,
+)
 from .schemas import (
     SecretChatAssistRequest,
     SecretChatAssistResponse,
+    SecretChatBridgeLink,
+    SecretChatBridgeRead,
+    SecretChatBridgeStatus,
     SecretChatCreate,
     SecretChatCreateResponse,
     SecretChatMessageRead,
@@ -410,6 +420,7 @@ def list_secret_chats(host_key: str = "", client_id: str = "", db: Session = Dep
             .order_by(SecretChatMessage.id)
         ).all()
         participants = _participants(db, session.token)
+        bridge = _room_bridge(db, session.token)
         reader = next((item for item in participants if item.client_id == client_id), None)
         last_read = reader.last_read_id if reader else 0
         # Unread means posted by somebody else and newer than this host's read cursor.
@@ -432,6 +443,8 @@ def list_secret_chats(host_key: str = "", client_id: str = "", db: Session = Dep
             link_expires_at=_naive(session.link_expires_at),
             expires_at=_naive(session.expires_at),
             link_expired=_link_expired(session),
+            bridge_platform=(bridge.platform if bridge else ""),
+            bridge_name=(_sender_display(bridge) if bridge else ""),
         ))
     return summaries
 
@@ -588,6 +601,7 @@ def send_secret_chat_message(token: str, payload: SecretChatMessageSend, db: Ses
             db.commit()
     payload_dict = _message_payload(message, session.message_ttl_seconds)
     _broadcast(token, {"type": "message", **payload_dict})
+    _deliver_to_bridge(db, session, message)
     _maybe_autopilot(db, session, message)
     return SecretChatMessageRead(**payload_dict)
 
@@ -635,6 +649,226 @@ def get_secret_chat_participants(token: str, host_key: str = "", db: Session = D
     session = _load_room(db, token)
     _require_host(db, session, host_key)
     return [_detailed_participant(item) for item in _participants(db, token)]
+
+
+# ─── Messenger bridge ───
+#
+# A bridged room swaps the share link for a phone number: the host types a number, Locus
+# resolves it on the host's own Telegram account, and from then on every message posted in
+# the room is delivered as a normal Telegram DM while every reply lands back in the room.
+# The guest is represented by one synthetic participant so the rest of the feature —
+# presence, unread counts, the copilot, autopilot — needs no special case.
+
+def _bridge_client_id(token: str) -> str:
+    """Stable per room, so a relink keeps the same participant row and its history."""
+    return f"bridge-{token[:12]}"
+
+
+def _bridge_read(bridge: SecretChatBridge) -> SecretChatBridgeRead:
+    return SecretChatBridgeRead(
+        platform=bridge.platform,
+        phone=bridge.phone,
+        peer_name=bridge.peer_name,
+        peer_username=bridge.peer_username,
+        client_id=bridge.client_id,
+        created_at=_naive(bridge.created_at),
+        last_outbound_at=_naive(bridge.last_outbound_at),
+        last_inbound_at=_naive(bridge.last_inbound_at),
+        last_error=bridge.last_error,
+    )
+
+
+def _bridge_participant(db: Session, bridge: SecretChatBridge) -> SecretChatParticipant:
+    """The bridged guest as a room participant, created on link and refreshed on contact."""
+    participant = db.scalar(
+        select(SecretChatParticipant).where(
+            SecretChatParticipant.session_token == bridge.session_token,
+            SecretChatParticipant.client_id == bridge.client_id,
+        )
+    )
+    if participant is None:
+        participant = SecretChatParticipant(
+            session_token=bridge.session_token,
+            client_id=bridge.client_id,
+            first_seen=_now(),
+            last_read_id=0,
+            message_count=0,
+        )
+        db.add(participant)
+    participant.name = bridge.peer_name or bridge.phone
+    participant.role = "guest"
+    # There is no browser behind this one; the host panel shows the platform instead.
+    participant.device = bridge.platform
+    participant.browser = bridge.platform.title()
+    participant.os = bridge.platform.title()
+    participant.user_agent = f"{bridge.platform}:{bridge.phone}"
+    return participant
+
+
+def _room_bridge(db: Session, token: str) -> SecretChatBridge | None:
+    return db.get(SecretChatBridge, token)
+
+
+def _deliver_to_bridge(db: Session, session: SecretChatSession, message: SecretChatMessage) -> None:
+    """Push a room message out to the bridged messenger, unless it came from there.
+
+    Called *after* `_broadcast`, deliberately: the delivery is a network round trip to
+    Telegram, and every open client has already rendered the message off the stream by the
+    time it finishes. Failures are recorded on the bridge and swallowed for the same reason
+    — a Telegram outage must not fail a post that is already in the room.
+    """
+    bridge = _room_bridge(db, session.token)
+    if bridge is None:
+        return
+    if _sender_client(message.sender) == bridge.client_id:
+        return  # Echo guard: this message *arrived* from the bridge.
+    try:
+        telegram_bridge.send_text(bridge.peer_id, message.content)
+    except Exception as exc:  # noqa: BLE001 - the room keeps working without the bridge
+        bridge.last_error = str(exc)[:300]
+        db.commit()
+        _broadcast(session.token, {"type": "bridge", "state": "error", "error": bridge.last_error})
+        return
+    bridge.last_outbound_at = _now()
+    bridge.last_error = ""
+    db.commit()
+
+
+def _handle_inbound(inbound: telegram_bridge.InboundMessage) -> None:
+    """A Telegram DM arrived: file it as a room message and wake everyone watching.
+
+    Runs on the bridge's own thread with its own session — never inside a request.
+    """
+    with SessionLocal() as db:
+        bridge = db.scalar(
+            select(SecretChatBridge)
+            .where(SecretChatBridge.peer_id == inbound.peer_id)
+            .order_by(SecretChatBridge.created_at.desc())
+        )
+        if bridge is None:
+            return
+        session = db.get(SecretChatSession, bridge.session_token)
+        if session is None or _room_finished(session):
+            return
+        if inbound.sender_name and inbound.sender_name != bridge.peer_name:
+            bridge.peer_name = inbound.sender_name[:80]
+        message = SecretChatMessage(
+            session_token=session.token,
+            sender=f"{_sender_display(bridge)}|||{bridge.client_id}",
+            content=inbound.text[:2000],
+        )
+        db.add(message)
+        session.last_activity = _now()
+        bridge.last_inbound_at = _now()
+        bridge.last_error = ""
+        participant = _bridge_participant(db, bridge)
+        participant.last_seen = _now()
+        participant.typing_until = None
+        db.commit()
+        db.refresh(message)
+        participant.message_count = (participant.message_count or 0) + 1
+        participant.last_read_id = max(participant.last_read_id or 0, message.id)
+        db.commit()
+        _broadcast(session.token, {"type": "message", **_message_payload(message, session.message_ttl_seconds)})
+        _broadcast(session.token, {
+            "type": "presence",
+            "participants": [
+                item.model_dump(mode="json")
+                for item in (_public_participant(entry) for entry in _participants(db, session.token))
+            ],
+        })
+        _maybe_autopilot(db, session, message)
+
+
+def _sender_display(bridge: SecretChatBridge) -> str:
+    return (bridge.peer_name or bridge.phone or "Telegram")[:60]
+
+
+telegram_bridge.set_inbound_handler(_handle_inbound)
+
+
+@router.get("/bridge/status", response_model=SecretChatBridgeStatus)
+def secret_chat_bridge_status():
+    """Whether this deployment can bridge at all — the UI asks before offering it.
+
+    Two path segments on purpose: a one-segment route would be swallowed by `/{token}`.
+    """
+    return SecretChatBridgeStatus(platform="telegram", **telegram_bridge.status())
+
+
+@router.get("/{token}/bridge", response_model=SecretChatBridgeRead | None)
+def get_secret_chat_bridge(token: str, host_key: str = "", db: Session = Depends(get_db)):
+    session = _load_room(db, token)
+    _require_host(db, session, host_key)
+    bridge = _room_bridge(db, token)
+    return _bridge_read(bridge) if bridge else None
+
+
+@router.put("/{token}/bridge", response_model=SecretChatBridgeRead)
+def link_secret_chat_bridge(token: str, payload: SecretChatBridgeLink, db: Session = Depends(get_db)):
+    """Point this room at a phone number. Host-only: it messages from the host's account."""
+    session = _load_room(db, token)
+    _require_host(db, session, payload.host_key)
+    try:
+        phone = telegram_bridge.normalize_phone(payload.phone)
+        peer = telegram_bridge.resolve_contact(phone)
+    except telegram_bridge.TelegramBridgeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Two rooms bridged to one person would make inbound routing a coin toss.
+    clash = db.scalar(
+        select(SecretChatBridge).where(
+            SecretChatBridge.peer_id == peer.peer_id,
+            SecretChatBridge.session_token != token,
+        )
+    )
+    if clash is not None:
+        raise HTTPException(status_code=409, detail="That number is already connected to another private chat")
+
+    bridge = _room_bridge(db, token)
+    if bridge is None:
+        bridge = SecretChatBridge(session_token=token, client_id=_bridge_client_id(token))
+        db.add(bridge)
+    bridge.platform = "telegram"
+    bridge.phone = phone
+    bridge.peer_id = peer.peer_id
+    bridge.peer_name = peer.display_name[:80]
+    bridge.peer_username = peer.username[:64]
+    bridge.last_error = ""
+    _bridge_participant(db, bridge)
+    db.commit()
+    db.refresh(bridge)
+
+    greeting = payload.greeting.strip()
+    if greeting:
+        try:
+            telegram_bridge.send_text(bridge.peer_id, greeting[:2000])
+            bridge.last_outbound_at = _now()
+        except telegram_bridge.TelegramBridgeError as exc:
+            bridge.last_error = str(exc)[:300]
+        db.commit()
+
+    _broadcast(token, {"type": "bridge", "state": "linked", "platform": "telegram", "name": bridge.peer_name})
+    return _bridge_read(bridge)
+
+
+@router.delete("/{token}/bridge", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_secret_chat_bridge(token: str, host_key: str = "", db: Session = Depends(get_db)):
+    """Disconnect the number. Messages already delivered stay on the guest's phone."""
+    session = _load_room(db, token)
+    _require_host(db, session, host_key)
+    bridge = _room_bridge(db, token)
+    if bridge is not None:
+        db.execute(
+            delete(SecretChatParticipant).where(
+                SecretChatParticipant.session_token == token,
+                SecretChatParticipant.client_id == bridge.client_id,
+            )
+        )
+        db.delete(bridge)
+        db.commit()
+        _broadcast(token, {"type": "bridge", "state": "unlinked"})
+    return None
 
 
 # ─── AI copilot ───
@@ -891,6 +1125,10 @@ def _run_autopilot(token: str, trigger_message_id: int) -> None:
                 host_row.last_read_id = max(host_row.last_read_id or 0, message.id)
                 _set_typing(db, token, host_row, False)
             _broadcast(token, {"type": "message", **_message_payload(message, session.message_ttl_seconds)})
+            # Autopilot writes straight to the table rather than through the post
+            # endpoint, so the bridge has to be fed here too — this is what lets it
+            # answer a Telegram DM while nobody is looking at Locus.
+            _deliver_to_bridge(db, session, message)
     except Exception:  # noqa: BLE001 - a failed autopilot reply must not take the process down
         return
 

@@ -1365,3 +1365,72 @@ html[data-theme='dark'] .scs-day span {
   line-height: 1.5;
   opacity: .7;
 }
+
+/* ─── Telegram bridge ─── */
+
+/* A bridged room is the one case where the "guest" is not in a browser at all, so the
+   header button carries the connection state instead of the share link doing it. */
+.secret-chat-icon-btn.bridged {
+  border-color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 14%, transparent);
+  color: var(--ink);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bridge-menu { width: 320px; }
+
+.bridge-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.bridge-input:focus {
+  outline: none;
+  border-color: var(--violet);
+}
+
+.bridge-peer {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink) !important;
+}
+
+/* Dark mode paints every <p> muted with !important, hence the overrides here. */
+.bridge-note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted) !important;
+}
+
+.bridge-error {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #e5534b !important;
+}
+
+.room-options-danger button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.chat-rail-bridge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--violet);
+}

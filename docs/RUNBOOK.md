@@ -84,6 +84,8 @@ Important settings:
 - `TICKET_ANALYSIS_ENABLED`
 - `LOCUS_AUTH_PASSWORD`: unset (the default) leaves the API open, which is what local dev wants;
   set it to put the whole app behind a password
+- `LOCUS_TELEGRAM_API_ID`, `LOCUS_TELEGRAM_API_HASH`, `LOCUS_TELEGRAM_SESSION`: unset (the
+  default) hides the Private-chat Telegram bridge entirely; see the Telegram Bridge section
 
 ## Sign-in Gate
 
@@ -133,6 +135,65 @@ Environment Variable**. ("Secret Files" on the same page is for mounting whole f
 what this needs.) Note that `sync: false` values are only prompted for during the *initial*
 Blueprint creation — on an existing service the dashboard is the only place to set them, and
 Render will not overwrite them on a later Blueprint sync.
+
+## Telegram Bridge for Private Chats
+
+A private chat can be pointed at a phone number instead of a share link: the host types the
+number, and from then on everything posted in the room is delivered as a normal Telegram
+message while the guest's replies land back in the room. The guest never installs anything,
+never opens a link and never signs in — to them it is an ordinary Telegram conversation.
+
+This runs on **your own Telegram account** (MTProto, via Telethon), not a bot. That is not a
+style choice: a Telegram bot cannot open a conversation with someone by phone number — the
+person has to find the bot and press start first — so "give the number and talk" is only
+possible from a real account.
+
+### Setup (one time)
+
+1. Get an API id and hash from <https://my.telegram.org> → **API development tools**.
+2. Log in once. Telegram sends a code to your phone, so this step is interactive:
+
+   ```bash
+   .venv/bin/python scripts/telegram_login.py
+   ```
+
+3. Paste the three values it prints into `.env`:
+
+   ```bash
+   LOCUS_TELEGRAM_API_ID=1234567
+   LOCUS_TELEGRAM_API_HASH=...
+   LOCUS_TELEGRAM_SESSION=...
+   ```
+
+4. Restart the backend. The Telegram button appears in the private chat header once
+   `GET /api/secret-chat/bridge/status` reports `configured: true`; with the variables unset
+   the whole feature stays hidden and nothing else changes.
+
+`LOCUS_TELEGRAM_SESSION` is a credential equivalent to being logged into the account — anyone
+holding it can read and send your Telegram messages. Never commit it. On Render, add it in
+Environment (it is declared in `render.yaml` with `sync: false`).
+
+### Using it
+
+- Open a private chat → **Telegram** in the header → enter the number in international format
+  (`+91…`) with an optional first message → **Connect**.
+- One room talks to one number, and one number belongs to one room — linking a number already
+  used elsewhere answers 409 rather than routing replies to a coin toss.
+- Autopilot works over the bridge: with it on, the room answers Telegram messages by itself,
+  from your account, with nobody watching Locus.
+- **Disconnect** stops delivery. Messages already sent stay on the guest's phone.
+
+### Limits worth knowing before you rely on it
+
+- **Disappearing messages only clear Locus.** Anything delivered to Telegram lives on the
+  guest's device and in their Telegram account; the room's TTL cannot reach it.
+- **Telegram rate-limits accounts.** Resolving many new numbers in a short window, or sending
+  fast, gets the account throttled (and, if it looks like spam, restricted). Failures surface
+  on the bridge as `last_error` and are shown to the host; the room keeps working regardless.
+- **Number resolution can fail legitimately.** Someone not on Telegram, or whose privacy
+  settings hide them from non-contacts, cannot be linked.
+- **Only text is bridged.** Photos, voice notes and files sent from Telegram are ignored.
+- Group chats are ignored on purpose — only one-to-one conversations are routed.
 
 ## Running Postgres Locally (optional, for pgvector parity with prod)
 

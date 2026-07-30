@@ -56,5 +56,11 @@ export const secretChatApi = {
   presence: (token, payload) => request(`/${token}/presence`, { method: 'POST', body: JSON.stringify(payload) }),
   participants: (token, hostKey) => request(`/${token}/participants${query({ host_key: hostKey })}`),
   assist: (token, payload) => request(`/${token}/assist`, { method: 'POST', body: JSON.stringify(payload) }),
+  // Bridge — host-only. `bridgeStatus` says whether this deployment has a Telegram
+  // account connected at all, so the UI can stay hidden instead of offering a dead button.
+  bridgeStatus: () => request('/bridge/status'),
+  getBridge: (token, hostKey) => request(`/${token}/bridge${query({ host_key: hostKey })}`),
+  linkBridge: (token, payload) => request(`/${token}/bridge`, { method: 'PUT', body: JSON.stringify(payload) }),
+  unlinkBridge: (token, hostKey) => request(`/${token}/bridge${query({ host_key: hostKey })}`, { method: 'DELETE' }),
   stream: (token, after = 0) => `${API_BASE}/api/secret-chat/${token}/stream?after=${after}`,
 };
