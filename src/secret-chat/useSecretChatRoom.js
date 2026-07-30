@@ -6,6 +6,7 @@ import { parseServerTime } from '../utils';
 const PRESENCE_INTERVAL_MS = 8000;
 const POLL_INTERVAL_MS = 8000;
 const TYPING_HOLD_MS = 3000;
+const HIDDEN_KEY_PREFIX = 'secret-chat-hidden-';
 
 const mergeParticipants = (current, incoming) => {
   const byId = new Map(current.map(item => [item.client_id, item]));
@@ -31,6 +32,11 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
   // Where the "New messages" line sits. Frozen when the room opens, so it stays put while
   // you read instead of vanishing the instant the newest message is on screen.
   const [unreadMarkFrom, setUnreadMarkFrom] = useState(0);
+  // Everything up to here is hidden on this device only — nothing is deleted for anyone
+  // else, and new messages keep arriving. Kept per room so one chat cannot hide another.
+  const [hiddenBeforeId, setHiddenBeforeId] = useState(
+    () => Number(window.localStorage.getItem(`${HIDDEN_KEY_PREFIX}${token}`) || 0),
+  );
   const [tick, setTick] = useState(0);
 
   const lastIdRef = useRef(0);
@@ -207,11 +213,14 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
   }, [ttlSeconds]);
 
   const visibleMessages = useMemo(() => {
-    if (!ttlSeconds) return messages;
     const now = Date.now();
-    return messages.filter(message => !message.expires_at || parseServerTime(message.expires_at) > now);
+    return messages.filter(message => {
+      if (message.id <= hiddenBeforeId) return false;
+      if (!ttlSeconds) return true;
+      return !message.expires_at || parseServerTime(message.expires_at) > now;
+    });
     // `tick` is the point: it re-runs the filter every second so expired messages leave.
-  }, [messages, ttlSeconds, tick]);
+  }, [messages, ttlSeconds, tick, hiddenBeforeId]);
 
   // ─── actions ───
   const updateSender = useCallback(name => {
@@ -235,6 +244,18 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
     setLastReadId(readRef.current);
     return message;
   }, [token, clientId, applyMessages]);
+
+  /**
+   * Hide every message currently in this room on this device. The server keeps them, so
+   * the host and everyone else still see the conversation; only this browser stops showing
+   * it. Later messages appear as normal.
+   */
+  const clearOnThisDevice = useCallback(() => {
+    const newest = messages.reduce((max, message) => Math.max(max, message.id), 0);
+    if (!newest) return;
+    setHiddenBeforeId(newest);
+    window.localStorage.setItem(`${HIDDEN_KEY_PREFIX}${token}`, String(newest));
+  }, [messages, token]);
 
   const markRead = useCallback(() => {
     const newest = messages.reduce((max, message) => Math.max(max, message.id), 0);
@@ -296,5 +317,7 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
     firstUnreadId: unreadMarkFrom,
     refreshPresence,
     ttlSeconds,
+    clearOnThisDevice,
+    hasHiddenMessages: hiddenBeforeId > 0,
   };
 }

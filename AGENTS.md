@@ -78,7 +78,7 @@ Keep these notes so future sessions don't repeat mistakes:
 
 13. **Private chats are multi-room** — `PrivateChatsPage` reuses Ask's `.chat-rail` classes so the two lists stay in visual sync. Rooms are created from the page, not by clicking the nav item (that used to leave an empty room behind on every click). Deleting a room is the revoke mechanism: the backend cascades the messages away and pushes a `REVOKED` sentinel into every live SSE queue, which the stream turns into an `event: revoked` frame before closing. Both the host view and the guest standalone listen for it, plus a 404 backstop in the 8s poll for a deletion that lands while the stream is down — without that the client reconnect-loops forever against a dead room.
 
-14. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact four method+path pairs a link guest needs. Listing, creating, renaming and deleting rooms are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not.
+14. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact five method+path pairs a link guest needs (room, read messages, post message, stream, presence). Listing, creating, changing options, participant details, the copilot, clearing and deleting are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not. The other half of this is client-side: `src/secret-chat/api.js` has its own request helper, and while it did not send `authHeaders()` every host action answered "Sign in to continue" on a gated deployment — guests kept working, which is what made it look like a Private-chat bug rather than an auth one.
 
 15. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
 
@@ -107,6 +107,23 @@ Keep these notes so future sessions don't repeat mistakes:
     and matched via `_keyword_pattern()`, which accepts the regular English plural —
     without it `\bflight\b` missed "mumbai to delhi flights" outright. Keep new keywords
     singular.
+
+19. **Startup ALTERs must speak the deployed dialect** — `_ensure_schema_columns()` is a no-op
+    on a fresh database (`create_all` already made every column), so its statements only ever
+    run against a database that predates a column: in practice the deployed Postgres. Writing
+    them SQLite-style (`DATETIME`, `BOOLEAN NOT NULL DEFAULT 0`) passed every local test and
+    then crashed the app during lifespan on Render — five deploys failed before anyone read the
+    email. Take the type and boolean literals from `engine.dialect.name`, and note that
+    `backend/tests/test_schema_migration.py` builds a legacy schema on its own engine to cover
+    this, because the shared test database always has the columns already.
+
+20. **Boot must not do catch-up work** — Re-extracting tabular profiles and re-indexing
+    embeddings for every stored file used to run inline in the lifespan handler, so a cold
+    start walked the whole upload set before `/api/health` answered. That is what timed out the
+    Render health check and tripped the instance's memory limit. It now runs on a daemon thread
+    (`_startup_maintenance`), one file per transaction, with `LOCUS_STARTUP_MAINTENANCE=0` to
+    skip it entirely. Anything added to lifespan should be a precondition for serving, not
+    housekeeping.
 
 ---
 
@@ -228,7 +245,7 @@ reorder them, and add new overrides as a new highest-numbered file.
 
 | File | Purpose |
 |---|---|
-| `secret-chat/api.js` | Secret Chat API client |
+| `secret-chat/api.js` | Secret Chat API client — sends `authHeaders()`, since host routes sit behind the password gate |
 | `secret-chat/index.js` | Guest-vs-app entry resolution (`resolveSecretChatEntry`) and the in-app route hook |
 | `secret-chat/links.js` | Share link shape — guests join on `/j/<token>`; `/secret-chat/<token>` still resolves |
 | `secret-chat/identity.js` | Per-browser client id, host key (room ownership proof) and the device/locale profile sent with presence |
@@ -260,6 +277,9 @@ Private chat rules worth knowing before changing this feature:
   on a one-second tick so the countdown looks live.
 * Unread state is a server-side read cursor per participant, pushed on presence heartbeats.
   The in-room "New messages" divider is frozen at open time so it does not vanish as you read.
+* A guest can clear the chat on their own device (`clearOnThisDevice` in the room hook, kept
+  in localStorage per room). It hides messages for that browser only — nothing is deleted
+  server-side, the host still sees everything, and later messages still arrive.
 * Copilot drafts never send themselves in suggest mode. Autopilot only answers messages that
   arrive after it is switched on, and every AI-sent message is stored with `via_ai` so it is
   labelled in the thread and excluded from talk-like-me style samples.

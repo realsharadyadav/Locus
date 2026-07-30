@@ -1128,9 +1128,9 @@ html[data-theme='dark'] .scs-day span {
   overflow: hidden;
 }
 
-/* ─── Guest transparency notice ─── */
+/* ─── Guest: clear on this device ─── */
 
-.scs-notice-btn {
+.scs-clear-btn {
   display: inline-flex;
   align-items: center;
   padding: 5px;
@@ -1141,19 +1141,42 @@ html[data-theme='dark'] .scs-day span {
   cursor: pointer;
 }
 
-.scs-notice-btn:hover,
-.scs-notice-btn.active { border-color: var(--violet); color: var(--violet); }
+.scs-clear-btn:hover:not(:disabled),
+.scs-clear-btn.active { border-color: var(--violet); color: var(--violet); }
+.scs-clear-btn:disabled { opacity: .4; cursor: default; }
 
-.scs-notice {
+.scs-clear-bar {
   padding: 12px 18px;
   border-bottom: 1px solid var(--line);
   background: var(--paper);
+}
+
+.scs-clear-bar p {
+  margin: 0 0 8px;
   font-size: 11.5px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
-.scs-notice strong { display: block; color: var(--ink); font-size: 12px; margin-bottom: 3px; }
-.scs-notice p { margin: 0; line-height: 1.5; }
+.scs-clear-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.scs-clear-actions button {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .18s ease, color .18s ease;
+}
+
+.scs-clear-actions button:hover { border-color: var(--violet); color: var(--violet); }
+.scs-clear-actions button.danger:hover { border-color: #e5534b; color: #e5534b; }
 
 /* ─── AI copilot ─── */
 

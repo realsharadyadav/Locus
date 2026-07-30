@@ -1,10 +1,23 @@
 import { API_BASE } from '../apiBase';
+import { authHeaders, getAuthToken, handleUnauthorized } from '../auth';
 
+/**
+ * Host calls (create, list, options, delete, copilot) sit behind the app's password gate,
+ * so they need the same Authorization header src/api.js sends — without it every one of
+ * them came back "Sign in to continue" on a deployed instance with a password set.
+ *
+ * Guest calls carry no token and do not need one: their five routes are public by design
+ * (see auth.GUEST_SECRET_CHAT_ROUTES). A 401 therefore only means a signed-in host's token
+ * expired, which is the one case that should bounce back to the login screen.
+ */
 const request = async (path, options = {}) => {
   const response = await fetch(`${API_BASE}/api/secret-chat${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
     ...options,
   });
+  if (response.status === 401 && getAuthToken()) {
+    handleUnauthorized();
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = body.detail;

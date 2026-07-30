@@ -397,6 +397,55 @@ def _index_stored_file(db: Session, stored_file: StoredFile) -> None:
     db.commit()
 
 
+def _startup_maintenance():
+    """Catch-up work after a restart: refresh tabular profiles, index what is unindexed.
+
+    Runs on its own thread so a cold start serves traffic immediately, and handles one file
+    per transaction so a single large file cannot hold the whole set in memory — both of
+    which is why this no longer lives in the lifespan handler.
+    """
+    try:
+        with SessionLocal() as db:
+            file_ids = list(db.scalars(select(StoredFile.id)).all())
+    except Exception as exception:  # noqa: BLE001 - a restart must not die over catch-up work
+        diagnostic_event("startup.maintenance_failed", error=str(exception)[:500])
+        return
+
+    current_embedding_model = active_embedding_model()
+    refreshed = indexed = failed = 0
+    for file_id in file_ids:
+        try:
+            with SessionLocal() as db:
+                stored_file = db.get(StoredFile, file_id)
+                if stored_file is None:
+                    continue
+                extension = Path(stored_file.name).suffix.lower()
+                stored_path = UPLOAD_DIR / stored_file.stored_name
+                if extension in TABULAR_EXTENSIONS and "Profile version: 3" not in stored_file.extracted_text and stored_path.exists():
+                    stored_file.extracted_text = extract_text_from_path(stored_file.name, stored_path)
+                    db.commit()
+                    refreshed += 1
+                stale_embedding = stored_file.embedding_status == "embedded" and stored_file.embedding_model != current_embedding_model
+                needs_index = (
+                    stored_file.embedding_status in {"", "pending", "failed", "indexing"}
+                    or (stored_file.embedding_status == "embedded" and not stored_file.embedding_chunks)
+                    or stale_embedding
+                )
+                if needs_index:
+                    _index_stored_file(db, stored_file)
+                    indexed += 1
+        except Exception as exception:  # noqa: BLE001 - one bad file must not stop the sweep
+            failed += 1
+            diagnostic_event("startup.maintenance_file_failed", file_id=file_id, error=str(exception)[:500])
+    diagnostic_event(
+        "startup.maintenance_complete",
+        files=len(file_ids),
+        profiles_refreshed=refreshed,
+        files_indexed=indexed,
+        files_failed=failed,
+    )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -423,23 +472,21 @@ async def lifespan(_: FastAPI):
         )
         db.commit()
         seed_database(db)
-        for stored_file in db.scalars(select(StoredFile)).all():
-            extension = Path(stored_file.name).suffix.lower()
-            stored_path = UPLOAD_DIR / stored_file.stored_name
-            if extension in TABULAR_EXTENSIONS and "Profile version: 3" not in stored_file.extracted_text and stored_path.exists():
-                stored_file.extracted_text = extract_text_from_path(stored_file.name, stored_path)
-        db.commit()
-        current_embedding_model = active_embedding_model()
-        for stored_file in db.scalars(select(StoredFile)).all():
-            stale_embedding = stored_file.embedding_status == "embedded" and stored_file.embedding_model != current_embedding_model
-            if stored_file.embedding_status in {"", "pending", "failed", "indexing"} or (stored_file.embedding_status == "embedded" and not stored_file.embedding_chunks) or stale_embedding:
-                _index_stored_file(db, stored_file)
+    if STARTUP_MAINTENANCE:
+        # Re-extraction and re-indexing used to run here, inline. On a small instance that
+        # walked every uploaded file before the app would answer anything, which is how the
+        # health check timed out and the service tripped its memory limit on boot. It is
+        # catch-up work, not a precondition for serving, so it goes to a background thread.
+        Thread(target=_startup_maintenance, name="locus-startup-maintenance", daemon=True).start()
     yield
 
 
 app = FastAPI(title="Locus API", version="0.1.0", lifespan=lifespan)
 UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+# Set LOCUS_STARTUP_MAINTENANCE=0 to skip the post-restart re-extract/re-index sweep entirely
+# — useful on a memory-tight instance, at the cost of files staying unindexed until re-uploaded.
+STARTUP_MAINTENANCE = os.getenv("LOCUS_STARTUP_MAINTENANCE", "1").strip().lower() not in {"0", "false", "off", "no"}
 CHAT_JOB_MAX_RETRIES = int(os.getenv("CHAT_JOB_MAX_RETRIES", "3"))
 CHAT_JOB_RETRY_DELAY_SECONDS = float(os.getenv("CHAT_JOB_RETRY_DELAY_SECONDS", "2"))
 OPENAI_MODEL_FALLBACKS = ["gpt-5.4-mini", "gpt-5.5"]

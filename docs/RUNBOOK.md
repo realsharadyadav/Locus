@@ -102,9 +102,13 @@ LOCUS_AUTH_PASSWORD='something long' npm run dev:api
 - `LOCUS_ALLOWED_ORIGINS` should list the frontend origin on a real deployment (comma
   separated). It defaults to `*`, fine for local dev.
 - Public regardless of the gate: `/api/health`, `/api/auth/status`, `/api/auth/login`, and the
-  four Private-chat routes a link guest needs (read the room, read/post messages, stream).
-  Listing, creating, renaming and deleting rooms stay guarded — see `GUEST_SECRET_CHAT_ROUTES`
-  in `backend/app/auth.py`.
+  five Private-chat routes a link guest needs (read the room, read/post messages, stream, and
+  presence so the room can show them online, typing and up to date). Listing, creating,
+  changing options, participant details, the copilot, clearing and deleting stay guarded — see
+  `GUEST_SECRET_CHAT_ROUTES` in `backend/app/auth.py`.
+- Every guarded call has to carry the token. `src/secret-chat/api.js` has its own request
+  helper, and when it did not send `authHeaders()` every host action in Private answered
+  "Sign in to continue" on a gated deployment while guests carried on working.
 - Signing out is client-side only (Settings → Session). The backend keeps no session state, so
   a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
 

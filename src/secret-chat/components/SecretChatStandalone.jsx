@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Flame, Info, MessageCircle, Send, User, Users } from 'lucide-react';
+import { ChevronDown, Eraser, Flame, MessageCircle, Send, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { chatShareUrl } from '../links';
@@ -19,7 +19,7 @@ const ttlLabel = seconds => {
 export default function SecretChatStandalone({ token }) {
   const room = useSecretChatRoom({ token });
   const [input, setInput] = useState('');
-  const [noticeOpen, setNoticeOpen] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
   const inputRef = useRef(null);
 
   useChatViewportLock();
@@ -115,26 +115,35 @@ export default function SecretChatStandalone({ token }) {
           />
           <button
             type="button"
-            className={`scs-notice-btn${noticeOpen ? ' active' : ''}`}
-            onClick={() => setNoticeOpen(value => !value)}
-            aria-expanded={noticeOpen}
-            aria-label="What this chat can see about you"
+            className={`scs-clear-btn${confirmClear ? ' active' : ''}`}
+            onClick={() => setConfirmClear(value => !value)}
+            aria-expanded={confirmClear}
+            aria-label="Clear this chat on my device"
+            title="Clear this chat on my device"
+            disabled={room.messages.length === 0}
           >
-            <Info size={14} />
+            <Eraser size={14} />
           </button>
           <ShareMenu url={chatShareUrl(token)} title={room.session?.title} variant="standalone" />
         </div>
       </header>
 
-      {noticeOpen && (
-        <div className="scs-notice" role="note">
-          <strong>What the host can see</strong>
+      {confirmClear && (
+        <div className="scs-clear-bar" role="alertdialog" aria-label="Clear this chat on this device">
           <p>
-            The person who created this chat can see the name you type here, when you joined,
-            when you were last active, whether you are typing, how much you have read, and the
-            device, browser, screen size, language, time zone and IP address your browser reports.
-            {ttl > 0 && ' Messages in this chat delete themselves for everyone after a set time.'}
+            Hide these {room.messages.length} message{room.messages.length === 1 ? '' : 's'} on this
+            device? They stay in the chat for everyone else, and new messages still arrive here.
           </p>
+          <div className="scs-clear-actions">
+            <button type="button" onClick={() => setConfirmClear(false)}>Cancel</button>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => { room.clearOnThisDevice(); setConfirmClear(false); }}
+            >
+              Clear on my device
+            </button>
+          </div>
         </div>
       )}
 
