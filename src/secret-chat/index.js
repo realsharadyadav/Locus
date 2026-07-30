@@ -21,6 +21,18 @@ export function markSecretChatHost() {
   writeSessionFlag('session', '1');
 }
 
+/**
+ * Demotes this browser back to guest-eligible. Signing out of the password gate ends the
+ * session but left this flag standing, so a signed-out browser still skipped straight past
+ * the guest chat and into the (now locked) app on its next share link — this is the other
+ * half of that: undoes what markSecretChatHost did, without touching the host key a room
+ * owner needs to keep managing rooms they created.
+ */
+export function clearSecretChatHost() {
+  writeStorage('secret-chat-host', '');
+  writeSessionFlag('session', '');
+}
+
 /** Forgets the chat this browser was remembered for. */
 export function forgetGuestChat() {
   writeStorage('guest-chat', '');

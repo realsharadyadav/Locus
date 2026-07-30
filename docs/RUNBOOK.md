@@ -111,6 +111,10 @@ LOCUS_AUTH_PASSWORD='something long' npm run dev:api
   "Sign in to continue" on a gated deployment while guests carried on working.
 - Signing out is client-side only (Settings → Session). The backend keeps no session state, so
   a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
+  It also demotes this browser back to guest-eligible (`clearSecretChatHost`), so a share link
+  opened after signing out goes to the sandboxed guest chat again instead of the locked app —
+  matching what `/login` turns on. The host key a room owner needs to manage their own rooms
+  is untouched, so signing out does not cost them ownership of rooms they created.
 - Can't reach the login screen at all, and every URL bounces to a Private chat? That browser is
   remembered as a link guest. Open `/login` — it forgets the remembered chat and loads the app
   with the gate. It also marks the browser as a host for good, so your own share links stay in

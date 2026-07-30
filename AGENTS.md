@@ -303,7 +303,10 @@ invite in a phone or a fresh profile becomes a guest in that browser permanently
 host marking is the point rather than a side effect — leave it off and the host's next click on
 their own share link puts them back in the standalone chat. It cuts the other way too: anyone who
 visits `/login` keeps the app shell on later share links, so on an ungated deployment that one
-path is all that separates a link guest from the app.
+path is all that separates a link guest from the app. Signing out (`clearSecretChatHost`) is the
+undo: it clears the same host flag without touching `secret-chat-host-key`, the separate identity
+a room owner needs to keep managing rooms they created, so a signed-out browser goes back to
+guest-eligible on its next share link but a returning host does not lose their rooms.
 
 ---
 

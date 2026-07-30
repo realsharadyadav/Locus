@@ -16,7 +16,7 @@ import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
-import { PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
+import { clearSecretChatHost, PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
 
 export function App({ initialSecretChatToken = null }) {
   // 'checking' until the backend says whether a password is configured, then
@@ -446,6 +446,7 @@ export function App({ initialSecretChatToken = null }) {
             authRequired={authRequired}
             onSignOut={() => {
               clearAuthToken();
+              clearSecretChatHost();
               setAuthState('required');
             }}
           />
