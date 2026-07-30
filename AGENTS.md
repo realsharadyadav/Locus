@@ -256,7 +256,7 @@ reorder them, and add new overrides as a new highest-numbered file.
 | `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors, with the what-the-host-can-see notice |
 | `secret-chat/components/ChatThread.jsx` | Shared message list: day dividers, sender runs, unread divider, typing bubble, read receipts, disappear countdowns |
 | `secret-chat/components/GuestsPanel.jsx` | Host-only participant details (device, browser, OS, screen, locale, timezone, IP, activity) |
-| `secret-chat/components/AiCopilot.jsx` | Reply copilot — suggestions, autopilot, tone, persona, talk-like-me |
+| `secret-chat/components/AiCopilot.jsx` | Reply copilot UI — suggestions, tone, persona, talk-like-me, and the autopilot toggle (the replying itself happens server-side) |
 | `secret-chat/components/ShareMenu.jsx` | Share popover — copy link, WhatsApp, Telegram, SMS, email, X, native share sheet |
 | `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
@@ -280,9 +280,17 @@ Private chat rules worth knowing before changing this feature:
 * A guest can clear the chat on their own device (`clearOnThisDevice` in the room hook, kept
   in localStorage per room). It hides messages for that browser only — nothing is deleted
   server-side, the host still sees everything, and later messages still arrive.
-* Copilot drafts never send themselves in suggest mode. Autopilot only answers messages that
-  arrive after it is switched on, and every AI-sent message is stored with `via_ai` so it is
-  labelled in the thread and excluded from talk-like-me style samples.
+* Copilot drafts never send themselves in suggest mode. **Autopilot runs on the server**
+  (`_run_autopilot`), not in the host's browser: a guest's message triggers a worker thread
+  that pauses, marks the host as typing, then posts as the host — so replies keep coming with
+  the host's tab closed. It answers only messages from someone other than the host, skips its
+  own (`via_ai`) messages, and bails if a newer message has arrived. `via_ai` is stored so the
+  reply is excluded from talk-like-me samples and tagged **only in the author's own view** —
+  a guest is never shown that a reply was drafted.
+* The model comes from Settings, not the environment: `_preferred_ai` reads the `explore_ai`
+  preference (provider + model) that Settings saves, falling back to `configured_model()`.
+* A guest's erase button hides messages on their device with no confirmation — deliberate,
+  the user asked for no interstitial. Nothing is deleted server-side.
 
 Link guests never mount the app shell: `resolveSecretChatEntry()` runs before `createRoot`, so a
 visitor arriving on a share link only ever loads the standalone chat and only calls

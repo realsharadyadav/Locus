@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Bot, Loader2, PenLine, Settings2, Sparkles, WandSparkles, X } from 'lucide-react';
 import { secretChatApi } from '../api';
 
@@ -18,9 +18,9 @@ export const TONES = [
  *
  * * **Suggest** — drafts three replies; the host picks one, edits it in the composer and
  *   sends it themselves. Nothing reaches the room without a click.
- * * **Autopilot** — the same draft is sent automatically when somebody else writes, so the
- *   AI can hold the conversation. It only ever fires for messages that arrived after it
- *   was switched on, and it stops the moment the toggle goes off.
+ * * **Autopilot** — the room answers by itself when somebody else writes. That runs on the
+ *   server (`_run_autopilot`), so this toggle only stores the setting: replies keep coming
+ *   with the tab closed, and they are not waiting on a browser to wake up.
  *
  * "Talk like me" feeds the host's own previous messages in this room to the model as style
  * samples, so the drafts read like them rather than like an assistant.
@@ -31,7 +31,6 @@ export default function AiCopilot({
   clientId,
   sender,
   session,
-  messages,
   onInsert,
   onSend,
   onOptionsChange,
@@ -43,7 +42,6 @@ export default function AiCopilot({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [styleSamples, setStyleSamples] = useState(0);
   const [personaDraft, setPersonaDraft] = useState(session?.ai_persona || '');
-  const autopilotHandledRef = useRef(0);
 
   const tone = session?.ai_tone || 'friendly';
   const persona = session?.ai_persona || '';
@@ -90,41 +88,6 @@ export default function AiCopilot({
     const replies = await draft({ instruction: composerText.trim() });
     setSuggestions(replies);
   };
-
-  // ─── autopilot ───
-  const lastMessage = messages[messages.length - 1];
-  const lastFromOther = lastMessage && (lastMessage.sender || '').split('|||')[1] !== clientId;
-
-  useEffect(() => {
-    // Everything already in the room when autopilot came on is treated as handled, so
-    // switching it on never triggers a reply to an old message.
-    if (!autopilot) {
-      autopilotHandledRef.current = 0;
-      return;
-    }
-    if (!autopilotHandledRef.current) {
-      autopilotHandledRef.current = lastMessage?.id || 0;
-    }
-  }, [autopilot, lastMessage?.id]);
-
-  useEffect(() => {
-    if (!autopilot || !lastFromOther || busy) return;
-    if (!lastMessage || lastMessage.id <= autopilotHandledRef.current) return;
-    autopilotHandledRef.current = lastMessage.id;
-    let cancelled = false;
-    (async () => {
-      const replies = await draft({ mode: 'autopilot' });
-      if (cancelled || !replies.length) return;
-      try {
-        await onSend(replies[0], { viaAi: true });
-      } catch (error) {
-        toast?.(error.message || 'Autopilot could not send the reply', 'error');
-      }
-    })();
-    return () => { cancelled = true; };
-    // Deliberately keyed on the newest message only: adding draft/onSend here would
-    // re-fire the effect mid-draft and answer the same message twice.
-  }, [autopilot, lastFromOther, lastMessage?.id]);
 
   return (
     <div className={`ai-copilot${autopilot ? ' autopilot' : ''}`}>

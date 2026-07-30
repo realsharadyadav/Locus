@@ -58,7 +58,10 @@ export default function ChatThread({
               {startsRun && (
                 <div className={`${prefix}-msg-sender`}>
                   {displayName || message.sender} · {timeLabel(at)}
-                  {message.via_ai && <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>}
+                  {/* Only the author sees this: to everyone else an AI reply is just a reply. */}
+                  {message.via_ai && isSelf && (
+                    <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>
+                  )}
                 </div>
               )}
               <div className={`${prefix}-msg-bubble ${side}`} title={`${displayName || message.sender} · ${timeLabel(at)}`}>
@@ -71,7 +74,7 @@ export default function ChatThread({
                   </span>
                 )}
                 {readers.length > 0 && <span className="msg-seen">Seen by {readers.join(', ')}</span>}
-                {!startsRun && message.via_ai && (
+                {!startsRun && message.via_ai && isSelf && (
                   <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>
                 )}
               </div>

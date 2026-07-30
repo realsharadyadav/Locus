@@ -18,10 +18,12 @@ Three things are worth knowing before editing this module:
 import asyncio
 import json
 import os
+import random
 import re
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from threading import Lock
+from threading import Lock, Thread
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -29,10 +31,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-from .config import configured_model
-from .database import get_db
+from .config import configured_model, llm_provider
+from .database import SessionLocal, get_db
 from .llm import LLMProviderError, _chat, llm_provider_context
-from .models import SecretChatMessage, SecretChatParticipant, SecretChatSession
+from .models import SecretChatMessage, SecretChatParticipant, SecretChatSession, UserPreference
 from .schemas import (
     SecretChatAssistRequest,
     SecretChatAssistResponse,
@@ -586,6 +588,7 @@ def send_secret_chat_message(token: str, payload: SecretChatMessageSend, db: Ses
             db.commit()
     payload_dict = _message_payload(message, session.message_ttl_seconds)
     _broadcast(token, {"type": "message", **payload_dict})
+    _maybe_autopilot(db, session, message)
     return SecretChatMessageRead(**payload_dict)
 
 
@@ -704,22 +707,35 @@ def _parse_replies(content: str) -> list[str]:
     return [line for line in lines if line][:3]
 
 
-@router.post("/{token}/assist", response_model=SecretChatAssistResponse)
-def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session = Depends(get_db)):
-    """Draft replies for the host — reviewed in the composer, or sent by autopilot."""
-    session = _load_room(db, token)
-    _require_host(db, session, payload.host_key)
+def _preferred_ai(db: Session) -> tuple[str, str | None]:
+    """The provider and model chosen in Settings, falling back to the .env defaults.
 
+    Settings saves them under the `explore_ai` preference, so a reply drafted here uses the
+    same model the rest of the app answers with instead of whatever the environment defaults to.
+    """
+    preference = db.get(UserPreference, "explore_ai")
+    saved = preference.value if preference and isinstance(preference.value, dict) else {}
+    model = (saved.get("model") or "").strip() or configured_model()
+    provider = (saved.get("provider") or "").strip() or None
+    return model, provider
+
+
+def _draft_reply(
+    db: Session,
+    token: str,
+    payload: SecretChatAssistRequest,
+    model: str,
+    provider: str | None,
+) -> tuple[list[str], int]:
     messages = db.scalars(
         select(SecretChatMessage)
         .where(SecretChatMessage.session_token == token)
         .order_by(SecretChatMessage.id.desc())
         .limit(ASSIST_HISTORY_MESSAGES)
     ).all()
-    ordered = list(reversed(messages))
-    transcript = [(_sender_name(message.sender), message.content) for message in ordered]
+    transcript = [(_sender_name(message.sender), message.content) for message in reversed(messages)]
     style_samples: list[str] = []
-    if payload.mimic_me:
+    if payload.mimic_me and payload.client_id:
         mine = db.scalars(
             select(SecretChatMessage.content)
             .where(
@@ -733,24 +749,171 @@ def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session
         style_samples = [content for content in mine if content.strip()]
 
     system, prompt = _assist_prompt(transcript, style_samples, payload)
-    model = payload.model or configured_model()
+    with llm_provider_context(provider) if provider else _no_provider_override():
+        content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=400)
+    return _parse_replies(content), len(style_samples)
+
+
+@router.post("/{token}/assist", response_model=SecretChatAssistResponse)
+def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session = Depends(get_db)):
+    """Draft replies for the host to review in the composer."""
+    session = _load_room(db, token)
+    _require_host(db, session, payload.host_key)
+
+    preferred_model, preferred_provider = _preferred_ai(db)
+    model = payload.model or preferred_model
+    provider = payload.provider or preferred_provider
     try:
-        with llm_provider_context(payload.provider) if payload.provider else _no_provider_override():
-            content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=400)
+        suggestions, style_samples = _draft_reply(db, token, payload, model, provider)
     except LLMProviderError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except Exception as error:  # noqa: BLE001 - surfaced to the composer as a toast
         raise HTTPException(status_code=502, detail=f"The AI could not draft a reply: {error}") from error
 
-    suggestions = _parse_replies(content)
     if not suggestions:
         raise HTTPException(status_code=502, detail="The AI returned an empty reply")
     return SecretChatAssistResponse(
         suggestions=suggestions,
         tone=payload.tone,
         model=model,
-        style_samples=len(style_samples),
+        style_samples=style_samples,
     )
+
+
+# ─── Autopilot ───
+#
+# Autopilot runs here, not in the host's browser. The host can close the tab — or never open
+# it — and the room still answers. It also means the reply is not gated on a page being
+# awake, which is what made the old client-driven version feel late.
+
+# A reply lands like a person wrote it: a beat to notice the message, then time on the
+# keyboard roughly proportional to what gets typed.
+AUTOPILOT_NOTICE_SECONDS = (1.5, 4.0)
+AUTOPILOT_SECONDS_PER_CHARACTER = 0.045
+AUTOPILOT_MAX_TYPING_SECONDS = 9.0
+
+
+def _autopilot_typing_seconds(reply: str) -> float:
+    return min(AUTOPILOT_MAX_TYPING_SECONDS, 0.9 + len(reply) * AUTOPILOT_SECONDS_PER_CHARACTER)
+
+
+def _set_typing(db: Session, token: str, participant: SecretChatParticipant, typing: bool) -> None:
+    participant.typing_until = _now() + timedelta(seconds=TYPING_WINDOW_SECONDS) if typing else None
+    db.commit()
+    _broadcast(token, {
+        "type": "presence",
+        "participants": [_public_participant(item).model_dump(mode="json") for item in _participants(db, token)],
+    })
+
+
+def _run_autopilot(token: str, trigger_message_id: int) -> None:
+    """Answer as the host, with the pauses a person would take."""
+    try:
+        with SessionLocal() as db:
+            session = db.get(SecretChatSession, token)
+            if not session or not session.ai_autopilot or _room_finished(session):
+                return
+            host = db.scalar(
+                select(SecretChatParticipant).where(
+                    SecretChatParticipant.session_token == token,
+                    SecretChatParticipant.role == "host",
+                ).order_by(SecretChatParticipant.last_seen.desc())
+            )
+            if host is None:
+                # Nobody has ever opened this room as the host, so there is no name or client
+                # id to answer as. Replying as a stranger would be worse than staying quiet.
+                return
+            newest = db.scalar(
+                select(func.max(SecretChatMessage.id)).where(SecretChatMessage.session_token == token)
+            )
+            if newest != trigger_message_id:
+                # Someone else has spoken since; that later message gets its own reply.
+                return
+            request = SecretChatAssistRequest(
+                host_key=session.host_key,
+                client_id=host.client_id,
+                sender=host.name,
+                mode="autopilot",
+                tone=session.ai_tone,
+                persona=session.ai_persona,
+                mimic_me=session.ai_mimic_me,
+            )
+            model, provider = _preferred_ai(db)
+
+        # Read the message like a person would before starting to type.
+        time.sleep(random.uniform(*AUTOPILOT_NOTICE_SECONDS))
+
+        with SessionLocal() as db:
+            session = db.get(SecretChatSession, token)
+            if not session or not session.ai_autopilot:
+                return
+            replies, _ = _draft_reply(db, token, request, model, provider)
+        reply = (replies[0] if replies else "").strip()
+        if not reply:
+            return
+
+        with SessionLocal() as db:
+            session = db.get(SecretChatSession, token)
+            host_row = db.scalar(
+                select(SecretChatParticipant).where(
+                    SecretChatParticipant.session_token == token,
+                    SecretChatParticipant.client_id == request.client_id,
+                )
+            )
+            if not session or not session.ai_autopilot or host_row is None:
+                return
+            _set_typing(db, token, host_row, True)
+
+        time.sleep(_autopilot_typing_seconds(reply))
+
+        with SessionLocal() as db:
+            session = db.get(SecretChatSession, token)
+            if not session or not session.ai_autopilot or _room_finished(session):
+                return
+            message = SecretChatMessage(
+                session_token=token,
+                sender=f"{request.sender or 'Anonymous'}|||{request.client_id}",
+                content=reply[:2000],
+                via_ai=True,
+            )
+            db.add(message)
+            session.last_activity = _now()
+            db.commit()
+            db.refresh(message)
+            host_row = db.scalar(
+                select(SecretChatParticipant).where(
+                    SecretChatParticipant.session_token == token,
+                    SecretChatParticipant.client_id == request.client_id,
+                )
+            )
+            if host_row is not None:
+                host_row.message_count = (host_row.message_count or 0) + 1
+                host_row.last_read_id = max(host_row.last_read_id or 0, message.id)
+                _set_typing(db, token, host_row, False)
+            _broadcast(token, {"type": "message", **_message_payload(message, session.message_ttl_seconds)})
+    except Exception:  # noqa: BLE001 - a failed autopilot reply must not take the process down
+        return
+
+
+def _maybe_autopilot(db: Session, session: SecretChatSession, message: SecretChatMessage) -> None:
+    """Kick off a reply when someone other than the host writes into an autopilot room."""
+    if not session.ai_autopilot or message.via_ai:
+        return
+    author_client = _sender_client(message.sender)
+    host = db.scalar(
+        select(SecretChatParticipant).where(
+            SecretChatParticipant.session_token == session.token,
+            SecretChatParticipant.role == "host",
+        )
+    )
+    if host is None or (author_client and author_client == host.client_id):
+        return
+    Thread(
+        target=_run_autopilot,
+        args=(session.token, message.id),
+        name=f"locus-autopilot-{session.token}",
+        daemon=True,
+    ).start()
 
 
 # ─── Stream ───

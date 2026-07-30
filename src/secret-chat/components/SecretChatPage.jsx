@@ -301,7 +301,6 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
           clientId={room.clientId}
           sender={room.sender}
           session={room.session}
-          messages={room.messages}
           composerText={input}
           onInsert={text => { setInput(text); inputRef.current?.focus(); }}
           onSend={sendText}

@@ -19,7 +19,6 @@ const ttlLabel = seconds => {
 export default function SecretChatStandalone({ token }) {
   const room = useSecretChatRoom({ token });
   const [input, setInput] = useState('');
-  const [confirmClear, setConfirmClear] = useState(false);
   const inputRef = useRef(null);
 
   useChatViewportLock();
@@ -115,9 +114,8 @@ export default function SecretChatStandalone({ token }) {
           />
           <button
             type="button"
-            className={`scs-clear-btn${confirmClear ? ' active' : ''}`}
-            onClick={() => setConfirmClear(value => !value)}
-            aria-expanded={confirmClear}
+            className="scs-clear-btn"
+            onClick={room.clearOnThisDevice}
             aria-label="Clear this chat on my device"
             title="Clear this chat on my device"
             disabled={room.messages.length === 0}
@@ -127,25 +125,6 @@ export default function SecretChatStandalone({ token }) {
           <ShareMenu url={chatShareUrl(token)} title={room.session?.title} variant="standalone" />
         </div>
       </header>
-
-      {confirmClear && (
-        <div className="scs-clear-bar" role="alertdialog" aria-label="Clear this chat on this device">
-          <p>
-            Hide these {room.messages.length} message{room.messages.length === 1 ? '' : 's'} on this
-            device? They stay in the chat for everyone else, and new messages still arrive here.
-          </p>
-          <div className="scs-clear-actions">
-            <button type="button" onClick={() => setConfirmClear(false)}>Cancel</button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => { room.clearOnThisDevice(); setConfirmClear(false); }}
-            >
-              Clear on my device
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="scs-messages" ref={messagesScrollRef}>
         <ChatThread
