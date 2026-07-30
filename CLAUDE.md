@@ -30,20 +30,8 @@ git log --oneline origin/main -5      # what landed since last time
 - Already mid-change when new commits land upstream? Merge or rebase `origin/main` in *before*
   continuing, rather than at push time.
 - If a push is rejected as non-fast-forward, do not force. Fetch, integrate, re-verify, push.
-- Re-run the checks below after integrating anyone else's overlapping work: a textual merge
-  can leave code that builds a broken result silently.
-
-## Checks
-
-```bash
-npm run build                                  # frontend
-npm run lint                                   # eslint src
-.venv/bin/python -m pytest backend/tests/<file>.py -q
-```
-
-`backend/tests` has pre-existing failures when files run together (each module points the
-app at its own SQLite file and deletes it in teardown). Run the files your change touches,
-and compare against the same run on `origin/main` before calling a failure yours.
+- Re-run the Verification commands in `AGENTS.md` after integrating anyone else's overlapping
+  work, not just after your own edits.
 
 ## Notes
 

@@ -28,11 +28,21 @@ npm run build
 .venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py backend/tests/test_auth.py
 ```
 
-Broader tests when touching file parsing, vector search, tickets, or LLM behavior:
+Broader tests when touching file parsing, vector search, tickets, or LLM behavior — name the
+files your change touches:
 
 ```bash
-.venv/bin/pytest backend/tests
+.venv/bin/pytest backend/tests/test_vector_store.py backend/tests/test_tabular_files.py
 ```
+
+`pytest backend/tests` (the whole directory at once) reports far more failures than any one
+file does alone, and always has: each module sets `LOCUS_DATABASE_URL` to its own SQLite file
+at import time and deletes that file in `teardown_module`, so whichever module runs first wins
+the engine and later ones write to a deleted database. Run the files you touched, and compare
+against the same command on `origin/main` before treating a failure as yours.
+
+Re-run all of the above after merging or rebasing someone else's work in: a textual merge can
+produce a file that still parses but behaves wrongly.
 
 ---
 
@@ -274,6 +284,7 @@ and visiting the app root or any app path sends it back to its own chat instead 
 | `backend/tests/test_api.py` (881 lines) | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
 | `backend/tests/test_diagnostics.py` | Secret redaction, job log cleanup |
 | `backend/tests/test_auth.py` | Sign-in gate: absent without a password, token issue/verify/expiry, wrong-password throttle, public paths |
+| `backend/tests/test_secret_chat.py` | Private chat: room options, host-key gating, presence and guest details, read cursors, disappearing messages, link/room expiry, clear and delete, reply copilot |
 | `backend/tests/test_vector_store.py` | chunk_text overlap, embed_text determinism |
 | `backend/tests/test_groq.py` | Groq auth, rate-limit, retry, model listing |
 | `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |
