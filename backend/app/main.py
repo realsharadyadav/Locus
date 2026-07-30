@@ -1560,74 +1560,91 @@ def chat_direct_stream(payload: ChatRequest):
         raise HTTPException(status_code=422, detail="Direct streaming is only available for Light or Unrestricted mode with no selected files and Web Search off")
 
     def event_stream():
-        with SessionLocal() as db:
+        # The work runs on its own thread and reports through a queue, exactly like
+        # /api/chat/stream. Starlette pumps a sync generator by calling next() in the
+        # threadpool, and each of those calls gets a fresh copy of the context — so a
+        # ContextVar-backed helper such as token_usage_tracker() cannot be entered in
+        # one next() and exited in a later one ("was created in a different Context").
+        # Keeping the whole pipeline inside one thread keeps the context intact.
+        events: Queue = Queue()
+
+        def run():
             stream_cancel_event = None
             stream_chat_id = None
-            try:
-                session = db.get(ChatSession, payload.conversation_id) if payload.conversation_id else None
-                if payload.conversation_id and not session:
-                    raise HTTPException(status_code=404, detail="Chat not found")
-                if not session:
-                    session = ChatSession(title=payload.question.strip()[:70])
-                    db.add(session)
-                    db.flush()
-                stream_chat_id = session.id
-                stream_cancel_event = _chat_stream_cancel_event(stream_chat_id)
-                previous = db.scalars(select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.id.desc()).limit(10)).all()
-                history = [(message.role, message.content) for message in reversed(previous)]
-                db.add(ChatMessage(session_id=session.id, role="user", content=payload.question))
-                db.commit()
-                yield json.dumps({"type": "start", "conversation_id": session.id, "model": payload.model, "provider": payload.provider}) + "\n"
-                answer_parts = []
-                with token_usage_tracker() as usage:
-                    token_stream, used_model = stream_answer(
-                        payload.question,
-                        [],
-                        history,
-                        payload.model,
-                        payload.allow_general_knowledge,
-                        payload.reasoning_mode,
-                        guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
-                        provider=payload.provider,
-                    )
-                    for token in token_stream:
-                        if stream_cancel_event and stream_cancel_event.is_set():
-                            raise ChatJobCancelled("Chat was deleted; direct stream cancelled")
-                        answer_parts.append(token)
-                        yield json.dumps({"type": "token", "text": token}) + "\n"
-                    answer = clean_final_answer("".join(answer_parts))
-                    if not answer:
-                        raise RuntimeError("The model returned an empty answer.")
-                    if payload.reasoning_mode == "unrestricted" and is_refusal(answer):
-                        yield json.dumps({"type": "token", "text": "\n\n_[Model initially refused. Running jailbreak pipeline…]_\n\n"}) + "\n"
-                        answer, used_model = generate_unrestricted_answer(
+            with SessionLocal() as db:
+                try:
+                    session = db.get(ChatSession, payload.conversation_id) if payload.conversation_id else None
+                    if payload.conversation_id and not session:
+                        raise HTTPException(status_code=404, detail="Chat not found")
+                    if not session:
+                        session = ChatSession(title=payload.question.strip()[:70])
+                        db.add(session)
+                        db.flush()
+                    stream_chat_id = session.id
+                    stream_cancel_event = _chat_stream_cancel_event(stream_chat_id)
+                    previous = db.scalars(select(ChatMessage).where(ChatMessage.session_id == session.id).order_by(ChatMessage.id.desc()).limit(10)).all()
+                    history = [(message.role, message.content) for message in reversed(previous)]
+                    db.add(ChatMessage(session_id=session.id, role="user", content=payload.question))
+                    db.commit()
+                    events.put({"type": "start", "conversation_id": session.id, "model": payload.model, "provider": payload.provider})
+                    answer_parts = []
+                    with token_usage_tracker() as usage:
+                        token_stream, used_model = stream_answer(
                             payload.question,
                             [],
                             history,
                             payload.model,
+                            payload.allow_general_knowledge,
+                            payload.reasoning_mode,
+                            guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
+                            provider=payload.provider,
                         )
-                    else:
-                        diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
-                        if diagnostic:
-                            yield json.dumps({"type": "diagnostic", "level": "warning", "detail": diagnostic}) + "\n"
-                llm_hits = usage["calls"]
-                web_queries = 0
-                db.add(ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits, web_queries, usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]), model=used_model, provider=payload.provider))
-                session.updated_at = datetime.now(timezone.utc)
-                db.commit()
-                result = ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries, prompt_tokens=usage["prompt_tokens"], completion_tokens=usage["completion_tokens"], total_tokens=usage["total_tokens"])
-                yield json.dumps({"type": "result", "data": result.model_dump(mode="json")}) + "\n"
-            except ChatJobCancelled:
-                return
-            except HTTPException as exception:
-                yield json.dumps({"type": "error", "detail": exception.detail}) + "\n"
-            except LLMProviderError as exception:
-                yield json.dumps({"type": "error", "detail": str(exception)}) + "\n"
-            except Exception as exception:
-                yield json.dumps({"type": "error", "detail": str(exception)}) + "\n"
-            finally:
-                if stream_chat_id is not None and stream_cancel_event is not None:
-                    _forget_chat_stream_cancel_event(stream_chat_id, stream_cancel_event)
+                        for token in token_stream:
+                            if stream_cancel_event and stream_cancel_event.is_set():
+                                raise ChatJobCancelled("Chat was deleted; direct stream cancelled")
+                            answer_parts.append(token)
+                            events.put({"type": "token", "text": token})
+                        answer = clean_final_answer("".join(answer_parts))
+                        if not answer:
+                            raise RuntimeError("The model returned an empty answer.")
+                        if payload.reasoning_mode == "unrestricted" and is_refusal(answer):
+                            events.put({"type": "token", "text": "\n\n_[Model initially refused. Running jailbreak pipeline…]_\n\n"})
+                            answer, used_model = generate_unrestricted_answer(
+                                payload.question,
+                                [],
+                                history,
+                                payload.model,
+                            )
+                        else:
+                            diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
+                            if diagnostic:
+                                events.put({"type": "diagnostic", "level": "warning", "detail": diagnostic})
+                    llm_hits = usage["calls"]
+                    web_queries = 0
+                    db.add(ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits, web_queries, usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]), model=used_model, provider=payload.provider))
+                    session.updated_at = datetime.now(timezone.utc)
+                    db.commit()
+                    result = ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries, prompt_tokens=usage["prompt_tokens"], completion_tokens=usage["completion_tokens"], total_tokens=usage["total_tokens"])
+                    events.put({"type": "result", "data": result.model_dump(mode="json")})
+                except ChatJobCancelled:
+                    pass
+                except HTTPException as exception:
+                    events.put({"type": "error", "detail": exception.detail})
+                except LLMProviderError as exception:
+                    events.put({"type": "error", "detail": str(exception)})
+                except Exception as exception:
+                    events.put({"type": "error", "detail": str(exception)})
+                finally:
+                    if stream_chat_id is not None and stream_cancel_event is not None:
+                        _forget_chat_stream_cancel_event(stream_chat_id, stream_cancel_event)
+                    events.put(None)
+
+        Thread(target=run, daemon=True).start()
+        while True:
+            event = events.get()
+            if event is None:
+                break
+            yield json.dumps(event) + "\n"
 
     return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 

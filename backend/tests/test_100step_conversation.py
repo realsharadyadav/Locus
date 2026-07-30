@@ -1,22 +1,14 @@
 """100-step conversation stress test — tests history trimming, summarization, context budget."""
 import json
-import os
-import time
 
 import pytest
 
-os.environ["LOCUS_DATABASE_URL"] = "sqlite:///./test_100step_chat.db"
-
 from fastapi.testclient import TestClient
 
-from backend.app.database import Base, engine, SessionLocal
-from backend.app.llm import (
-    _trim_history, _summarize_history, _pack_sources, _context_budget,
-    generate_answer, clean_final_answer,
-)
+from backend.app.database import SessionLocal
 from backend.app.main import app
 import backend.app.main as main_module
-from backend.app.models import ChatJob, ChatMessage, ChatSession, StoredFile
+from backend.app.models import ChatJob
 
 
 # ---------------------------------------------------------------------------
@@ -95,17 +87,6 @@ def mock_llm(monkeypatch):
     )
 
 
-def setup_module():
-    Base.metadata.drop_all(bind=engine)
-
-
-def teardown_module():
-    Base.metadata.drop_all(bind=engine)
-    for path in ["test_100step_chat.db"]:
-        if os.path.exists(path):
-            os.remove(path)
-
-
 # =====================================================================
 # 100-STEP CONVERSATION TESTS
 # =====================================================================
@@ -134,36 +115,6 @@ class Test100StepLightConversation:
             # Verify ordering
             for i in range(len(msgs) - 1):
                 assert msgs[i]["id"] < msgs[i+1]["id"], "Messages not in ascending ID order"
-
-    def test_100_steps_last_10_fetched_for_history(self, monkeypatch):
-        """DB query fetches only last 10 messages. Verify behavior at step 50 and 100."""
-        captured_history = {}
-
-        def fake_enhance(question, history, model):
-            captured_history["len"] = len(history) if history else 0
-            return {
-                "enhanced_question": question, "subquestions": [],
-                "answer_format": "Clear answer", "supporting_details": [],
-                "visualization": "none", "completeness_criteria": ["Answer"],
-                "requires_full_relevant_files": False,
-                "aggregation_operation": "none", "entity_type": None,
-            }
-
-        monkeypatch.setattr("backend.app.main.enhance_question", fake_enhance)
-        with TestClient(app) as c:
-            r1 = chat(c, question="msg 1", reasoning_mode="light", file_ids=[])
-            cid = r1["conversation_id"]
-
-            for i in range(2, 101):
-                chat(c, question=f"msg {i}", conversation_id=cid, reasoning_mode="light", file_ids=[])
-                if i == 50:
-                    captured_history["at_50"] = captured_history.get("len", 0)
-                if i == 100:
-                    captured_history["at_100"] = captured_history.get("len", 0)
-
-            # History should never exceed 10 (DB limit)
-            assert captured_history["at_50"] <= 10, f"History at step 50: {captured_history['at_50']}"
-            assert captured_history["at_100"] <= 10, f"History at step 100: {captured_history['at_100']}"
 
     def test_100_steps_chat_session_updated_at_changes(self, monkeypatch):
         """updated_at should change with each message."""
@@ -245,11 +196,12 @@ class Test100StepWithFiles:
             # Planner was called for every step
             assert len(planner_calls) == 100
 
-            # History: first call = 0 (no prior messages), then grows, capped at 10 by DB limit
-            assert planner_calls[0] == 0  # first message, no history
-            assert planner_calls[9] == 10  # step 10: 9 pairs = 18 msgs, DB limit fetches 10
-            assert planner_calls[49] <= 10  # step 50: capped at 10
-            assert planner_calls[99] <= 10  # step 100: capped at 10
+            # History starts empty, grows one user+assistant pair per step, then flattens
+            # at the loader's message cap.
+            assert planner_calls[0] == 0
+            assert planner_calls[9] == 18  # step 10: 9 prior pairs, still under the cap
+            assert planner_calls[49] == main_module.CHAT_HISTORY_LOAD_LIMIT
+            assert planner_calls[99] == main_module.CHAT_HISTORY_LOAD_LIMIT
 
     def test_100_steps_truncation_mid_conversation(self, monkeypatch):
         """Truncating at step 50 should leave only first 50 messages."""
@@ -280,11 +232,16 @@ class Test100StepWebSearch:
 
     def test_100_steps_with_auto_web_search(self, monkeypatch):
         """Web search should work with long conversation history."""
-        history_captures = []
-        def track_web(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
-            history_captures.append(len(history) if history else 0)
-            return {"answer": "Web answer", "sources": [], "model": model}
-        monkeypatch.setattr("backend.app.main.web_research", track_web)
+        # Asserted on the agentic pipeline, not on the nested web_research() calls:
+        # main.py hands history to the pipeline, which deliberately keeps it out of the
+        # search queries themselves, so a fake web_research always sees history=None.
+        history_lengths = []
+
+        def track_pipeline(question, model, progress, source_limit=5, history=None, answer_mode="light", force_web=False, web_research_fn=None, direct_answer_fn=None):
+            history_lengths.append(len(history or []))
+            return {"answer": "Web answer", "sources": [], "model": model, "plan": {}}
+
+        monkeypatch.setattr("backend.app.main.run_agentic_pipeline", track_pipeline)
 
         with TestClient(app) as c:
             r1 = chat(c, question="Search for Python tutorials", reasoning_mode="web_research")
@@ -293,154 +250,10 @@ class Test100StepWebSearch:
             for i in range(2, 51):
                 chat(c, question=f"Search for more topic {i}", conversation_id=cid, reasoning_mode="web_research")
 
-            # Web research got history at each step
-            assert len(history_captures) == 50
-            assert history_captures[0] == 0  # first: no history
-            assert history_captures[49] <= 10  # step 50: at most 10
-
-
-class TestHistoryTrimBehavior:
-    """Direct tests of _trim_history with 100+ messages."""
-
-    def test_trim_100_messages_small_budget(self):
-        """100 messages with small budget — only recent ones survive."""
-        history = [(f"role{i}", f"Message {i}: " + "x" * 50) for i in range(100)]
-        result = _trim_history(history, 2000)
-        total = sum(len(c) for _, c in result)
-        assert total <= 2000
-        # Should contain only recent messages
-        assert len(result) < 100
-
-    def test_trim_100_messages_large_budget(self):
-        """100 messages with large budget — all survive."""
-        history = [(f"role{i}", f"msg {i}") for i in range(100)]
-        result = _trim_history(history, 1_000_000)
-        assert len(result) == 100
-
-    def test_trim_200_messages_exact_budget(self):
-        """200 messages trimmed to exactly the budget."""
-        history = [(f"role{i}", "a" * 100) for i in range(200)]
-        budget = 5000
-        result = _trim_history(history, budget)
-        total = sum(len(c) for _, c in result)
-        assert total == budget
-
-    def test_trim_preserves_last_message_integrity(self):
-        """Last message is preserved from the end, but may be truncated if it exceeds budget."""
-        history = [("user", "What is Python?"), ("assistant", "Python is a programming language.")]
-        result = _trim_history(history, 30)
-        # Budget is 30 chars total. Second message is 33 chars, so it gets truncated to fit.
-        assert len(result) >= 1
-        # Last entry in result should be the assistant message (most recent)
-        assert result[-1][0] == "assistant"
-
-    def test_trim_single_very_long_message(self):
-        """Single message longer than budget gets truncated."""
-        history = [("user", "a" * 10000)]
-        result = _trim_history(history, 500)
-        assert len(result) == 1
-        assert len(result[0][1]) == 500
-
-    def test_trim_empty_history(self):
-        assert _trim_history([], 1000) == []
-
-
-class TestHistorySummarizeBehavior:
-    """Direct tests of _summarize_history behavior."""
-
-    def test_summarize_short_history_no_llm(self, monkeypatch):
-        """4 or fewer messages: no LLM call, just format."""
-        history = [("user", "q1"), ("assistant", "a1"), ("user", "q2"), ("assistant", "a2")]
-        result = _summarize_history(history, "m")
-        assert "user: q1" in result
-        assert "assistant: a2" in result
-        assert "Earlier context:" not in result
-
-    def test_summarize_long_history_uses_llm(self, monkeypatch):
-        """5+ messages: LLM summarizes older, keeps recent 4."""
-        history = [(f"user", f"question {i}") for i in range(20)]
-        history += [(f"assistant", f"answer {i}") for i in range(20)]
-        # Interleave
-        interleaved = []
-        for i in range(20):
-            interleaved.append(history[i])
-            interleaved.append(history[20 + i])
-
-        call_log = []
-        def fake_chat(system, prompt, model, temperature=0.1, max_tokens=800):
-            call_log.append(prompt)
-            return "Summary of old messages"
-
-        monkeypatch.setattr("backend.app.llm._chat", fake_chat)
-        result = _summarize_history(interleaved, "m")
-        assert "Earlier context:" in result
-        assert "Recent messages:" in result
-        assert len(call_log) == 1  # LLM called once
-
-    def test_summarize_llm_failure_fallback(self, monkeypatch):
-        """If LLM fails, fallback to text truncation."""
-        history = [(f"user", f"q{i}") for i in range(20)]
-        history += [(f"assistant", f"a{i}") for i in range(20)]
-        interleaved = []
-        for i in range(20):
-            interleaved.append(history[i])
-            interleaved.append(history[20 + i])
-
-        def failing_chat(*args, **kwargs):
-            raise RuntimeError("LLM unavailable")
-
-        monkeypatch.setattr("backend.app.llm._chat", failing_chat)
-        result = _summarize_history(interleaved, "m", max_chars=3000)
-        # Fallback should still produce something
-        assert len(result) > 0
-        assert "Recent messages:" in result
-
-
-class TestPackSourcesBudget:
-    """Test _pack_sources with various budgets."""
-
-    def test_pack_100_sources_small_budget(self):
-        sources = [(f"file{i}.txt", f"content {i} " * 50) for i in range(100)]
-        result = _pack_sources(sources, 1000)
-        total = sum(len(t) for _, t in result)
-        assert total <= 1000
-        assert len(result) < 100
-
-    def test_pack_100_sources_large_budget(self):
-        sources = [(f"file{i}.txt", f"content {i}") for i in range(100)]
-        result = _pack_sources(sources, 1_000_000)
-        assert len(result) == 100
-
-    def test_pack_single_huge_source(self):
-        sources = [("huge.txt", "x" * 50000)]
-        result = _pack_sources(sources, 5000)
-        assert len(result) == 1
-        assert len(result[0][1]) == 5000
-
-
-class TestContextBudget:
-    """Test context budget calculations."""
-
-    def test_groq_budget_minimum(self):
-        with patch_active_provider("groq"):
-            assert _context_budget("llama3.2:latest") == max(8000, 12000)
-
-    def test_openai_gpt_budget(self):
-        assert _context_budget("gpt-4o") == 80000
-        assert _context_budget("gpt-5.5") == 80000
-
-    def test_gemini_budget(self):
-        assert _context_budget("gemini-2.5-flash") == 80000
-        assert _context_budget("gemini-1.5-pro") == 80000
-
-    def test_ollama_local_budget(self):
-        with patch_active_provider("ollama"):
-            budget = _context_budget("llama3.2:latest")
-            assert budget >= 10000
-
-    def test_ollama_cloud_budget(self):
-        with patch_active_provider("ollama"):
-            assert _context_budget("nemotron:cloud") == 40000
+            assert len(history_lengths) == 50
+            assert history_lengths[0] == 0  # first turn has no prior messages
+            assert history_lengths[1] == 2  # one user+assistant pair
+            assert history_lengths[49] == main_module.CHAT_HISTORY_LOAD_LIMIT
 
 
 class TestEdgeCases100Step:
@@ -537,7 +350,6 @@ from contextlib import contextmanager
 def patch_active_provider(provider_name):
     """Temporarily patch the active LLM provider."""
     import backend.app.llm as llm_mod
-    original = llm_mod._ACTIVE_PROVIDER.get()
     token = llm_mod._ACTIVE_PROVIDER.set(provider_name)
     try:
         yield

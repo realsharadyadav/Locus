@@ -80,6 +80,32 @@ Keep these notes so future sessions don't repeat mistakes:
 
 15. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
 
+16. **Tests share one database, and conftest.py owns it** — Pytest imports every test
+    module before running any test, and `backend.app.database` builds its engine once at
+    import time. A per-module `os.environ["LOCUS_DATABASE_URL"] = ...` therefore only ever
+    applied to whichever module was imported first; the rest silently shared that database
+    and then had the file deleted under their pooled connections, which SQLite reports as
+    "attempt to write a readonly database". Set the URL in `conftest.py` only, and isolate
+    modules by dropping/creating tables (the `reset_database` fixture), never by using
+    separate files or `os.remove`.
+
+17. **Never set/reset a ContextVar across a `yield` in a StreamingResponse generator** —
+    Starlette pumps a sync generator by calling `next()` in the threadpool, and each call
+    gets a fresh copy of the context, so `__enter__` in one `next()` and `__exit__` in a
+    later one raises "was created in a different Context". This silently broke
+    `/api/chat/direct-stream` end to end: `with token_usage_tracker()` spanned the token
+    yields, so every direct stream emitted its tokens and then died before persisting the
+    assistant message or emitting the `result` frame. Both streaming endpoints now run the
+    pipeline on one thread and push events through a `Queue`; keep new ones on that pattern.
+
+18. **`intent._fallback_classify` matches on longest keyword, plus plurals** — First-match-wins
+    let a short generic keyword from an earlier domain beat a longer specific one from a
+    later domain ("formula 1 standings" classified as `math`, because `_math_kw` has
+    "formula" and math is checked before sports). Keywords are also stored in the singular
+    and matched via `_keyword_pattern()`, which accepts the regular English plural —
+    without it `\bflight\b` missed "mumbai to delhi flights" outright. Keep new keywords
+    singular.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -244,14 +270,25 @@ and visiting the app root or any app path sends it back to its own chat instead 
 
 | File | Covers |
 |---|---|
-| `backend/tests/test_api.py` (881 lines) | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
+| `backend/tests/conftest.py` | Owns `LOCUS_DATABASE_URL` and the per-module schema reset. See note 16 |
+| `backend/tests/test_api.py` | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
 | `backend/tests/test_diagnostics.py` | Secret redaction, job log cleanup |
 | `backend/tests/test_auth.py` | Sign-in gate: absent without a password, token issue/verify/expiry, wrong-password throttle, public paths |
 | `backend/tests/test_vector_store.py` | chunk_text overlap, embed_text determinism |
-| `backend/tests/test_groq.py` | Groq auth, rate-limit, retry, model listing |
+| `backend/tests/test_llm_context.py` | The one home for `_trim_history` / `_summarize_history` / `_pack_sources` / `_context_budget` unit tests |
+| `backend/tests/test_groq.py` | Groq auth, timeout clamp, rate-limit, retry, model listing |
+| `backend/tests/test_intent_deep.py` | `intent.py` keyword fallback across every domain, context persistence, output validation |
+| `backend/tests/test_agentic_pipeline.py` | Planner routing, dynamic source_limit, evidence validation |
+| `backend/tests/test_comprehensive_chat.py` | Light mode, web search routing, output formats, streaming, edge cases |
+| `backend/tests/test_100step_conversation.py` | 100-step conversations: persistence, history growth, truncation, cancellation |
+| `backend/tests/test_deep_stress.py` | Mode switching mid-chat, 200-step rapid fire, file ops mid-chat, job lifecycle, concurrency |
+| `backend/tests/test_litellm_gateway.py` | LiteLLM gateway wiring |
 | `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |
 | `backend/tests/test_tabular_files.py` | CSV/XLSX profiling |
 | `scripts/evaluate_ticket_taxonomy.py` | CLI taxonomy accuracy evaluation against CSV |
+
+The whole suite is hermetic and order-independent — no network, no local `.env`, and
+`pytest backend/tests` in any file order gives the same result.
 
 ---
 
