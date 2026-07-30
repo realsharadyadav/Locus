@@ -122,6 +122,14 @@ def _cancel_chat_streams(chat_ids: list[int]) -> None:
 
 
 def _ensure_schema_columns():
+    # These ALTERs only ever run against a database that predates a column, which in practice
+    # means the deployed Postgres — a fresh database gets every column from create_all and
+    # skips this entirely. So the DDL has to be portable, not SQLite-flavoured: Postgres has
+    # no DATETIME type, and rejects 0/1 as a BOOLEAN default.
+    postgres = engine.dialect.name == "postgresql"
+    TIMESTAMP = "TIMESTAMP" if postgres else "DATETIME"
+    FALSE, TRUE = ("FALSE", "TRUE") if postgres else ("0", "1")
+
     inspector = inspect(engine)
     chat_job_columns = {column["name"] for column in inspector.get_columns("chat_jobs")}
     chat_message_columns = {column["name"] for column in inspector.get_columns("chat_messages")}
@@ -144,7 +152,7 @@ def _ensure_schema_columns():
         if "provider" not in chat_job_columns:
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN provider VARCHAR(20)"))
         if "web_search" not in chat_job_columns:
-            connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN web_search BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text(f"ALTER TABLE chat_jobs ADD COLUMN web_search BOOLEAN NOT NULL DEFAULT {FALSE}"))
         if "provider" not in chat_message_columns:
             connection.execute(text("ALTER TABLE chat_messages ADD COLUMN provider VARCHAR(20)"))
         if "llm_hits" not in chat_job_columns:
@@ -162,18 +170,18 @@ def _ensure_schema_columns():
         for column, ddl in (
             ("host_key", "ALTER TABLE secret_chat_sessions ADD COLUMN host_key VARCHAR(64) NOT NULL DEFAULT ''"),
             ("message_ttl_seconds", "ALTER TABLE secret_chat_sessions ADD COLUMN message_ttl_seconds INTEGER NOT NULL DEFAULT 0"),
-            ("link_expires_at", "ALTER TABLE secret_chat_sessions ADD COLUMN link_expires_at DATETIME"),
-            ("expires_at", "ALTER TABLE secret_chat_sessions ADD COLUMN expires_at DATETIME"),
-            ("closed_at", "ALTER TABLE secret_chat_sessions ADD COLUMN closed_at DATETIME"),
+            ("link_expires_at", f"ALTER TABLE secret_chat_sessions ADD COLUMN link_expires_at {TIMESTAMP}"),
+            ("expires_at", f"ALTER TABLE secret_chat_sessions ADD COLUMN expires_at {TIMESTAMP}"),
+            ("closed_at", f"ALTER TABLE secret_chat_sessions ADD COLUMN closed_at {TIMESTAMP}"),
             ("ai_tone", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_tone VARCHAR(40) NOT NULL DEFAULT 'friendly'"),
             ("ai_persona", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_persona TEXT NOT NULL DEFAULT ''"),
-            ("ai_autopilot", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_autopilot BOOLEAN NOT NULL DEFAULT 0"),
-            ("ai_mimic_me", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_mimic_me BOOLEAN NOT NULL DEFAULT 1"),
+            ("ai_autopilot", f"ALTER TABLE secret_chat_sessions ADD COLUMN ai_autopilot BOOLEAN NOT NULL DEFAULT {FALSE}"),
+            ("ai_mimic_me", f"ALTER TABLE secret_chat_sessions ADD COLUMN ai_mimic_me BOOLEAN NOT NULL DEFAULT {TRUE}"),
         ):
             if column not in secret_chat_session_columns:
                 connection.execute(text(ddl))
         if "via_ai" not in secret_chat_message_columns:
-            connection.execute(text("ALTER TABLE secret_chat_messages ADD COLUMN via_ai BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text(f"ALTER TABLE secret_chat_messages ADD COLUMN via_ai BOOLEAN NOT NULL DEFAULT {FALSE}"))
 
 
 def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:
