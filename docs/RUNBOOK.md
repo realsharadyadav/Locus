@@ -82,6 +82,43 @@ Important settings:
 - `SEMANTIC_RETRIEVAL_ENABLED`
 - `VECTOR_FALLBACK_PATH`
 - `TICKET_ANALYSIS_ENABLED`
+- `LOCUS_AUTH_PASSWORD`: unset (the default) leaves the API open, which is what local dev wants;
+  set it to put the whole app behind a password
+
+## Sign-in Gate
+
+Locus can sit behind one shared password. It is a deployment lock, not user accounts: everyone
+who signs in shares the same libraries, files and chats.
+
+```bash
+LOCUS_AUTH_PASSWORD='something long' npm run dev:api
+```
+
+- Unset `LOCUS_AUTH_PASSWORD` and the gate disappears entirely — no login screen, no headers,
+  which is why the test suite needs no special handling.
+- `LOCUS_AUTH_SESSION_DAYS` (default 30) sets how long a browser stays signed in.
+- `LOCUS_AUTH_SECRET` is optional. Left unset, the signing key derives from the password, so
+  changing the password signs everyone out.
+- `LOCUS_ALLOWED_ORIGINS` should list the frontend origin on a real deployment (comma
+  separated). It defaults to `*`, fine for local dev.
+- Public regardless of the gate: `/api/health`, `/api/auth/status`, `/api/auth/login`, and the
+  four Private-chat routes a link guest needs (read the room, read/post messages, stream).
+  Listing, creating, renaming and deleting rooms stay guarded — see `GUEST_SECRET_CHAT_ROUTES`
+  in `backend/app/auth.py`.
+- Signing out is client-side only (Settings → Session). The backend keeps no session state, so
+  a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
+
+To lock the Render deployment, set `LOCUS_AUTH_PASSWORD` on `locus-backend` and
+`LOCUS_ALLOWED_ORIGINS` to the frontend URL. Both are declared in `render.yaml` with
+`sync: false`, so the key names are in the repo but the values are not — Render keeps those in
+the dashboard.
+
+Render has no separate "secrets" screen for this: environment variables *are* the secret
+store. Dashboard → the `locus-backend` service → **Environment** in the left nav → **Add
+Environment Variable**. ("Secret Files" on the same page is for mounting whole files and is not
+what this needs.) Note that `sync: false` values are only prompted for during the *initial*
+Blueprint creation — on an existing service the dashboard is the only place to set them, and
+Render will not overwrite them on a later Blueprint sync.
 
 ## Running Postgres Locally (optional, for pgvector parity with prod)
 
@@ -132,8 +169,8 @@ Locus deploys as three free Render resources, defined in `render.yaml`
 
 They're on different `*.onrender.com` subdomains, so the frontend calls the
 backend via an absolute URL (`VITE_API_BASE_URL`, baked in at build time — see
-`src/apiBase.js`); the backend's CORS is already open (`allow_origins=["*"]` in
-`backend/app/main.py`).
+`src/apiBase.js`); the backend's CORS defaults to open and narrows to whatever
+`LOCUS_ALLOWED_ORIGINS` lists (`backend/app/main.py`).
 
 **`locus-backend`'s own filesystem is still ephemeral** — every redeploy and
 15-minute idle spin-down wipes `backend/uploads/` (uploaded file bytes; a

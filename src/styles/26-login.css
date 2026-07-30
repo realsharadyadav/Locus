@@ -1,0 +1,146 @@
+/* Password gate.
+
+   Shares the splash screen's centred, low-chrome layout so signing in reads as
+   part of booting the workspace rather than a separate product surface. */
+
+.login {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #f5f3ee;
+}
+
+html[data-theme='dark'] .login {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(118, 99, 170, .13), transparent 58%),
+    #0d1217;
+}
+
+.login-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  width: min(340px, 100%);
+  text-align: center;
+}
+
+.login .logo {
+  align-self: center;
+  transform: scale(1.35);
+  transform-origin: center;
+  margin-bottom: 12px;
+}
+
+.login-tagline {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  opacity: .62;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.login-field span {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.login-field input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 14px;
+  transition: border-color .16s ease;
+}
+
+.login-field input::placeholder { color: var(--muted); opacity: .7; }
+.login-field input[aria-invalid='true'] { border-color: #c2554d; }
+
+html[data-theme='dark'] .login-field span { color: #8b949e; }
+
+html[data-theme='dark'] .login-field input {
+  border-color: rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .04);
+  color: #e6edf3;
+}
+
+/* Reserves its line so the card does not jump when an error appears. */
+.login-error {
+  min-height: 15px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c2554d;
+  text-align: left;
+}
+
+/* !important because the dark theme layer paints every <p> muted the same way. */
+html[data-theme='dark'] .login-error { color: #f0837a !important; }
+
+html[data-theme='dark'] .login-field input[aria-invalid='true'] { border-color: #f0837a; }
+
+.login-submit {
+  padding: 11px 16px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--violet), #9d86e8);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 650;
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.login-submit:hover:not(:disabled) { opacity: .92; }
+.login-submit:active:not(:disabled) { transform: translateY(1px); }
+.login-submit:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .login-submit { transition: none; }
+}
+
+/* Sign out lives in Settings — a quiet, destructive-ish action, so it stays a
+   bordered button rather than competing with "Save defaults". */
+.settings-signout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 9px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  transition: border-color .16s ease, color .16s ease;
+}
+
+.settings-signout:hover { border-color: #c2554d; color: #c2554d; }
+
+html[data-theme='dark'] .settings-signout {
+  border-color: rgba(255, 255, 255, .12);
+  background: rgba(255, 255, 255, .04);
+  color: #e6edf3;
+}
+
+html[data-theme='dark'] .settings-signout:hover { border-color: #f0837a; color: #f0837a; }
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-signout { transition: none; }
+}

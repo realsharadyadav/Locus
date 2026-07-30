@@ -1,0 +1,232 @@
+/* Theme system */
+:root {
+  color-scheme: light;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] body {
+  background: var(--canvas);
+}
+
+html[data-theme='dark'] {
+  --ink: #e8edf2;
+  --muted: #a1abb7;
+  --line: #263241;
+  --paper: #111820;
+  --canvas: #0b1016;
+  --violet: #8b7bff;
+  --violet-dark: #6f60e6;
+  --lime: #d7ee86;
+  --sidebar: #091016;
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(139, 123, 255, .12), transparent 24%),
+    radial-gradient(circle at 30% 94%, rgba(215, 238, 134, .08), transparent 24%),
+    var(--canvas);
+}
+
+html[data-theme='dark'] .sidebar,
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .store-card,
+html[data-theme='dark'] .simple-files,
+html[data-theme='dark'] .onboarding-card,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .markdown-answer,
+html[data-theme='dark'] .message-body > p,
+html[data-theme='dark'] .source-chip,
+html[data-theme='dark'] .chat-history > div > button,
+html[data-theme='dark'] .chat-controls select,
+html[data-theme='dark'] .model-control input,
+html[data-theme='dark'] .global-search,
+html[data-theme='dark'] .stat-grid article,
+html[data-theme='dark'] .drop-zone,
+html[data-theme='dark'] .options-popover {
+  background-color: rgba(16, 22, 30, .92);
+  border-color: #273140;
+}
+
+html[data-theme='dark'] header {
+  background: rgba(11, 16, 22, .8);
+  border-bottom-color: rgba(49, 61, 77, .9);
+}
+
+html[data-theme='dark'] .sidebar nav button,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .chat-history-open,
+html[data-theme='dark'] .global-search span,
+html[data-theme='dark'] .kicker,
+html[data-theme='dark'] .panel-empty,
+html[data-theme='dark'] .store-card small,
+html[data-theme='dark'] .simple-files p,
+html[data-theme='dark'] .chat-empty > p,
+html[data-theme='dark'] .inner-title p,
+html[data-theme='dark'] .home-hero p,
+html[data-theme='dark'] .message-head > span,
+html[data-theme='dark'] .chat-composer > span,
+html[data-theme='dark'] .command-results small {
+  color: var(--muted);
+}
+
+html[data-theme='dark'] .sidebar nav button:hover,
+html[data-theme='dark'] .panel-row:hover,
+html[data-theme='dark'] .chat-history-item:hover,
+html[data-theme='dark'] .chat-history-item.active,
+html[data-theme='dark'] .suggestion-grid button:hover,
+html[data-theme='dark'] .quick-actions button:hover,
+html[data-theme='dark'] .source-chip:hover,
+html[data-theme='dark'] .command-results button:hover,
+html[data-theme='dark'] .command-results button.active {
+  background: rgba(131, 110, 255, .12);
+}
+
+/* Dark mode — sources bar */
+html[data-theme='dark'] .sources-bar-btn {
+  background: linear-gradient(135deg, rgba(16, 22, 30, .94), rgba(34, 27, 54, .88));
+  border-color: #2d3a4c;
+  color: #b8aaff;
+}
+
+html[data-theme='dark'] .sources-bar-btn:hover {
+  background: rgba(131, 110, 255, .18);
+  border-color: #4a3f8a;
+}
+
+html[data-theme='dark'] .sources-count { color: #b8aaff; }
+
+html[data-theme='dark'] .source-avatar.web {
+  background: rgba(99,102,241,.2);
+  color: #a5b4fc;
+  border-color: #1e1b3a;
+}
+
+html[data-theme='dark'] .source-avatar.file {
+  background: rgba(5,150,105,.18);
+  color: #6ee7b7;
+  border-color: #1e1b3a;
+}
+
+html[data-theme='dark'] .source-avatar.overflow {
+  background: rgba(124,58,237,.16);
+  color: #c4b5fd;
+  border-color: #1e1b3a;
+}
+
+html[data-theme='dark'] .sources-arrow { color: #6b7280; }
+html[data-theme='dark'] .sources-bar-btn:hover .sources-arrow { color: #b8aaff; }
+
+/* Dark mode — sources panel */
+html[data-theme='dark'] .sources-panel-overlay {
+  background: rgba(0,0,0,.55);
+}
+
+html[data-theme='dark'] .sources-panel {
+  background: #0f1118;
+  border-left-color: #1e2233;
+  box-shadow: -8px 0 30px rgba(0,0,0,.4);
+}
+
+html[data-theme='dark'] .sources-panel-header {
+  border-bottom-color: #1e2233;
+}
+
+html[data-theme='dark'] .sources-panel-header h3 {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .sources-panel-header p {
+  color: #64748b;
+}
+
+html[data-theme='dark'] .sources-panel-close {
+  border-color: #2d3748;
+  color: #94a3b8;
+}
+
+html[data-theme='dark'] .sources-panel-close:hover {
+  background: rgba(139,123,255,.15);
+  color: #c4b5fd;
+}
+
+html[data-theme='dark'] .sources-panel-section-head {
+  color: #8a8595;
+}
+
+html[data-theme='dark'] .sources-panel-card {
+  background: #161b26;
+  border-color: #1e2233;
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .sources-panel-body::-webkit-scrollbar-thumb {
+  background: #30364b;
+  border-color: #0f1118;
+}
+
+html[data-theme='dark'] a.sources-panel-card:hover,
+html[data-theme='dark'] button.sources-panel-card:hover {
+  border-color: #3b3f5c;
+  box-shadow: 0 2px 8px rgba(0,0,0,.3);
+}
+
+html[data-theme='dark'] .sources-panel-favicon.web {
+  background: rgba(99,102,241,.18);
+  color: #a5b4fc;
+}
+
+html[data-theme='dark'] .sources-panel-favicon.file {
+  background: rgba(5,150,105,.16);
+  color: #6ee7b7;
+}
+
+html[data-theme='dark'] .sources-panel-favicon.llm {
+  background: rgba(139,123,255,.16);
+  color: #c4b5fd;
+}
+
+html[data-theme='dark'] .sources-panel-card-domain {
+  color: #a78bfa;
+}
+
+html[data-theme='dark'] .sources-panel-card-title {
+  color: #e2e8f0;
+}
+
+html[data-theme='dark'] .sources-panel-card-excerpt {
+  color: #64748b;
+}
+
+html[data-theme='dark'] .new-button,
+html[data-theme='dark'] .chat-composer .composer-input-row button,
+html[data-theme='dark'] .save-button {
+  background: linear-gradient(135deg, #7b6cff, #5f55d7);
+}
+
+html[data-theme='dark'] .theme-toggle {
+  border: 1px solid rgba(99, 112, 132, .35);
+  background: rgba(15, 21, 28, .72);
+  color: var(--ink);
+  border-radius: 11px;
+  height: 42px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-theme='dark'] .theme-toggle span {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (max-width: 680px) {
+  .theme-toggle span { display: none; }
+}

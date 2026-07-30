@@ -586,6 +586,59 @@
   opacity: .85;
 }
 
+/* ─── Day dividers and sender runs ───────────────────────────────────────
+   Consecutive messages from one sender are grouped: only the first of a run
+   carries the sender line and the squared "tail" corner, the rest are fully
+   rounded and tucked in close. The exact time stays available as a tooltip
+   on every bubble. */
+
+.secret-chat-day,
+.scs-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 6px 0 2px;
+}
+
+.secret-chat-day span,
+.scs-day span {
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.secret-chat-msg-wrap.run-cont,
+.scs-msg.run-cont,
+.scs-msg-wrap.run-cont {
+  margin-top: -7px;
+}
+
+/* Only a run's first bubble points at its sender. */
+.secret-chat-msg-wrap.run-cont .secret-chat-msg-bubble.self,
+.scs-msg.run-cont .scs-msg-bubble.self,
+.scs-msg-wrap.run-cont .scs-msg-bubble.self {
+  border-radius: 16px;
+}
+
+.secret-chat-msg-wrap.run-cont .secret-chat-msg-bubble.other,
+.scs-msg.run-cont .scs-msg-bubble.other,
+.scs-msg-wrap.run-cont .scs-msg-bubble.other {
+  border-radius: 16px;
+}
+
+html[data-theme='dark'] .secret-chat-day span,
+html[data-theme='dark'] .scs-day span {
+  border-color: rgba(255, 255, 255, .1);
+  background: rgba(255, 255, 255, .04);
+  color: #8b949e;
+}
+
 /* ─── Share menu (in-app header and standalone header) ─── */
 
 .share-menu-wrap {
@@ -738,62 +791,7 @@
   z-index: 6;
 }
 
-/* ─── Roster: start a chat + manage your rooms ─── */
-
-.secret-chat-roster {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 26px 28px 40px;
-  background: var(--canvas);
-  color: var(--ink);
-}
-
-.roster-head { margin-bottom: 22px; }
-
-.roster-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.roster-title svg { color: hsl(341 85% 66%); margin-top: 4px; flex-shrink: 0; }
-.roster-title h1 { font-size: 22px; margin: 0; }
-.roster-title p { margin: 4px 0 0; font-size: 13px; color: var(--muted); max-width: 62ch; }
-
-.roster-new,
-.roster-list {
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--paper);
-  padding: 18px;
-  margin-bottom: 18px;
-  max-width: 860px;
-}
-
-.roster-new h2,
-.roster-list h2 {
-  font-size: 14px;
-  margin: 0 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.roster-title-input {
-  width: 100%;
-  padding: 10px 12px;
-  margin-bottom: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--canvas);
-  color: var(--ink);
-  font-size: 16px; /* iOS Safari zooms the page on focus below 16px. */
-  outline: none;
-  transition: border-color .18s ease;
-}
-
-.roster-title-input:focus { border-color: var(--violet); }
+/* ─── Room option pickers (new-chat form and in-room settings) ─── */
 
 .room-option {
   display: flex;
@@ -832,158 +830,6 @@
   border-color: var(--violet);
   background: color-mix(in srgb, var(--violet) 16%, transparent);
   color: var(--ink);
-}
-
-.roster-create-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 16px;
-  padding: 10px 16px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--violet);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity .18s ease;
-}
-
-.roster-create-btn:disabled { opacity: .6; cursor: default; }
-
-.roster-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.roster-unread-total {
-  margin-left: 8px;
-  padding: 2px 8px;
-  border-radius: 100px;
-  background: hsl(341 85% 66%);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.roster-delete-all,
-.roster-row-delete {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: border-color .18s ease, color .18s ease;
-}
-
-.roster-delete-all:hover,
-.roster-row-delete:hover { border-color: #e5534b; color: #e5534b; }
-
-.roster-empty { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
-
-.roster-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  margin-top: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--canvas);
-  transition: border-color .18s ease, box-shadow .18s ease;
-}
-
-.roster-row:hover { border-color: var(--violet); }
-
-.roster-row.unread {
-  border-color: hsl(341 85% 66%);
-  box-shadow: 0 0 0 3px color-mix(in srgb, hsl(341 85% 66%) 14%, transparent);
-}
-
-.roster-row-main {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-  padding: 12px 14px;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  cursor: pointer;
-}
-
-.roster-row-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.roster-row.unread .roster-row-title strong { font-weight: 700; }
-
-.roster-row-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: hsl(341 85% 66%);
-  flex-shrink: 0;
-  animation: unread-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes unread-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: .55; transform: scale(.82); }
-}
-
-.roster-row-badge {
-  padding: 1px 7px;
-  border-radius: 100px;
-  background: hsl(341 85% 66%);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.roster-row-preview {
-  font-size: 12px;
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.roster-row.unread .roster-row-preview { color: var(--ink); }
-
-.roster-row-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  font-size: 10.5px;
-  color: var(--muted);
-}
-
-.roster-row-meta span { display: inline-flex; align-items: center; gap: 4px; }
-.roster-row-warn { color: #e5a33b; }
-
-.roster-row-delete {
-  border: 0;
-  border-left: 1px solid var(--line);
-  border-radius: 0 12px 12px 0;
-  padding: 0 14px;
-}
-
-.nav-count.unread {
-  background: hsl(341 85% 66%);
-  color: #fff;
-  font-weight: 700;
 }
 
 /* ─── Live status, typing, receipts, countdowns ─── */
@@ -1519,3 +1365,13 @@
 .spin { animation: spin 1s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Guest view of a room whose link was revoked while they were in it. */
+.scs-error small {
+  display: block;
+  max-width: 300px;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: .7;
+}

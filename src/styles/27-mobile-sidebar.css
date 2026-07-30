@@ -1,0 +1,97 @@
+/* ─── Mobile sidebar drawer ──────────────────────────────────────────────
+   Below the breakpoint the sidebar is an off-canvas drawer, so the desktop
+   icon-rail ("compact") mode does not apply to it: there is no main content
+   beside it to reclaim. The app shell still carries `.sidebar-compact` when
+   the preference is saved from a desktop session, and layer 14's mobile block
+   only unwound the compact rules that existed when it was written — the newer
+   rail/footer rules in layer 20/21 kept applying, leaving the drawer at full
+   width with centred icons, no labels and inline-laid-out icon tiles.
+
+   This layer is last so it unwinds compact mode inside the drawer completely.
+   Keep the breakpoint in sync with DRAWER_QUERY in `src/components/Sidebar.jsx`. */
+
+@media (max-width: 980px) {
+  .app-shell.sidebar-compact .sidebar {
+    width: 258px;
+    align-items: stretch;
+    padding: 26px 17px 18px;
+  }
+
+  .app-shell.sidebar-compact .side-top {
+    display: flex;
+    justify-items: initial;
+    gap: 0;
+  }
+
+  .app-shell.sidebar-compact .logo {
+    padding: 0 8px 28px;
+    justify-content: flex-start;
+  }
+
+  .app-shell.sidebar-compact .logo > span:last-child,
+  .app-shell.sidebar-compact .nav-count,
+  .app-shell.sidebar-compact .nav-ready-dot,
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-group-label,
+  .app-shell.sidebar-compact .sidebar-settings-btn span {
+    display: revert;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail {
+    gap: 16px;
+    margin-top: 4px;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-group + .nav-group {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-item,
+  .app-shell.sidebar-compact .sidebar .sidebar-footer .nav-item,
+  .app-shell.sidebar-compact .sidebar-settings-btn {
+    width: 100%;
+    height: 46px;
+    justify-content: flex-start;
+    padding: 0 12px;
+    margin: 0;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-label,
+  .app-shell.sidebar-compact .sidebar .sidebar-footer .nav-label {
+    display: block;
+  }
+
+  /* `display: revert` on a <span> lands on `inline`, not on the grid tile the
+     author rules set up, so the icon tiles are restored explicitly. */
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-item .nav-icon,
+  .app-shell.sidebar-compact .sidebar .sidebar-footer .nav-item .nav-icon {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    border-radius: 11px;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-item .nav-icon svg,
+  .app-shell.sidebar-compact .sidebar .sidebar-footer .nav-item .nav-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .app-shell.sidebar-compact .sidebar .nav-rail .nav-marker {
+    height: 46px;
+    border-radius: 15px;
+  }
+
+  .app-shell.sidebar-compact .sidebar-footer {
+    align-items: stretch;
+  }
+
+  /* Short viewports: the drawer's own content scrolls instead of pushing the
+     footer controls (collapse · theme · settings) off the bottom of the screen. */
+  .sidebar {
+    height: 100vh;
+    height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}

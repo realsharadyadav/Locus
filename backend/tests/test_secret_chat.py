@@ -205,6 +205,25 @@ def test_delete_room_and_delete_all_rooms(client):
     assert second not in [room["token"] for room in client.get("/api/secret-chat", params=HOST).json()]
 
 
+def test_rooms_made_before_host_keys_are_visible_claimable_and_deletable(client):
+    """Rooms from an older build carry no host key; they must not become unreachable."""
+    legacy = client.post("/api/secret-chat", json={}).json()["token"]
+    mine = create_room(client, title="Owned")
+
+    listed = {room["token"] for room in client.get("/api/secret-chat", params=HOST).json()}
+    assert legacy in listed and mine in listed
+
+    # Managing an unowned room claims it, after which another host key is refused.
+    assert client.patch(f"/api/secret-chat/{legacy}", json={**HOST, "title": "Claimed"}).status_code == 200
+    assert client.patch(f"/api/secret-chat/{legacy}", json={"host_key": "someone-else", "title": "no"}).status_code == 403
+
+    second_legacy = client.post("/api/secret-chat", json={}).json()["token"]
+    assert client.delete("/api/secret-chat", params=HOST).status_code == 204
+    # Delete-all clears everything the list showed, including the unclaimed room.
+    assert client.get("/api/secret-chat", params=HOST).json() == []
+    assert client.get(f"/api/secret-chat/{second_legacy}").status_code == 404
+
+
 def test_assist_uses_tone_persona_and_my_own_messages_as_style(client, monkeypatch):
     token = create_room(client, title="Copilot room")
     send(client, token, "Riya|||guest-1", "so are we still on for tonight?")

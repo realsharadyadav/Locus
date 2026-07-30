@@ -1,8 +1,7 @@
 import React from 'react';
 import { MessageCircle, Sparkles, Timer } from 'lucide-react';
 import { parseServerTime } from '../../utils';
-
-const clockTime = value => new Date(parseServerTime(value)).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+import { timeLabel, withMessageGrouping } from '../messageGroups';
 
 const countdown = (expiresAt, now) => {
   const remaining = Math.max(0, Math.round((parseServerTime(expiresAt) - now) / 1000));
@@ -43,21 +42,26 @@ export default function ChatThread({
         </div>
       )}
 
-      {messages.map(message => {
+      {withMessageGrouping(messages).map(({ msg: message, at, newDay, startsRun, day }) => {
         const [displayName, messageClientId] = (message.sender || '').split('|||');
         const isSelf = messageClientId === clientId;
         const readers = isSelf && message.id === myLastMessage?.id ? seenBy(message) : [];
+        const side = isSelf ? 'self' : 'other';
         return (
           <React.Fragment key={message.id}>
+            {newDay && <div className={`${prefix}-day`}><span>{day}</span></div>}
             {firstUnreadId === message.id && (
               <div className="chat-unread-divider" role="separator"><span>New messages</span></div>
             )}
-            <div className={`${prefix}-msg-wrap ${isSelf ? 'self' : 'other'}${message.id >= firstUnreadId && firstUnreadId ? ' unread' : ''}`}>
-              <div className={`${prefix}-msg-sender`}>
-                {displayName || message.sender} · {clockTime(message.created_at)}
-                {message.via_ai && <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>}
-              </div>
-              <div className={`${prefix}-msg-bubble ${isSelf ? 'self' : 'other'}`}>
+            <div className={`${prefix}-msg-wrap ${side} ${startsRun ? 'run-start' : 'run-cont'}${message.id >= firstUnreadId && firstUnreadId ? ' unread' : ''}`}>
+              {/* A sender who says three things in a row is labelled once, not three times. */}
+              {startsRun && (
+                <div className={`${prefix}-msg-sender`}>
+                  {displayName || message.sender} · {timeLabel(at)}
+                  {message.via_ai && <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>}
+                </div>
+              )}
+              <div className={`${prefix}-msg-bubble ${side}`} title={`${displayName || message.sender} · ${timeLabel(at)}`}>
                 {message.content}
               </div>
               <div className="msg-footnotes">
@@ -67,6 +71,9 @@ export default function ChatThread({
                   </span>
                 )}
                 {readers.length > 0 && <span className="msg-seen">Seen by {readers.join(', ')}</span>}
+                {!startsRun && message.via_ai && (
+                  <span className="msg-ai-tag" title="Drafted by the AI copilot"><Sparkles size={10} /> AI</span>
+                )}
               </div>
             </div>
           </React.Fragment>

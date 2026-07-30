@@ -124,6 +124,13 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
           // A malformed frame is dropped; the poll below reconciles anything missed.
         }
       };
+      // The server sends a named `revoked` event when the room is deleted, then closes the
+      // stream — without this the client would reconnect forever against a 404.
+      source.addEventListener('revoked', () => {
+        cancelled = true;
+        source.close();
+        roomOver('ended', 'This private chat has ended.');
+      });
       source.onerror = () => {
         source.close();
         if (cancelled) return;
@@ -149,7 +156,8 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
       clearInterval(poll);
       source?.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // refreshPresence is intentionally not a dependency: it changes with every presence
+    // response and would tear the stream down and rebuild it each time.
   }, [token, status, applyMessages, roomOver]);
 
   // ─── presence heartbeat ───
@@ -202,7 +210,7 @@ export function useSecretChatRoom({ token, hostKey = '', isHost = false }) {
     if (!ttlSeconds) return messages;
     const now = Date.now();
     return messages.filter(message => !message.expires_at || parseServerTime(message.expires_at) > now);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `tick` is the point: it re-runs the filter every second so expired messages leave.
   }, [messages, ttlSeconds, tick]);
 
   // ─── actions ───

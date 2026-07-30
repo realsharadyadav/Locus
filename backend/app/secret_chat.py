@@ -3,9 +3,11 @@
 Three things are worth knowing before editing this module:
 
 * **Host vs guest.** The browser that creates a room generates a `host_key` and keeps it
-  locally. Every administrative action (room list, options, deletion, participant details,
-  AI assist) is authorised against that key, so a link guest can chat but can never manage
-  the room or see anyone's device details.
+  locally. Administrative actions (room list, options, deletion, participant details, AI
+  assist) are authorised against that key, so a link guest can chat but can never manage
+  the room or see anyone's device details. Rooms with no owner — created before host keys
+  existed, or by a client that sends none — fall back to the app's own auth gate, and the
+  first host key to touch one claims it; see `_require_host`.
 * **Rooms expire in two independent ways.** `link_expires_at` only stops *new* people from
   joining; already-known clients keep chatting. `expires_at` (and an explicit close) ends
   the room for everyone, and the data is deleted the first time anyone touches it after that.
@@ -58,6 +60,10 @@ ASSIST_STYLE_SAMPLES = 12
 _SECRET_CHAT_EVENTS: dict[str, list[asyncio.Queue]] = {}
 _SECRET_CHAT_EVENTS_LOCK = Lock()
 
+# Pushed to every live stream when a room is deleted, so connected guests are cut
+# off immediately instead of holding an open connection to a room that is gone.
+REVOKED = object()
+
 
 def _now() -> datetime:
     """Naive UTC, matching what the DateTime columns store."""
@@ -80,6 +86,13 @@ def _secret_chat_queues(token: str) -> list[asyncio.Queue]:
 def _broadcast(token: str, payload: dict) -> None:
     for queue in _secret_chat_queues(token):
         queue.put_nowait(payload)
+
+
+def _revoke_streams(token: str) -> None:
+    with _SECRET_CHAT_EVENTS_LOCK:
+        queues = _SECRET_CHAT_EVENTS.pop(token, [])
+    for queue in queues:
+        queue.put_nowait(REVOKED)
 
 
 def _message_payload(message: SecretChatMessage, ttl_seconds: int) -> dict:
@@ -128,10 +141,13 @@ def _purge_expired_messages(db: Session, session: SecretChatSession) -> list[int
 
 
 def _destroy(db: Session, session: SecretChatSession) -> None:
+    """Delete a room and drop everyone still connected to it."""
     token = session.token
     db.delete(session)
     db.commit()
+    # Tell open clients why, then cut the streams so nobody reconnects into a 404 loop.
     _broadcast(token, {"type": "room", "state": "ended"})
+    _revoke_streams(token)
 
 
 def _load_room(db: Session, token: str) -> SecretChatSession:
@@ -150,9 +166,28 @@ def _is_host(session: SecretChatSession, host_key: str) -> bool:
     return bool(session.host_key) and bool(host_key) and session.host_key == host_key
 
 
-def _require_host(session: SecretChatSession, host_key: str) -> None:
-    if not _is_host(session, host_key):
-        raise HTTPException(status_code=403, detail="Only the chat host can do that")
+def _claim_unowned(db: Session, session: SecretChatSession, host_key: str) -> bool:
+    """Rooms made before host keys existed have no owner: the first host to touch one adopts it."""
+    if session.host_key or not host_key:
+        return False
+    session.host_key = host_key
+    db.commit()
+    return True
+
+
+def _require_host(db: Session, session: SecretChatSession, host_key: str) -> None:
+    """
+    A room that has an owner can only be managed with its host key. A room with no owner —
+    one created before host keys existed, or by a client that does not send one — is managed
+    by whoever gets through the app's own auth gate, and the first host key to touch it
+    claims it from then on.
+    """
+    if _is_host(session, host_key):
+        return
+    if not session.host_key:
+        _claim_unowned(db, session, host_key)
+        return
+    raise HTTPException(status_code=403, detail="Only the chat host can do that")
 
 
 def _guard_join(db: Session, session: SecretChatSession, client_id: str, host_key: str) -> None:
@@ -336,6 +371,7 @@ def _share_url(token: str) -> str:
 
 @router.post("", response_model=SecretChatCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_secret_chat(payload: SecretChatCreate | None = None, db: Session = Depends(get_db)):
+    """Host-only (see auth.GUEST_SECRET_CHAT_ROUTES) — guests join rooms, they never open them."""
     options = payload or SecretChatCreate()
     token = uuid4().hex[:16]
     now = _now()
@@ -355,11 +391,9 @@ def create_secret_chat(payload: SecretChatCreate | None = None, db: Session = De
 @router.get("", response_model=list[SecretChatRoomSummary])
 def list_secret_chats(host_key: str = "", client_id: str = "", db: Session = Depends(get_db)):
     """The host's own rooms, newest first, with the unread count for their client."""
-    if not host_key:
-        return []
     sessions = db.scalars(
         select(SecretChatSession)
-        .where(SecretChatSession.host_key == host_key)
+        .where(SecretChatSession.host_key.in_([host_key, ""]))
         .order_by(SecretChatSession.last_activity.desc())
     ).all()
     summaries: list[SecretChatRoomSummary] = []
@@ -410,16 +444,22 @@ def _sender_client(sender: str) -> str:
 
 
 @router.delete("", status_code=status.HTTP_204_NO_CONTENT)
-def delete_all_secret_chats(host_key: str, db: Session = Depends(get_db)):
+def delete_all_secret_chats(host_key: str = "", db: Session = Depends(get_db)):
     """Delete every room this host owns — messages, participants and links go with them."""
     if not host_key:
         raise HTTPException(status_code=403, detail="Only the chat host can do that")
-    sessions = db.scalars(select(SecretChatSession).where(SecretChatSession.host_key == host_key)).all()
+    # Deletes exactly what list_secret_chats showed this host, unowned rooms included —
+    # otherwise "delete all" would leave rows behind in the rail.
+    sessions = db.scalars(
+        select(SecretChatSession).where(SecretChatSession.host_key.in_([host_key, ""]))
+    ).all()
+    tokens = [session.token for session in sessions]
     for session in sessions:
-        token = session.token
         db.delete(session)
-        _broadcast(token, {"type": "room", "state": "ended"})
     db.commit()
+    for token in tokens:
+        _broadcast(token, {"type": "room", "state": "ended"})
+        _revoke_streams(token)
     return None
 
 
@@ -453,7 +493,7 @@ def get_secret_chat(token: str, client_id: str = "", host_key: str = "", db: Ses
 @router.patch("/{token}", response_model=SecretChatSessionRead)
 def update_secret_chat(token: str, payload: SecretChatOptionsUpdate, db: Session = Depends(get_db)):
     session = _load_room(db, token)
-    _require_host(session, payload.host_key)
+    _require_host(db, session, payload.host_key)
     now = _now()
     if payload.title is not None:
         session.title = payload.title.strip()[:160] or "Private"
@@ -478,21 +518,21 @@ def update_secret_chat(token: str, payload: SecretChatOptionsUpdate, db: Session
 
 
 @router.delete("/{token}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_secret_chat(token: str, host_key: str, db: Session = Depends(get_db)):
+def delete_secret_chat(token: str, host_key: str = "", db: Session = Depends(get_db)):
     """End the room: the link dies and every message and participant record is deleted."""
     session = db.get(SecretChatSession, token)
     if not session:
         return None
-    _require_host(session, host_key)
+    _require_host(db, session, host_key)
     _destroy(db, session)
     return None
 
 
 @router.delete("/{token}/messages", status_code=status.HTTP_204_NO_CONTENT)
-def clear_secret_chat_messages(token: str, host_key: str, db: Session = Depends(get_db)):
+def clear_secret_chat_messages(token: str, host_key: str = "", db: Session = Depends(get_db)):
     """Delete every message but keep the room and its link alive."""
     session = _load_room(db, token)
-    _require_host(session, host_key)
+    _require_host(db, session, host_key)
     ids = db.scalars(select(SecretChatMessage.id).where(SecretChatMessage.session_token == token)).all()
     db.execute(delete(SecretChatMessage).where(SecretChatMessage.session_token == token))
     db.execute(
@@ -561,6 +601,9 @@ def update_secret_chat_presence(
     """Heartbeat: refreshes who is online, who is typing and how far each has read."""
     session = _load_room(db, token)
     _guard_join(db, session, payload.client_id, payload.host_key)
+    # Opening a pre-host-key room in the app is what claims it for this browser.
+    if payload.role == "host":
+        _claim_unowned(db, session, payload.host_key)
     participant = _touch_participant(db, session, request, payload)
     participants = _participants(db, token)
     host = _is_host(session, payload.host_key)
@@ -585,9 +628,9 @@ def update_secret_chat_presence(
 
 
 @router.get("/{token}/participants", response_model=list[SecretChatParticipantDetail])
-def get_secret_chat_participants(token: str, host_key: str, db: Session = Depends(get_db)):
+def get_secret_chat_participants(token: str, host_key: str = "", db: Session = Depends(get_db)):
     session = _load_room(db, token)
-    _require_host(session, host_key)
+    _require_host(db, session, host_key)
     return [_detailed_participant(item) for item in _participants(db, token)]
 
 
@@ -665,7 +708,7 @@ def _parse_replies(content: str) -> list[str]:
 def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session = Depends(get_db)):
     """Draft replies for the host — reviewed in the composer, or sent by autopilot."""
     session = _load_room(db, token)
-    _require_host(session, payload.host_key)
+    _require_host(db, session, payload.host_key)
 
     messages = db.scalars(
         select(SecretChatMessage)
@@ -733,6 +776,11 @@ async def stream_secret_chat(token: str, after: int = 0, db: Session = Depends(g
             while True:
                 try:
                     payload = await asyncio.wait_for(queue.get(), timeout=25)
+                    if payload is REVOKED:
+                        # The room is gone. Say so before closing, so the client shows
+                        # "chat ended" instead of reconnecting forever against a 404.
+                        yield f"event: revoked\ndata: {json.dumps({'reason': 'deleted'})}\n\n"
+                        return
                     yield f"data: {json.dumps(payload)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"

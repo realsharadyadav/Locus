@@ -22,4 +22,5 @@ URLs:
 - Vite proxies `/api` to `http://127.0.0.1:8000`.
 - If the user says the backend is offline, start `npm run dev:api`.
 - Avoid spending extra time checking ports unless something fails or the user asks for debugging.
+- Sign-in is off locally: the password gate only exists when `LOCUS_AUTH_PASSWORD` is set. See the Sign-in Gate section in `docs/RUNBOOK.md`.
 - For broader project context, read `AGENTS.md` first, then the focused files in `docs/`.

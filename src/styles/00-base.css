@@ -1,0 +1,95 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  color: #17263a;
+  background: #f5f3ee;
+  font-synthesis: none;
+  --ink: #17263a;
+  --muted: #717983;
+  --line: #dddcd7;
+  --paper: #fbfaf7;
+  --violet: #7663aa;
+  --violet-dark: #5f4e90;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #f5f3ee;
+}
+
+button, input, textarea { font: inherit; }
+button { cursor: pointer; color: inherit; }
+button:focus-visible, input:focus-visible, textarea:focus-visible {
+  outline: 2px solid #7965aa;
+  outline-offset: 2px;
+}
+
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::before,
+[data-tooltip]::after {
+  position: absolute;
+  left: 50%;
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease, visibility .16s ease;
+}
+
+[data-tooltip]::before {
+  content: '';
+  bottom: -9px;
+  transform: translate(-50%, -4px) rotate(45deg);
+  width: 10px;
+  height: 10px;
+  border-left: 1px solid rgba(169, 145, 255, .3);
+  border-top: 1px solid rgba(169, 145, 255, .3);
+  background: #151d29;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  top: calc(100% + 10px);
+  transform: translate(-50%, -6px);
+  width: max-content;
+  max-width: min(300px, 72vw);
+  border: 1px solid rgba(169, 145, 255, .3);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(139, 116, 246, .2), transparent 48%),
+    #151d29;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .34);
+  color: #dce4ee;
+  padding: 9px 11px;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-visible::after,
+[data-tooltip]:focus-within::before,
+[data-tooltip]:focus-within::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+}
+
+[data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::before,
+[data-tooltip]:focus-within::before {
+  transform: translate(-50%, 0) rotate(45deg);
+}
+
+.app-shell { min-height: 100vh; min-height: 100dvh; }

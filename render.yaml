@@ -25,6 +25,12 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Sign-in gate. sync: false keeps the value out of the repo — set it in
+      # the dashboard under Environment. Leave it unset and the API stays open.
+      - key: LOCUS_AUTH_PASSWORD
+        sync: false
+      - key: LOCUS_ALLOWED_ORIGINS
+        sync: false
 
   - type: web
     name: locus-frontend

@@ -23,8 +23,9 @@ npm run dev -- --host 127.0.0.1 --port 5173   # frontend on :5173
 ## Verification
 
 ```bash
+npm run lint     # catches imports missed when moving code between modules
 npm run build
-.venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py
+.venv/bin/pytest backend/tests/test_api.py backend/tests/test_diagnostics.py backend/tests/test_auth.py
 ```
 
 Broader tests when touching file parsing, vector search, tickets, or LLM behavior:
@@ -71,6 +72,14 @@ Keep these notes so future sessions don't repeat mistakes:
 
 11. **tenacity dependency** — Added to `backend/requirements.txt`. LiteLLM needs it for retries. Without it, evidence validation in `_validate_evidence_with_llm` silently falls back to `_fallback_evidence_filter` which caps at 15 sources.
 
+12. **Sign-in gate (Phase 1)** — One shared password, not user accounts. `LOCUS_AUTH_PASSWORD` unset = gate absent, which is why no existing test needed changing. `auth.py` signs a stateless `{"exp"}` token with an HMAC derived from the password; the frontend sends it as a Bearer header (not a cookie — frontend and backend are separate origins on Render). The auth middleware is registered **before** `CORSMiddleware` in `main.py` on purpose: register it after and CORS is no longer the outer layer, so a 401 comes back without CORS headers and the browser reports a network error instead. Public paths: `/api/health`, `/api/auth/status`, `/api/auth/login`, plus the guest Private-chat routes in note 14. Dark theme paints every `<p>` muted with `!important`, so `.login-error` needs `!important` to show red.
+
+13. **Private chats are multi-room** — `PrivateChatsPage` reuses Ask's `.chat-rail` classes so the two lists stay in visual sync. Rooms are created from the page, not by clicking the nav item (that used to leave an empty room behind on every click). Deleting a room is the revoke mechanism: the backend cascades the messages away and pushes a `REVOKED` sentinel into every live SSE queue, which the stream turns into an `event: revoked` frame before closing. Both the host view and the guest standalone listen for it, plus a 404 backstop in the 8s poll for a deletion that lands while the stream is down — without that the client reconnect-loops forever against a dead room.
+
+14. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact four method+path pairs a link guest needs. Listing, creating, renaming and deleting rooms are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not.
+
+15. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -83,6 +92,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `agentic_pipeline.py` (865 lines) | LLM planner, agentic pipeline with dynamic source_limit, planned web answer, evidence validation, fallback paths | `run_agentic_pipeline()` — main entry; `_plan_with_llm()` — LLM planner with JSON schema; `_plan_from_json()` — extract source_limit/route/entities; `_execute_plan()` — dispatch with `effective_limit=min(plan.source_limit, user_source_limit)`; `_planned_web_answer()` — use LLM queries + dynamic source_limit; `_web_fallback()` — broad fallback; `_validate_evidence_with_llm()` — LLM evidence filter |
 | `llm.py` (682 lines) | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction, unrestricted/jailbreak pipeline | `enhance_question()` (line 373) — query planner; `generate_answer()` (line 482) — main answer gen; `verify_response()` (line 449) — quality check; `repair_response()` (line 466) — answer repair; `answer_planned_question()` (line ~590) — full pipeline; `generate_unrestricted_answer()` — jailbreak pipeline with 7 strategies + auto-rephrase; `clean_final_answer()` (line 398) — post-processing; `get_llm_client()` — provider factory |
 | `modes.py` | Reasoning mode configs: light, thinking, deep_summary, ticket_analysis, web_research, unrestricted | `MODE_CONFIG` dict, `ModeConfig` dataclass |
+| `auth.py` | Phase 1 sign-in gate: one shared password, stateless HMAC tokens, brute-force throttle. Off unless `LOCUS_AUTH_PASSWORD` is set | `require_auth()` — middleware, registered before CORS; `issue_token()`, `token_expiry()`, `is_public_path()`, `PUBLIC_PATHS` |
 
 ### File Processing
 
@@ -136,18 +146,55 @@ Keep these notes so future sessions don't repeat mistakes:
 
 | File | Purpose | Key Components |
 |---|---|---|
-| `main.jsx` (1925 lines) | Entire React SPA: app shell, all pages, routing, state, pipeline viz, model controls, file selection | `App` — root; `Sidebar` — nav; `Header` — top bar; `HomePage` — landing; `HubPage` — collections; `ExplorePage` — chat; `PipelineActivity` (line 388-596) — live pipeline; `ModelControl` — model picker; `CollapsibleSources` — source display |
+| `main.jsx` | Entry point only — mounts `<App />` and imports the stylesheet | — |
+| `App.jsx` | Root component: app shell, page routing, global state, boot load, toasts, confirm dialogs, sign-in gating | `App` |
+| `auth.js` | Client half of the password gate: token storage, `Authorization` header, 401 handoff | `authHeaders()`, `handleUnauthorized()`, `onUnauthorized()`, `setAuthToken()` |
 | `api.js` | Frontend API client wrapping all REST endpoints | `api.createChatJob()`, `api.chatJobs()`, `api.chatStream()`, `api.chats()`, `api.chatMessages()`, `api.uploadFile()`, `api.collections()`, `api.preference()` |
 | `utils.js` | Shared UI utilities | `displayTime()`, `STORE_COLORS`, `buildSuggestions()`, `resizeTextarea()` |
-| `styles.css` (7204 lines) | Complete CSS theme: light/dark modes, layout, pipeline, chat, modals, command palette, responsive | Dark mode: purple-accented, calm, polished |
+| `styles.css` | Ordered `@import` list only — the real CSS lives in `src/styles/` | — |
 
-### Components
+### Pages — `src/pages/`
 
 | File | Purpose |
 |---|---|
-| `components/ConfirmModal.jsx` | Reusable destructive-action confirmation modal |
-| `components/CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
-| `components/Toast.jsx` | Auto-dismissing toast notification stack |
+| `HomePage.jsx` | Landing dashboard |
+| `HubPage.jsx` | Library / collections |
+| `ExplorePage.jsx` | Ask — chat, composer, slash commands, reasoning modes |
+| `SettingsPage.jsx` | Settings |
+| `TicketAnalysisPage.jsx` | Patterns — ticket grouping cockpit |
+
+### Components — `src/components/`
+
+| File | Purpose |
+|---|---|
+| `Sidebar.jsx` / `Header.jsx` / `Logo.jsx` | App shell chrome |
+| `SplashScreen.jsx` | Boot screen with real load progress |
+| `ModelControl.jsx` | Provider + model picker |
+| `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
+| `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering |
+| `CollapsibleSources.jsx` | Source/evidence display |
+| `CreateStoreModal.jsx` / `ConfirmModal.jsx` | Modals |
+| `CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
+| `Toast.jsx` | Auto-dismissing toast notification stack |
+
+### Helpers — `src/lib/` and `src/hooks/`
+
+| File | Purpose |
+|---|---|
+| `lib/format.js` | File size, elapsed time, context length, embedding meta, job failure text |
+| `lib/appState.js` | Storage keys, page ids, provider defaults, cached app data |
+| `lib/pipelineNotes.js` | Turns pipeline events into human-readable working notes |
+| `lib/mermaid.js` / `lib/highlight.js` | Lazy-loaded diagram and syntax-highlighting integration |
+| `lib/ask.js` | Slash commands and auto web-search heuristics |
+| `hooks/useChatViewport.js` | Mobile keyboard / viewport locking for chat surfaces |
+| `hooks/useClickOutside.js` | Shared popover dismissal (outside click + Escape) |
+
+### Styles — `src/styles/`
+
+25+ numbered files imported in order by `src/styles.css`. **The numbering is
+load-bearing:** these are chronological override layers (later layers
+deliberately re-style earlier ones), not independent component sheets. Do not
+reorder them, and add new overrides as a new highest-numbered file.
 
 ### Secret Chat
 
@@ -159,20 +206,25 @@ Keep these notes so future sessions don't repeat mistakes:
 | `secret-chat/identity.js` | Per-browser client id, host key (room ownership proof) and the device/locale profile sent with presence |
 | `secret-chat/useSecretChatRoom.js` | Room runtime shared by both views: history, SSE, presence, typing, read cursors, disappear pruning |
 | `secret-chat/useSecretChatUnread.js` | Unread total across the host's rooms, for the Private nav badge |
-| `secret-chat/components/SecretChatRoster.jsx` | Private landing page — start a room with its privacy options, unread-highlighted room list, delete one/all |
+| `secret-chat/components/PrivateChatsPage.jsx` | Private page — rail of rooms with unread highlighting beside the open room, new-chat form with the privacy options, delete one/all |
 | `secret-chat/components/SecretChatPage.jsx` | In-app host room: live header, room settings menu, clear/delete, guests panel, copilot |
 | `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors, with the what-the-host-can-see notice |
-| `secret-chat/components/ChatThread.jsx` | Shared message list: unread divider, typing bubble, read receipts, disappear countdowns |
+| `secret-chat/components/ChatThread.jsx` | Shared message list: day dividers, sender runs, unread divider, typing bubble, read receipts, disappear countdowns |
 | `secret-chat/components/GuestsPanel.jsx` | Host-only participant details (device, browser, OS, screen, locale, timezone, IP, activity) |
 | `secret-chat/components/AiCopilot.jsx` | Reply copilot — suggestions, autopilot, tone, persona, talk-like-me |
 | `secret-chat/components/ShareMenu.jsx` | Share popover — copy link, WhatsApp, Telegram, SMS, email, X, native share sheet |
+| `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
 
 Private chat rules worth knowing before changing this feature:
 
 * The creating browser holds a `host_key`; the room list, settings, clear/delete, participant
   details and the AI copilot are all authorised against it, so a link guest can chat but can
-  never manage the room or see anyone's device details.
+  never manage the room or see anyone's device details. A room with no owner — created before
+  host keys existed, or by a client that sends none — falls back to the app's own auth gate
+  (`auth.GUEST_SECRET_CHAT_ROUTES`), and the first host key to manage it claims it. Guests
+  additionally reach only five routes through that gate: read room, read/post messages,
+  stream, and presence.
 * `link_expires_at` only stops *new* clients joining — anyone already known keeps chatting.
   `expires_at` ends the room for everybody, and the data is deleted on first touch after that.
 * Disappearing messages are enforced server-side and broadcast as a `purge` event, so every
@@ -221,6 +273,7 @@ and visiting the app root or any app path sends it back to its own chat instead 
 |---|---|
 | `backend/tests/test_api.py` (881 lines) | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
 | `backend/tests/test_diagnostics.py` | Secret redaction, job log cleanup |
+| `backend/tests/test_auth.py` | Sign-in gate: absent without a password, token issue/verify/expiry, wrong-password throttle, public paths |
 | `backend/tests/test_vector_store.py` | chunk_text overlap, embed_text determinism |
 | `backend/tests/test_groq.py` | Groq auth, rate-limit, retry, model listing |
 | `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |

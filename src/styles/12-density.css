@@ -1,0 +1,599 @@
+/* Full-width reading layout */
+.chat-page {
+  max-width: none;
+  padding: 24px clamp(16px, 2.2vw, 34px) 20px;
+}
+
+.chat-thread {
+  padding: 30px 0 24px;
+}
+
+.chat-message {
+  width: 100%;
+  max-width: min(100%, 1440px);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.chat-message.assistant .message-body {
+  flex: 1;
+  max-width: none;
+  min-width: 0;
+}
+
+.chat-message.user .message-body {
+  max-width: min(78%, 980px);
+}
+
+.message-body > p,
+.markdown-answer {
+  font-size: 15px;
+  line-height: 1.72;
+  padding: 20px 22px;
+}
+
+.markdown-answer p {
+  margin-bottom: 13px;
+}
+
+.markdown-answer h1 { font-size: 23px; }
+.markdown-answer h2 { font-size: 20px; }
+.markdown-answer h3 { font-size: 17px; }
+
+.markdown-answer table {
+  font-size: 13px;
+}
+
+.markdown-answer th,
+.markdown-answer td {
+  padding: 12px 14px;
+}
+
+.markdown-answer code {
+  font-size: 13px;
+}
+
+.composer-controls {
+  width: 100%;
+}
+
+.chat-composer textarea {
+  min-height: 46px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.chat-composer .composer-input-row > button {
+  width: 48px;
+  height: 48px;
+}
+
+/* Site-wide density/readability pass */
+.sidebar {
+  width: 280px;
+  padding-inline: 20px;
+}
+
+main {
+  margin-left: 280px;
+}
+
+header,
+.page,
+.chat-page {
+  padding-left: clamp(18px, 2.4vw, 38px);
+  padding-right: clamp(18px, 2.4vw, 38px);
+}
+
+.page {
+  max-width: none;
+}
+
+.home-hero,
+.onboarding-card {
+  max-width: none;
+}
+
+.sidebar nav button {
+  height: 50px;
+  font-size: 15px;
+}
+
+.logo {
+  font-size: 21px;
+}
+
+.agent-card strong,
+.panel-head h2,
+.store-card strong,
+.simple-files h3 {
+  font-size: 15px;
+}
+
+.agent-card p,
+.store-card small,
+.simple-files p,
+.panel-row small,
+.chat-history-meta small,
+.chat-failure-reason {
+  font-size: 12px !important;
+}
+
+.kicker,
+.workspace-label,
+.chat-history-heading .kicker {
+  font-size: 11px;
+}
+
+.inner-title p,
+.home-hero p,
+.panel-row,
+.quick-actions button,
+.drop-zone,
+.new-button,
+.global-search span,
+.file-scope-button,
+.knowledge-button,
+.focus-mode-button,
+.chat-controls select,
+.model-control select,
+.command-results button,
+.toast {
+  font-size: 14px;
+}
+
+.global-search kbd,
+.command-input kbd,
+.composer-meta span,
+.composer-meta small,
+.chat-job-status {
+  font-size: 11px;
+}
+
+.explore-shell {
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+}
+
+.chat-history {
+  padding: 28px 16px;
+}
+
+.chat-history > div > .new-chat-button,
+.chat-history > div > button {
+  height: 48px;
+  font-size: 14px;
+}
+
+.chat-history-heading > div > strong {
+  font-size: 17px;
+}
+
+.chat-history-open {
+  padding: 14px 13px;
+}
+
+.chat-history-open strong {
+  font-size: 14px;
+}
+
+.chat-history-open small {
+  font-size: 12px;
+}
+
+.stores-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.home-panels {
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+}
+
+@media (max-width: 1400px) {
+  .explore-shell { grid-template-columns: 260px minmax(0,1fr); }
+  .file-tree-panel { position: fixed; z-index: 42; top: 78px; right: 0; bottom: 0; width: min(310px, 88vw); transform: translateX(105%); transition: transform .22s ease; box-shadow: -20px 0 55px rgba(35,29,61,.16); }
+  .file-tree-panel.open { transform: none; }
+  .file-tree-close { display: grid; }
+  .file-tree-scrim { display: block; position: fixed; z-index: 41; inset: 78px 0 0; border: 0; background: rgba(20,25,24,.28); }
+  .desktop-controls .knowledge-button span:nth-child(2) { display: none; }
+  .desktop-controls .mc-model select { max-width: 110px; }
+}
+
+@media (max-width: 820px) {
+  .chat-top { gap: 13px; }
+  .desktop-controls { display: none !important; }
+  .options-toggle { display: grid; }
+  .options-popover.open.desktop-controls { display: flex !important; }
+  .chat-top-left p { display: none; }
+  .chat-thread { padding-top: 25px; }
+  .composer-meta small { display: none; }
+}
+
+@media (max-width: 680px) {
+  .chat-page { padding: 16px 13px 12px; }
+  .chat-top h1 { font-size: 22px; }
+  .workspace-actions .file-scope-button span { display: none; }
+  .chat-empty h2 { font-size: 29px; }
+  .suggestion-grid { grid-template-columns: 1fr; }
+  .suggestion-grid button:nth-child(n+4) { display: none; }
+  .composer-meta > div { flex-wrap: nowrap; overflow: hidden; }
+  .composer-meta span:nth-child(3) { display: none; }
+}
+
+h1, h2, h3, h4, h5, h6, .logo, .stat-grid strong, .store-card strong,
+.store-empty h3, .markdown-answer h1, .markdown-answer h2, .markdown-answer h3,
+.modal h2, .panel-head h2, .onboarding-card h2 {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif !important;
+}
+
+html[data-theme='dark'] {
+  --ink: #f4e5bf;
+  --muted: #b09b6f;
+  --line: #2b2a24;
+  --paper: #11161d;
+  --canvas: #090b10;
+  --violet: #d6b15d;
+  --violet-dark: #b7862b;
+  --lime: #efd48a;
+  --sidebar: #06080c;
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(circle at 88% 8%, rgba(214, 177, 93, .16), transparent 24%),
+    radial-gradient(circle at 30% 94%, rgba(239, 212, 138, .06), transparent 24%),
+    var(--canvas) !important;
+  color: var(--ink);
+}
+
+html[data-theme='dark'] header,
+html[data-theme='dark'] .sidebar,
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .store-card,
+html[data-theme='dark'] .simple-files,
+html[data-theme='dark'] .onboarding-card,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .markdown-answer,
+html[data-theme='dark'] .message-body > p,
+html[data-theme='dark'] .source-chip,
+html[data-theme='dark'] .chat-history > div > button,
+html[data-theme='dark'] .chat-controls select,
+html[data-theme='dark'] .model-control input,
+html[data-theme='dark'] .global-search,
+html[data-theme='dark'] .stat-grid article,
+html[data-theme='dark'] .drop-zone,
+html[data-theme='dark'] .options-popover,
+html[data-theme='dark'] .chat-history,
+html[data-theme='dark'] .chat-empty,
+html[data-theme='dark'] .chat-thread,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-panel,
+html[data-theme='dark'] .file-tree-foot,
+html[data-theme='dark'] .file-picker-foot,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .pipeline-operation,
+html[data-theme='dark'] .workspace-actions .file-scope-button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .desktop-controls .model-control,
+html[data-theme='dark'] .reasoning-switch,
+html[data-theme='dark'] .composer-meta span {
+  background: #111821 !important;
+  border-color: #263241 !important;
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .store-card,
+html[data-theme='dark'] .simple-files,
+html[data-theme='dark'] .onboarding-card,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .markdown-answer,
+html[data-theme='dark'] .message-body > p,
+html[data-theme='dark'] .source-chip,
+html[data-theme='dark'] .chat-history > div > button,
+html[data-theme='dark'] .chat-controls select,
+html[data-theme='dark'] .model-control input,
+html[data-theme='dark'] .global-search,
+html[data-theme='dark'] .stat-grid article,
+html[data-theme='dark'] .drop-zone,
+html[data-theme='dark'] .options-popover,
+html[data-theme='dark'] .chat-history,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-panel,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .pipeline-operation,
+html[data-theme='dark'] .workspace-actions .file-scope-button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .desktop-controls .model-control,
+html[data-theme='dark'] .reasoning-switch {
+  box-shadow: 0 14px 36px rgba(0, 0, 0, .24) !important;
+}
+
+html[data-theme='dark'] .sidebar nav button,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .chat-history-open,
+html[data-theme='dark'] .global-search span,
+html[data-theme='dark'] .kicker,
+html[data-theme='dark'] .panel-empty,
+html[data-theme='dark'] .store-card small,
+html[data-theme='dark'] .simple-files p,
+html[data-theme='dark'] .chat-empty > p,
+html[data-theme='dark'] .inner-title p,
+html[data-theme='dark'] .home-hero p,
+html[data-theme='dark'] .message-head > span,
+html[data-theme='dark'] .chat-composer > span,
+html[data-theme='dark'] .command-results small,
+html[data-theme='dark'] .chat-top-left p,
+html[data-theme='dark'] .chat-history-heading .kicker,
+html[data-theme='dark'] .chat-history-heading > div > strong,
+html[data-theme='dark'] .pipeline-heading small,
+html[data-theme='dark'] .pipeline-operation small,
+html[data-theme='dark'] .pipeline-meta span,
+html[data-theme='dark'] .composer-meta small,
+html[data-theme='dark'] .file-picker-head small,
+html[data-theme='dark'] .file-picker-list small,
+html[data-theme='dark'] .file-tree-head small,
+html[data-theme='dark'] .file-tree-store summary small,
+html[data-theme='dark'] .file-tree-empty,
+html[data-theme='dark'] .file-tree-foot span {
+  color: var(--muted) !important;
+}
+
+html[data-theme='dark'] .sidebar nav button:hover,
+html[data-theme='dark'] .panel-row:hover,
+html[data-theme='dark'] .chat-history-item:hover,
+html[data-theme='dark'] .chat-history-item.active,
+html[data-theme='dark'] .suggestion-grid button:hover,
+html[data-theme='dark'] .quick-actions button:hover,
+html[data-theme='dark'] .source-chip:hover,
+html[data-theme='dark'] .command-results button:hover,
+html[data-theme='dark'] .command-results button.active,
+html[data-theme='dark'] .file-picker-list label:hover,
+html[data-theme='dark'] .file-picker-list label.selected,
+html[data-theme='dark'] .file-tree-children label:hover,
+html[data-theme='dark'] .file-tree-children label.selected {
+  background: rgba(214, 177, 93, .13) !important;
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .command-palette,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-panel {
+  background-image: linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,0)) !important;
+}
+
+html[data-theme='dark'] .home-hero:before { background: rgba(143,130,255,.08); }
+html[data-theme='dark'] .home-hero:after { border-color: rgba(215,238,134,.1); }
+html[data-theme='dark'] .welcome-mark,
+html[data-theme='dark'] .assistant-avatar,
+html[data-theme='dark'] .chat-orb,
+html[data-theme='dark'] .modal-symbol,
+html[data-theme='dark'] .file-icon,
+html[data-theme='dark'] .store-folder,
+html[data-theme='dark'] .pipeline-core {
+  background: #1a1a16 !important;
+  color: var(--ink) !important;
+}
+
+html[data-theme='dark'] .logo,
+html[data-theme='dark'] .inner-title h1,
+html[data-theme='dark'] .home-hero h1,
+html[data-theme='dark'] .chat-top h1,
+html[data-theme='dark'] .chat-empty h2,
+html[data-theme='dark'] .modal h2,
+html[data-theme='dark'] .store-card strong,
+html[data-theme='dark'] .stat-grid strong,
+html[data-theme='dark'] .panel-head h2 {
+  color: var(--ink) !important;
+}
+
+html[data-theme='dark'] .new-button,
+html[data-theme='dark'] .chat-composer .composer-input-row button,
+html[data-theme='dark'] .save-button,
+html[data-theme='dark'] .file-picker-foot button,
+html[data-theme='dark'] .api-banner {
+  background: linear-gradient(135deg, #d8b45f, #a8791f) !important;
+  color: #fff6da !important;
+}
+
+html[data-theme='dark'] .theme-toggle {
+  border: 1px solid #2a3542;
+  background: rgba(16, 23, 31, .82);
+  color: var(--ink);
+  border-radius: 11px;
+  height: 42px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+html[data-theme='dark'] .theme-toggle span { font-size: 12px; font-weight: 600; }
+
+html[data-theme='dark'] .chat-message.user .message-body > p {
+  background: linear-gradient(135deg, #2d2616, #171410) !important;
+}
+
+html[data-theme='dark'] .markdown-answer code,
+html[data-theme='dark'] .composer-meta kbd,
+html[data-theme='dark'] .global-search kbd,
+html[data-theme='dark'] .command-input kbd {
+  background: #1a222d !important;
+  color: var(--ink) !important;
+  border-color: #2a3542 !important;
+}
+
+html[data-theme='dark'] .markdown-answer table,
+html[data-theme='dark'] .pipeline-meta span,
+html[data-theme='dark'] .knowledge-status,
+html[data-theme='dark'] .composer-meta span,
+html[data-theme='dark'] .file-picker-head,
+html[data-theme='dark'] .file-picker-foot,
+html[data-theme='dark'] .file-tree-head,
+html[data-theme='dark'] .file-tree-foot {
+  border-color: #263241 !important;
+}
+
+html[data-theme='dark'] .app-shell,
+html[data-theme='dark'] main,
+html[data-theme='dark'] .page,
+html[data-theme='dark'] .home-page,
+html[data-theme='dark'] .inner-page,
+html[data-theme='dark'] .chat-page,
+html[data-theme='dark'] .explore-shell,
+html[data-theme='dark'] .chat-thread {
+  background: var(--canvas) !important;
+}
+
+html[data-theme='dark'] .chat-page {
+  max-width: 1180px;
+}
+
+html[data-theme='dark'] .chat-history,
+html[data-theme='dark'] .file-tree-panel {
+  background: #0d1116 !important;
+}
+
+html[data-theme='dark'] .chat-history > div > .new-chat-button,
+html[data-theme='dark'] .workspace-actions .file-scope-button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .desktop-controls .model-control,
+html[data-theme='dark'] .reasoning-switch,
+html[data-theme='dark'] .suggestion-grid button,
+html[data-theme='dark'] .chat-history-item,
+html[data-theme='dark'] .chat-history-item.active,
+html[data-theme='dark'] .chat-history-item:hover,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-panel,
+html[data-theme='dark'] .file-picker-list label,
+html[data-theme='dark'] .file-tree-children label,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .store-card,
+html[data-theme='dark'] .panel,
+html[data-theme='dark'] .simple-files article,
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .stat-grid article,
+html[data-theme='dark'] .onboarding-card,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .command-palette {
+  background-color: #10141a !important;
+}
+
+html[data-theme='dark'] .chat-history-heading > div > strong,
+html[data-theme='dark'] .chat-top h1,
+html[data-theme='dark'] .chat-empty h2,
+html[data-theme='dark'] .workspace-label,
+html[data-theme='dark'] .workspace-actions .file-scope-button span,
+html[data-theme='dark'] .workspace-actions .file-scope-button strong,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .knowledge-button small,
+html[data-theme='dark'] .reasoning-switch button,
+html[data-theme='dark'] .suggestion-grid button,
+html[data-theme='dark'] .chat-history-open strong,
+html[data-theme='dark'] .chat-history-meta small,
+html[data-theme='dark'] .chat-top-left p,
+html[data-theme='dark'] .composer-meta span,
+html[data-theme='dark'] .composer-meta small,
+html[data-theme='dark'] .panel-head h2,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .home-hero p,
+html[data-theme='dark'] .inner-title p,
+html[data-theme='dark'] .store-card small,
+html[data-theme='dark'] .simple-files p,
+html[data-theme='dark'] .store-empty p,
+html[data-theme='dark'] .modal > p,
+html[data-theme='dark'] .file-tree-head small,
+html[data-theme='dark'] .file-tree-store summary strong,
+html[data-theme='dark'] .file-tree-store summary small,
+html[data-theme='dark'] .file-tree-children label > span:last-child,
+html[data-theme='dark'] .file-tree-empty,
+html[data-theme='dark'] .command-empty,
+html[data-theme='dark'] .chat-empty > p {
+  color: var(--muted) !important;
+}
+
+html[data-theme='dark'] .chat-history-item.active .chat-history-open strong,
+html[data-theme='dark'] .workspace-actions .file-scope-button strong,
+html[data-theme='dark'] .file-tree-foot strong,
+html[data-theme='dark'] .file-picker-foot button,
+html[data-theme='dark'] .new-button,
+html[data-theme='dark'] .save-button {
+  color: #fff6da !important;
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .chat-empty,
+html[data-theme='dark'] .pipeline-card,
+html[data-theme='dark'] .message-body > p,
+html[data-theme='dark'] .markdown-answer,
+html[data-theme='dark'] .suggestion-grid button,
+html[data-theme='dark'] .chat-composer,
+html[data-theme='dark'] .file-picker,
+html[data-theme='dark'] .file-tree-panel,
+html[data-theme='dark'] .workspace-actions .file-scope-button,
+html[data-theme='dark'] .knowledge-button,
+html[data-theme='dark'] .desktop-controls .model-control,
+html[data-theme='dark'] .reasoning-switch {
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .24) !important;
+}
+
+html[data-theme='dark'] .chat-empty h2,
+html[data-theme='dark'] .chat-top h1,
+html[data-theme='dark'] .home-hero h1,
+html[data-theme='dark'] .inner-title h1,
+html[data-theme='dark'] .modal h2,
+html[data-theme='dark'] .store-card strong,
+html[data-theme='dark'] .stat-grid strong,
+html[data-theme='dark'] .panel-head h2,
+html[data-theme='dark'] .logo {
+  color: #f4e5bf !important;
+}
+
+html[data-theme='dark'] .workspace-label,
+html[data-theme='dark'] .kicker,
+html[data-theme='dark'] .chat-history-heading .kicker,
+html[data-theme='dark'] .chat-history-item.active .chat-history-open strong,
+html[data-theme='dark'] .nav-count,
+html[data-theme='dark'] .theme-toggle,
+html[data-theme='dark'] .theme-toggle span,
+html[data-theme='dark'] .chat-history-open strong,
+html[data-theme='dark'] .chat-top-left p,
+html[data-theme='dark'] .chat-empty > p,
+html[data-theme='dark'] .home-hero p,
+html[data-theme='dark'] .inner-title p,
+html[data-theme='dark'] .panel-row,
+html[data-theme='dark'] .panel-empty,
+html[data-theme='dark'] .store-card small,
+html[data-theme='dark'] .simple-files p,
+html[data-theme='dark'] .store-empty p,
+html[data-theme='dark'] .chat-history-meta small,
+html[data-theme='dark'] .composer-meta small,
+html[data-theme='dark'] .file-tree-head small,
+html[data-theme='dark'] .file-tree-store summary small,
+html[data-theme='dark'] .file-tree-empty,
+html[data-theme='dark'] .command-empty,
+html[data-theme='dark'] .pipeline-heading small,
+html[data-theme='dark'] .pipeline-operation small,
+html[data-theme='dark'] .pipeline-meta span,
+html[data-theme='dark'] .file-tree-foot span,
+html[data-theme='dark'] .file-picker-head small,
+html[data-theme='dark'] .file-picker-list small {
+  color: #bda366 !important;
+}
+
+html[data-theme='dark'] .workspace-label i,
+html[data-theme='dark'] .nav-ready-dot,
+html[data-theme='dark'] .chat-ready-dot,
+html[data-theme='dark'] .knowledge-dot,
+html[data-theme='dark'] .composer-meta span.enabled i,
+html[data-theme='dark'] .reasoning-switch button.active,
+html[data-theme='dark'] .file-picker-list label.selected,
+html[data-theme='dark'] .file-tree-children label.selected {
+  box-shadow: 0 0 0 4px rgba(214, 177, 93, .12) !important;
+}

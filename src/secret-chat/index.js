@@ -2,7 +2,7 @@ export { secretChatApi } from './api';
 export { default as SecretChatPage } from './components/SecretChatPage';
 export { default as SecretChatStandalone } from './components/SecretChatStandalone';
 export { default as ShareMenu } from './components/ShareMenu';
-export { default as SecretChatRoster } from './components/SecretChatRoster';
+export { default as PrivateChatsPage } from './components/PrivateChatsPage';
 export { useSecretChatUnread } from './useSecretChatUnread';
 import './styles.css';
 
@@ -59,18 +59,23 @@ export function useSecretChatRoute(initialToken = null) {
     if (token) markSecretChatHost();
   }, [token]);
 
-  /** Open one of this host's rooms; the address bar carries the room's own guest link. */
-  const openRoom = (roomToken) => {
+  /**
+   * Point the route at one room, or at the room list when given null. The host keeps the
+   * same /j/{token} URL a guest would use, so copying it out of the address bar still
+   * produces a working invite.
+   */
+  const select = (nextToken) => {
     markSecretChatHost();
-    setToken(roomToken);
-    window.history.replaceState({}, '', guestPath(roomToken));
+    setToken(nextToken);
+    window.history.replaceState({}, '', nextToken ? guestPath(nextToken) : '/secret-chat');
   };
 
-  /** Back out to the roster, which is the Private page itself. */
+  const open = () => select(null);
+
   const close = () => {
     setToken(null);
-    window.history.replaceState({}, '', '/secret-chat');
+    window.history.replaceState({}, '', '/');
   };
 
-  return { token, openRoom, close };
+  return { token, select, open, close };
 }

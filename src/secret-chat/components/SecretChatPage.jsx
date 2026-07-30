@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Eraser, Flame, MessageCircle, Send, SlidersHorizontal, Trash2, User, Users } from 'lucide-react';
+import { Ban, ChevronDown, Eraser, Flame, Menu, MessageCircle, Send, SlidersHorizontal, Trash2, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
@@ -10,7 +10,7 @@ import ShareMenu from './ShareMenu';
 import ChatThread from './ChatThread';
 import GuestsPanel from './GuestsPanel';
 import AiCopilot from './AiCopilot';
-import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS } from './SecretChatRoster';
+import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS, ttlLabel } from './PrivateChatsPage';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
 function RoomOptionsMenu({ session, onSave, onClear, onDelete, close }) {
@@ -60,12 +60,14 @@ function RoomOptionsMenu({ session, onSave, onClear, onDelete, close }) {
   );
 }
 
-export default function SecretChatPage({ token, onBack, onDeleted, toast, confirm }) {
+export default function SecretChatPage({ token, onBack, onChanged, onRevoked, openRail, toast, requestConfirm }) {
+  const confirm = requestConfirm;
   const hostKey = readHostKey();
   const room = useSecretChatRoom({ token, hostKey, isHost: true });
   const [input, setInput] = useState('');
   const [showGuests, setShowGuests] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [title, setTitle] = useState('');
   const inputRef = useRef(null);
   const optionsRef = useRef(null);
 
@@ -83,6 +85,11 @@ export default function SecretChatPage({ token, onBack, onDeleted, toast, confir
     scrollRef(node);
     setMessagesResizeTarget(node);
   }, [scrollRef, setMessagesResizeTarget]);
+
+  // Keep the editable title in step with the room, including renames from another tab.
+  useEffect(() => {
+    setTitle(room.session?.title || 'Private');
+  }, [room.session?.title]);
 
   // Reading only counts while the newest messages are actually on screen.
   useEffect(() => {
@@ -118,14 +125,25 @@ export default function SecretChatPage({ token, onBack, onDeleted, toast, confir
     return room.send(text, options);
   };
 
-  const saveOptions = async patch => {
+  const saveOptions = async (patch, { announce = true } = {}) => {
     try {
       const updated = await secretChatApi.updateOptions(token, { host_key: hostKey, ...patch });
       room.setSession(updated);
-      toast?.('Chat settings updated');
+      onChanged?.();
+      if (announce) toast?.('Chat settings updated');
+      return updated;
     } catch (error) {
       toast?.(error.message || 'Could not update the chat', 'error');
+      return null;
     }
+  };
+
+  const commitTitle = async () => {
+    const next = title.trim() || 'Private';
+    setTitle(next);
+    if (next === room.session?.title) return;
+    const updated = await saveOptions({ title: next }, { announce: false });
+    if (!updated) setTitle(room.session?.title || 'Private');
   };
 
   const clearMessages = () => confirm({
@@ -134,18 +152,19 @@ export default function SecretChatPage({ token, onBack, onDeleted, toast, confir
     confirmLabel: 'Clear messages',
     onConfirm: async () => {
       await secretChatApi.clearMessages(token, hostKey);
+      onChanged?.();
       toast?.('Messages cleared');
     },
   });
 
   const deleteRoom = () => confirm({
     title: 'Delete this chat?',
-    message: 'Every message and the invite link will be permanently deleted. Anyone holding the link will see that the chat has ended.',
-    confirmLabel: 'Delete chat',
+    message: 'Every message will be permanently deleted and the shared link will stop working for everyone who has it.',
+    confirmLabel: 'Delete and revoke link',
     onConfirm: async () => {
       await secretChatApi.deleteRoom(token, hostKey);
-      toast?.('Private chat deleted');
-      onDeleted?.();
+      toast?.('Private chat deleted · link revoked');
+      onRevoked?.();
     },
   });
 
@@ -159,11 +178,12 @@ export default function SecretChatPage({ token, onBack, onDeleted, toast, confir
 
   if (room.status !== 'ready') {
     return (
-      <div className="secret-chat-loading">
-        <div className="secret-chat-gone">
-          <MessageCircle size={32} />
-          <p>{room.error || 'This chat is no longer available.'}</p>
-          <button type="button" onClick={onBack}>← Back to Private</button>
+      <div className="secret-chat-shell">
+        <div className="secret-chat-revoked">
+          <Ban size={40} />
+          <h2>This chat is no longer available</h2>
+          <p>{room.error || 'The chat was deleted, so its link no longer works.'}</p>
+          {onBack && <button type="button" className="btn-primary" onClick={onBack}>Back</button>}
         </div>
       </div>
     );
@@ -175,18 +195,32 @@ export default function SecretChatPage({ token, onBack, onDeleted, toast, confir
   return (
     <div className={`secret-chat-shell${showGuests ? ' with-guests' : ''}`}>
       <header className="secret-chat-header">
+        {openRail && (
+          <button type="button" className="secret-chat-rail-btn icon-button" onClick={openRail} aria-label="Open private chat list">
+            <Menu size={18} />
+          </button>
+        )}
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
             <Users size={16} />
-            <strong>{room.session?.title || 'Private'}</strong>
+            {/* Renaming is a host action, authorised by the host key like every other one. */}
+            <input
+              className="secret-chat-title-input"
+              value={title}
+              onChange={event => setTitle(event.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={event => { if (event.key === 'Enter') event.target.blur(); }}
+              maxLength={160}
+              aria-label="Chat name"
+            />
             <span className="live-badge" title={`${room.onlineCount} online right now`}>
               <span className="live-dot" aria-hidden="true" />
               {room.onlineCount} online
             </span>
             {ttl > 0 && (
               <span className="ttl-badge" title="Messages delete themselves">
-                <Flame size={11} /> {DISAPPEAR_OPTIONS.find(option => option.value === ttl)?.label || `${ttl}s`}
+                <Flame size={11} /> {ttlLabel(ttl)}
               </span>
             )}
           </div>

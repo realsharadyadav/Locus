@@ -122,7 +122,8 @@ export default function AiCopilot({
       }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Deliberately keyed on the newest message only: adding draft/onSend here would
+    // re-fire the effect mid-draft and answer the same message twice.
   }, [autopilot, lastFromOther, lastMessage?.id]);
 
   return (

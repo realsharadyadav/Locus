@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
+import { useClickOutside } from '../../hooks/useClickOutside';
 import { Check, Copy, Mail, MessageSquare, MoreHorizontal, Share2 } from 'lucide-react';
 
 function WhatsAppIcon({ size = 16 }) {
@@ -28,25 +29,11 @@ function XIcon({ size = 16 }) {
 export default function ShareMenu({ url, title, variant = 'app' }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
-  const wrapRef = useRef(null);
+  const wrapRef = useClickOutside(open, () => setOpen(false));
 
   const label = title?.trim() || 'Private';
   const message = `Join my private chat "${label}": ${url}`;
   const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onPointerDown = event => {
-      if (wrapRef.current && !wrapRef.current.contains(event.target)) setOpen(false);
-    };
-    const onKeyDown = event => { if (event.key === 'Escape') setOpen(false); };
-    window.addEventListener('mousedown', onPointerDown);
-    window.addEventListener('keydown', onKeyDown);
-    return () => {
-      window.removeEventListener('mousedown', onPointerDown);
-      window.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
 
   const copyLink = async () => {
     try {

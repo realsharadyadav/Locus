@@ -1,0 +1,219 @@
+/* Sidebar */
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 248px;
+  background: #ebe9e3;
+  border-right: 1px solid #d9d7d0;
+  padding: 27px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -.5px;
+  padding: 0 8px 28px;
+}
+
+.logo-mark {
+  width: 34px;
+  height: 34px;
+  display: block;
+  flex: none;
+}
+
+.logo-ring-outer { stroke: var(--violet); opacity: .35; }
+.logo-ring-inner { stroke: var(--violet); opacity: .65; }
+.logo-dot { fill: var(--violet); }
+
+.sidebar nav { display: grid; gap: 4px; }
+
+.sidebar nav button {
+  border: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 42px;
+  padding: 0 11px;
+  border-radius: 9px;
+  color: #626b76;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sidebar nav button:hover { background: #e3e0da; color: var(--ink); }
+.sidebar nav button.active { background: #ded9ea; color: #4e3c7b; font-weight: 600; }
+
+.nav-count {
+  margin-left: auto;
+  font-size: 11px;
+  background: #d3cce3;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.agent-card {
+  margin-top: auto;
+  background: #ded8ea;
+  border: 1px solid #d1c8e2;
+  border-radius: 13px;
+  padding: 14px 12px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  color: #544378;
+  text-align: left;
+  transition: .2s;
+}
+
+.agent-card:hover { background: #d4cce4; transform: translateY(-1px); }
+.agent-card.active { border-color: #aa9cf1; background: #dcd3ff; color: #4f3d83; }
+
+.agent-icon {
+  width: 32px;
+  height: 32px;
+  background: #f3effb;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+}
+
+.agent-card strong { font-size: 12px; }
+.agent-card p { font-size: 10px; margin: 2px 0 0; color: #776893; }
+
+.compact-insights {
+  display: none;
+}
+
+.collapsed-chat-preview {
+  display: none;
+}
+
+.collapsed-history-label {
+  display: none;
+}
+
+.icon-button {
+  border: 0;
+  background: transparent;
+  padding: 5px;
+  display: grid;
+  place-items: center;
+}
+
+.side-top { display: flex; }
+.mobile-close { display: none; margin-left: auto; }
+
+main { margin-left: 248px; min-height: 100vh; min-height: 100dvh; }
+
+/* Header */
+header {
+  height: 72px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  padding: 0 4.2vw;
+  gap: 18px;
+  background: rgba(245, 243, 238, .88);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.global-search {
+  height: 38px;
+  width: min(470px, 50vw);
+  border: 1px solid #ddd9d2;
+  background: #faf9f6;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  color: #8a8e93;
+  gap: 10px;
+  text-align: left;
+}
+
+.global-search span {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8a8e93;
+}
+
+.global-search kbd {
+  font-size: 10px;
+  border: 1px solid #d8d5cf;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: white;
+}
+
+.new-button {
+  margin-left: auto;
+  border: 0;
+  background: #27384b;
+  color: white;
+  border-radius: 8px;
+  height: 38px;
+  padding: 0 15px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px #27384b22;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.new-button:hover { background: #17263a; }
+.menu-button { display: none; }
+
+.page {
+  padding: 0 4.2vw 70px;
+  max-width: 1500px;
+  margin: auto;
+}
+
+.kicker {
+  font-size: 9px;
+  letter-spacing: 1.7px;
+  font-weight: 700;
+  color: #8b8790;
+}
+
+.inner-title h1, .home-hero h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: 38px;
+  letter-spacing: -1.2px;
+  margin: 10px 0 7px;
+  font-weight: 600;
+}
+
+.inner-title p, .home-hero p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.filter-note {
+  margin-top: 8px !important;
+  font-size: 11px !important;
+  color: #8b7aad !important;
+}

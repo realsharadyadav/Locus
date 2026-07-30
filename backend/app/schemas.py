@@ -217,7 +217,8 @@ class SecretChatCreate(BaseModel):
 
 
 class SecretChatOptionsUpdate(BaseModel):
-    host_key: str = Field(max_length=64)
+    # Optional: a room with no owner is managed by whoever passes the app's auth gate.
+    host_key: str = Field(default="", max_length=64)
     title: str | None = Field(default=None, max_length=160)
     message_ttl_seconds: int | None = Field(default=None, ge=0, le=86400)
     link_expiry_minutes: int | None = Field(default=None, ge=0, le=10080)
@@ -346,3 +347,18 @@ class SecretChatAssistResponse(BaseModel):
     tone: str = "friendly"
     model: str = ""
     style_samples: int = 0
+
+
+class AuthStatusRead(BaseModel):
+    auth_required: bool
+    authenticated: bool = False
+    expires_at: datetime | None = None
+
+
+class AuthLoginRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
+class AuthLoginResponse(BaseModel):
+    token: str
+    expires_at: datetime
