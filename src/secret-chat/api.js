@@ -1,18 +1,10 @@
 import { API_BASE } from '../apiBase';
-import { authHeaders, handleUnauthorized } from '../auth';
 
-/**
- * Guest calls (read a room, read/post messages, stream) carry no token and the
- * backend leaves them public. The host-only calls — list, create, rename,
- * delete — need the header, so it goes on every request and is simply empty in
- * a guest's browser.
- */
 const request = async (path, options = {}) => {
   const response = await fetch(`${API_BASE}/api/secret-chat${path}`, {
+    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...options.headers },
   });
-  if (response.status === 401) handleUnauthorized();
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = body.detail;
@@ -23,18 +15,33 @@ const request = async (path, options = {}) => {
         : detail && typeof detail === 'object'
           ? JSON.stringify(detail)
           : 'Something went wrong';
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return response.status === 204 ? null : response.json();
 };
 
+const query = params => {
+  const search = new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== ''),
+  ).toString();
+  return search ? `?${search}` : '';
+};
+
 export const secretChatApi = {
-  create: () => request('', { method: 'POST' }),
-  list: () => request(''),
-  rename: (token, title) => request(`/${token}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
-  remove: (token) => request(`/${token}`, { method: 'DELETE' }),
-  get: (token) => request(`/${token}`),
+  create: (options = {}) => request('', { method: 'POST', body: JSON.stringify(options) }),
+  rooms: (hostKey, clientId) => request(query({ host_key: hostKey, client_id: clientId })),
+  get: (token, { clientId = '', hostKey = '' } = {}) => request(`/${token}${query({ client_id: clientId, host_key: hostKey })}`),
+  updateOptions: (token, payload) => request(`/${token}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  deleteRoom: (token, hostKey) => request(`/${token}${query({ host_key: hostKey })}`, { method: 'DELETE' }),
+  deleteAllRooms: hostKey => request(query({ host_key: hostKey }), { method: 'DELETE' }),
+  clearMessages: (token, hostKey) => request(`/${token}/messages${query({ host_key: hostKey })}`, { method: 'DELETE' }),
   getMessages: (token, after = 0) => request(`/${token}/messages?after=${after}`),
-  sendMessage: (token, sender, content) => request(`/${token}/messages`, { method: 'POST', body: JSON.stringify({ sender, content }) }),
+  sendMessage: (token, sender, content, viaAi = false) =>
+    request(`/${token}/messages`, { method: 'POST', body: JSON.stringify({ sender, content, via_ai: viaAi }) }),
+  presence: (token, payload) => request(`/${token}/presence`, { method: 'POST', body: JSON.stringify(payload) }),
+  participants: (token, hostKey) => request(`/${token}/participants${query({ host_key: hostKey })}`),
+  assist: (token, payload) => request(`/${token}/assist`, { method: 'POST', body: JSON.stringify(payload) }),
   stream: (token, after = 0) => `${API_BASE}/api/secret-chat/${token}/stream?after=${after}`,
 };

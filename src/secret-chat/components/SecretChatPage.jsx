@@ -1,27 +1,75 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Ban, ChevronDown, Menu, MessageCircle, Send, User, Users } from 'lucide-react';
+import { Ban, ChevronDown, Eraser, Flame, Menu, MessageCircle, Send, SlidersHorizontal, Trash2, User, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
 import { chatShareUrl } from '../links';
+import { hostKey as readHostKey } from '../identity';
+import { useSecretChatRoom } from '../useSecretChatRoom';
 import ShareMenu from './ShareMenu';
-import { parseServerTime } from '../../utils';
-import { timeLabel, withMessageGrouping } from '../messageGroups';
+import ChatThread from './ChatThread';
+import GuestsPanel from './GuestsPanel';
+import AiCopilot from './AiCopilot';
+import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS, ttlLabel } from './PrivateChatsPage';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
-export default function SecretChatPage({ token, onBack, onChanged, onRevoked, openRail }) {
-  const [session, setSession] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [sender, setSender] = useState(() => window.localStorage.getItem('secret-chat-sender') || 'Anonymous');
+function RoomOptionsMenu({ session, onSave, onClear, onDelete, close }) {
+  const ttl = session?.message_ttl_seconds || 0;
+  return (
+    <div className="room-options-menu" role="menu">
+      <div className="room-options-group">
+        <span className="room-options-label"><Flame size={12} /> Disappearing messages</span>
+        <div className="room-option-choices">
+          {DISAPPEAR_OPTIONS.map(option => (
+            <button
+              type="button"
+              key={option.value}
+              className={ttl === option.value ? 'active' : ''}
+              onClick={() => onSave({ message_ttl_seconds: option.value })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="room-options-group">
+        <span className="room-options-label">Invite link expires in</span>
+        <div className="room-option-choices">
+          {LINK_EXPIRY_OPTIONS.map(option => (
+            <button type="button" key={option.value} onClick={() => onSave({ link_expiry_minutes: option.value })}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="room-options-group">
+        <span className="room-options-label">Delete the whole chat in</span>
+        <div className="room-option-choices">
+          {ROOM_EXPIRY_OPTIONS.map(option => (
+            <button type="button" key={option.value} onClick={() => onSave({ room_expiry_minutes: option.value })}>
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="room-options-danger">
+        <button type="button" onClick={() => { close(); onClear(); }}><Eraser size={13} /> Clear all messages</button>
+        <button type="button" className="danger" onClick={() => { close(); onDelete(); }}><Trash2 size={13} /> Delete this chat</button>
+      </div>
+    </div>
+  );
+}
+
+export default function SecretChatPage({ token, onBack, onChanged, onRevoked, openRail, toast, requestConfirm }) {
+  const confirm = requestConfirm;
+  const hostKey = readHostKey();
+  const room = useSecretChatRoom({ token, hostKey, isHost: true });
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [showGuests, setShowGuests] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const [title, setTitle] = useState('');
-  // Set when the room is deleted while this view is open — in another tab, or by
-  // the host while a guest is sitting in the room.
-  const [revoked, setRevoked] = useState(false);
   const inputRef = useRef(null);
-  const eventSourceRef = useRef(null);
-  const lastIdRef = useRef(0);
+  const optionsRef = useRef(null);
 
   useChatViewportLock();
   const compactViewport = useCompactViewport();
@@ -29,93 +77,6 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
     initial: 'instant',
     resize: 'smooth',
   });
-
-  useEffect(() => {
-    secretChatApi.get(token).then(data => {
-      setSession(data);
-      setTitle(data.title || 'Private');
-      setMessages(data.messages || []);
-      lastIdRef.current = (data.messages || []).reduce((m, msg) => Math.max(m, msg.id), 0);
-      setLoading(false);
-    }).catch(error => {
-      // A deleted room 404s here — that is a revoked link, not a failure.
-      if (/not found/i.test(error.message || '')) setRevoked(true);
-      setLoading(false);
-    });
-  }, [token]);
-
-  useEffect(() => {
-    if (loading || revoked) return;
-    let cancelled = false;
-    let retryDelay = 1000;
-    let retryTimer = null;
-
-    const stop = () => {
-      cancelled = true;
-      clearTimeout(retryTimer);
-      eventSourceRef.current?.close();
-    };
-
-    const connect = () => {
-      if (cancelled) return;
-      const es = new EventSource(secretChatApi.stream(token, lastIdRef.current));
-      eventSourceRef.current = es;
-      es.onopen = () => { retryDelay = 1000; };
-      // The server sends this right before closing a deleted room's stream, so
-      // we stop rather than reconnect-looping against a room that is gone.
-      es.addEventListener('revoked', () => {
-        stop();
-        setRevoked(true);
-        onRevoked?.();
-      });
-      es.onmessage = (event) => {
-        if (event.data === ': keepalive') return;
-        try {
-          const msg = JSON.parse(event.data);
-          setMessages(prev => {
-            if (prev.some(m => m.id === msg.id)) return prev;
-            return [...prev, msg];
-          });
-          lastIdRef.current = Math.max(lastIdRef.current, msg.id);
-        } catch {}
-      };
-      es.onerror = () => {
-        es.close();
-        if (cancelled) return;
-        retryTimer = setTimeout(connect, retryDelay);
-        retryDelay = Math.min(retryDelay * 2, 15000);
-      };
-    };
-    connect();
-
-    // Safety net: poll for missed messages in case the stream silently stalls.
-    const poll = setInterval(() => {
-      secretChatApi.getMessages(token, lastIdRef.current).then(newMessages => {
-        if (!newMessages || newMessages.length === 0) return;
-        setMessages(prev => {
-          const existingIds = new Set(prev.map(m => m.id));
-          const additions = newMessages.filter(m => !existingIds.has(m.id));
-          if (additions.length === 0) return prev;
-          return [...prev, ...additions];
-        });
-        lastIdRef.current = newMessages.reduce((m, msg) => Math.max(m, msg.id), lastIdRef.current);
-      }).catch(error => {
-        // Backstop for the stream event: if the room was deleted while the
-        // stream was down, the poll is what notices.
-        if (/not found/i.test(error.message || '')) {
-          stop();
-          clearInterval(poll);
-          setRevoked(true);
-          onRevoked?.();
-        }
-      });
-    }, 8000);
-
-    return () => {
-      stop();
-      clearInterval(poll);
-    };
-  }, [token, loading, revoked]);
 
   // Keyboard, rotation and a resizing composer all change the list container's height
   // rather than its content; see useRepinOnResize.
@@ -125,42 +86,89 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
     setMessagesResizeTarget(node);
   }, [scrollRef, setMessagesResizeTarget]);
 
-  const send = async (e) => {
-    e.preventDefault();
-    if (!input.trim()) return;
+  // Keep the editable title in step with the room, including renames from another tab.
+  useEffect(() => {
+    setTitle(room.session?.title || 'Private');
+  }, [room.session?.title]);
+
+  // Reading only counts while the newest messages are actually on screen.
+  useEffect(() => {
+    if (isAtBottom && document.visibilityState === 'visible') room.markRead();
+  }, [isAtBottom, room.messages.length, room]);
+
+  useEffect(() => {
+    if (!showOptions) return undefined;
+    const onPointerDown = event => {
+      if (optionsRef.current && !optionsRef.current.contains(event.target)) setShowOptions(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, [showOptions]);
+
+  const send = async event => {
+    event?.preventDefault();
     const content = input.trim();
+    if (!content) return;
     setInput('');
     // Stay focused so the on-screen keyboard does not collapse between messages.
     inputRef.current?.focus();
     scrollToBottom({ ignoreEscapes: true });
     try {
-      const msg = await secretChatApi.sendMessage(token, sender, content);
-      setMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
-      lastIdRef.current = Math.max(lastIdRef.current, msg.id);
-    } catch {}
+      await room.send(content);
+    } catch (error) {
+      toast?.(error.message || 'Message not sent', 'error');
+    }
   };
 
-  const shareUrl = chatShareUrl(token);
+  const sendText = async (text, options) => {
+    scrollToBottom({ ignoreEscapes: true });
+    return room.send(text, options);
+  };
 
-  const updateSender = (name) => {
-    setSender(name);
-    window.localStorage.setItem('secret-chat-sender', name);
+  const saveOptions = async (patch, { announce = true } = {}) => {
+    try {
+      const updated = await secretChatApi.updateOptions(token, { host_key: hostKey, ...patch });
+      room.setSession(updated);
+      onChanged?.();
+      if (announce) toast?.('Chat settings updated');
+      return updated;
+    } catch (error) {
+      toast?.(error.message || 'Could not update the chat', 'error');
+      return null;
+    }
   };
 
   const commitTitle = async () => {
     const next = title.trim() || 'Private';
     setTitle(next);
-    if (next === session?.title) return;
-    try {
-      const updated = await secretChatApi.rename(token, next);
-      setSession(updated);
-      onChanged?.();
-    } catch {
-      setTitle(session?.title || 'Private');
-    }
+    if (next === room.session?.title) return;
+    const updated = await saveOptions({ title: next }, { announce: false });
+    if (!updated) setTitle(room.session?.title || 'Private');
   };
 
-  if (loading) {
+  const clearMessages = () => confirm({
+    title: 'Clear all messages?',
+    message: 'Every message in this chat is deleted for everyone. The chat and its link stay alive.',
+    confirmLabel: 'Clear messages',
+    onConfirm: async () => {
+      await secretChatApi.clearMessages(token, hostKey);
+      onChanged?.();
+      toast?.('Messages cleared');
+    },
+  });
+
+  const deleteRoom = () => confirm({
+    title: 'Delete this chat?',
+    message: 'Every message will be permanently deleted and the shared link will stop working for everyone who has it.',
+    confirmLabel: 'Delete and revoke link',
+    onConfirm: async () => {
+      await secretChatApi.deleteRoom(token, hostKey);
+      toast?.('Private chat deleted · link revoked');
+      onRevoked?.();
+    },
+  });
+
+  if (room.status === 'loading') {
     return (
       <div className="secret-chat-loading">
         <MessageCircle size={32} style={{ opacity: 0.4 }} />
@@ -168,21 +176,24 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
     );
   }
 
-  if (revoked) {
+  if (room.status !== 'ready') {
     return (
       <div className="secret-chat-shell">
         <div className="secret-chat-revoked">
           <Ban size={40} />
           <h2>This chat is no longer available</h2>
-          <p>The person who created it deleted the chat, so the link no longer works.</p>
+          <p>{room.error || 'The chat was deleted, so its link no longer works.'}</p>
           {onBack && <button type="button" className="btn-primary" onClick={onBack}>Back</button>}
         </div>
       </div>
     );
   }
 
+  const shareUrl = chatShareUrl(token);
+  const ttl = room.ttlSeconds;
+
   return (
-    <div className="secret-chat-shell">
+    <div className={`secret-chat-shell${showGuests ? ' with-guests' : ''}`}>
       <header className="secret-chat-header">
         {openRail && (
           <button type="button" className="secret-chat-rail-btn icon-button" onClick={openRail} aria-label="Open private chat list">
@@ -193,8 +204,7 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
             <Users size={16} />
-            {/* Editable for the host; a guest has no rename route, so the PATCH
-                just fails and the old title is restored. */}
+            {/* Renaming is a host action, authorised by the host key like every other one. */}
             <input
               className="secret-chat-title-input"
               value={title}
@@ -204,96 +214,137 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
               maxLength={160}
               aria-label="Chat name"
             />
+            <span className="live-badge" title={`${room.onlineCount} online right now`}>
+              <span className="live-dot" aria-hidden="true" />
+              {room.onlineCount} online
+            </span>
+            {ttl > 0 && (
+              <span className="ttl-badge" title="Messages delete themselves">
+                <Flame size={11} /> {ttlLabel(ttl)}
+              </span>
+            )}
           </div>
           <div className="secret-chat-sender-row">
             <User size={12} />
             <input
               className="secret-chat-sender-input"
-              value={sender}
-              onChange={e => updateSender(e.target.value)}
+              value={room.sender}
+              onChange={event => room.updateSender(event.target.value)}
               maxLength={60}
               placeholder="Your name"
             />
+            {room.typingNames.length > 0 && (
+              <span className="header-typing">{room.typingNames.join(', ')} typing…</span>
+            )}
           </div>
         </div>
         <div className="secret-chat-actions">
-          <span className="secret-chat-url-preview">{shareUrl.replace(/^https?:\/\//, '')}</span>
-          <ShareMenu url={shareUrl} title={session?.title} />
+          <button
+            type="button"
+            className={`secret-chat-icon-btn${showGuests ? ' active' : ''}`}
+            onClick={() => setShowGuests(value => !value)}
+            aria-pressed={showGuests}
+            title="Who is in this chat"
+          >
+            <Users size={14} /> {room.participants.length}
+          </button>
+          <div className="room-options-wrap" ref={optionsRef}>
+            <button
+              type="button"
+              className={`secret-chat-icon-btn${showOptions ? ' active' : ''}`}
+              onClick={() => setShowOptions(value => !value)}
+              aria-expanded={showOptions}
+              title="Chat settings"
+            >
+              <SlidersHorizontal size={14} />
+            </button>
+            {showOptions && (
+              <RoomOptionsMenu
+                session={room.session}
+                onSave={saveOptions}
+                onClear={clearMessages}
+                onDelete={deleteRoom}
+                close={() => setShowOptions(false)}
+              />
+            )}
+          </div>
+          <ShareMenu url={shareUrl} title={room.session?.title} />
         </div>
       </header>
 
-      <div className="secret-chat-messages" ref={messagesScrollRef}>
-        <div className="secret-chat-messages-inner" ref={contentRef}>
-          {messages.length === 0 && (
-            <div className="secret-chat-empty">
-              <MessageCircle size={40} />
-              <p>No messages yet</p>
-              <small>Share the link and start chatting</small>
-            </div>
-          )}
-          {withMessageGrouping(messages).map(({ msg, at, newDay, startsRun, day }) => {
-            const [displayName] = (msg.sender || '').split('|||');
-            const side = msg.sender === sender ? 'self' : 'other';
-            return (
-              <React.Fragment key={msg.id}>
-                {newDay && (
-                  <div className="secret-chat-day"><span>{day}</span></div>
-                )}
-                <div className={`secret-chat-msg-wrap ${side} ${startsRun ? 'run-start' : 'run-cont'}`}>
-                  {startsRun && (
-                    <div className="secret-chat-msg-sender">
-                      {displayName || msg.sender} · {timeLabel(at)}
-                    </div>
-                  )}
-                  <div
-                    className={`secret-chat-msg-bubble ${side}`}
-                    title={`${displayName || msg.sender} · ${timeLabel(at)}`}
-                  >
-                    {msg.content}
-                  </div>
-                </div>
-              </React.Fragment>
-            );
-          })}
+      <div className="secret-chat-body">
+        <div className="secret-chat-messages" ref={messagesScrollRef}>
+          <ChatThread
+            prefix="secret-chat"
+            messages={room.messages}
+            clientId={room.clientId}
+            participants={room.participants}
+            typingNames={room.typingNames}
+            firstUnreadId={room.firstUnreadId}
+            ttlSeconds={ttl}
+            innerRef={contentRef}
+          />
         </div>
+        {showGuests && (
+          <GuestsPanel
+            participants={room.participants}
+            clientId={room.clientId}
+            onClose={() => setShowGuests(false)}
+          />
+        )}
       </div>
 
-      <form className="secret-chat-composer" onSubmit={send}>
-        {!isAtBottom && messages.length > 0 && (
-          <button
-            type="button"
-            className="secret-chat-jump-btn"
-            onPointerDown={e => e.preventDefault()}
-            onClick={() => scrollToBottom()}
-            aria-label="Jump to latest message"
-          >
-            <ChevronDown size={16} /> Latest
-          </button>
-        )}
-        <TextareaAutosize
-          ref={inputRef}
-          className="secret-chat-input"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); } }}
-          placeholder="Type a message..."
-          maxLength={2000}
-          minRows={1}
-          maxRows={compactViewport ? 3 : 5}
-          enterKeyHint="send"
+      <div className="secret-chat-composer-stack">
+        <AiCopilot
+          token={token}
+          hostKey={hostKey}
+          clientId={room.clientId}
+          sender={room.sender}
+          session={room.session}
+          messages={room.messages}
+          composerText={input}
+          onInsert={text => { setInput(text); inputRef.current?.focus(); }}
+          onSend={sendText}
+          onOptionsChange={room.setSession}
+          toast={toast}
         />
-        <button
-          type="submit"
-          disabled={!input.trim()}
-          className={`secret-chat-send-btn${input.trim() ? ' active' : ' disabled'}`}
-          // Swallow the focus change on press: without this the textarea blurs and the
-          // on-screen keyboard slams shut the moment the message is sent.
-          onPointerDown={e => e.preventDefault()}
-          onMouseDown={e => e.preventDefault()}
-        >
-          <Send size={18} />
-        </button>
-      </form>
+        <form className="secret-chat-composer" onSubmit={send}>
+          {!isAtBottom && room.messages.length > 0 && (
+            <button
+              type="button"
+              className="secret-chat-jump-btn"
+              onPointerDown={event => event.preventDefault()}
+              onClick={() => scrollToBottom()}
+              aria-label="Jump to latest message"
+            >
+              <ChevronDown size={16} /> {room.unreadCount > 0 ? `${room.unreadCount} new` : 'Latest'}
+            </button>
+          )}
+          <TextareaAutosize
+            ref={inputRef}
+            className="secret-chat-input"
+            value={input}
+            onChange={event => { setInput(event.target.value); room.signalTyping(); }}
+            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(event); } }}
+            placeholder="Type a message..."
+            maxLength={2000}
+            minRows={1}
+            maxRows={compactViewport ? 3 : 5}
+            enterKeyHint="send"
+          />
+          <button
+            type="submit"
+            disabled={!input.trim()}
+            className={`secret-chat-send-btn${input.trim() ? ' active' : ' disabled'}`}
+            // Swallow the focus change on press: without this the textarea blurs and the
+            // on-screen keyboard slams shut the moment the message is sent.
+            onPointerDown={event => event.preventDefault()}
+            onMouseDown={event => event.preventDefault()}
+          >
+            <Send size={18} />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }

@@ -162,7 +162,7 @@ Keep these notes so future sessions don't repeat mistakes:
 | `config.py` | Loads `.env`, exposes all env-based config | `llm_provider()`, `configured_model()`, `GroqSettings`, `groq_settings()`, `TICKET_ANALYSIS_*`, `SEMANTIC_*`, `WEB_RESEARCH_*` |
 | `diagnostics.py` | Per-job diagnostic event logging to JSONL with secret sanitization | `diagnostic_event()` — log event; `initialize_job_log()` — create log file; `sanitize()` — redact secrets |
 | `seed.py` | Seeds database with three default collections on first launch | `seed_database()` |
-| `secret_chat.py` | Real-time SSE-based secret chat rooms with token sharing | APIRouter with `create_secret_chat()`, `send_secret_chat_message()`, `stream_secret_chat()` |
+| `secret_chat.py` | Real-time SSE private chat rooms: host-owned rooms, presence, disappearing messages, expiring links, reply copilot | APIRouter with `create_secret_chat()`, `list_secret_chats()`, `update_secret_chat()`, `delete_secret_chat()`, `clear_secret_chat_messages()`, `update_secret_chat_presence()`, `assist_secret_chat()`, `stream_secret_chat()` |
 
 ---
 
@@ -229,11 +229,38 @@ reorder them, and add new overrides as a new highest-numbered file.
 | `secret-chat/api.js` | Secret Chat API client |
 | `secret-chat/index.js` | Guest-vs-app entry resolution (`resolveSecretChatEntry`) and the in-app route hook |
 | `secret-chat/links.js` | Share link shape — guests join on `/j/<token>`; `/secret-chat/<token>` still resolves |
-| `secret-chat/components/SecretChatPage.jsx` | In-app secret chat room with SSE real-time |
-| `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors |
+| `secret-chat/identity.js` | Per-browser client id, host key (room ownership proof) and the device/locale profile sent with presence |
+| `secret-chat/useSecretChatRoom.js` | Room runtime shared by both views: history, SSE, presence, typing, read cursors, disappear pruning |
+| `secret-chat/useSecretChatUnread.js` | Unread total across the host's rooms, for the Private nav badge |
+| `secret-chat/components/PrivateChatsPage.jsx` | Private page — rail of rooms with unread highlighting beside the open room, new-chat form with the privacy options, delete one/all |
+| `secret-chat/components/SecretChatPage.jsx` | In-app host room: live header, room settings menu, clear/delete, guests panel, copilot |
+| `secret-chat/components/SecretChatStandalone.jsx` | Standalone full-page chat for shared-link visitors, with the what-the-host-can-see notice |
+| `secret-chat/components/ChatThread.jsx` | Shared message list: day dividers, sender runs, unread divider, typing bubble, read receipts, disappear countdowns |
+| `secret-chat/components/GuestsPanel.jsx` | Host-only participant details (device, browser, OS, screen, locale, timezone, IP, activity) |
+| `secret-chat/components/AiCopilot.jsx` | Reply copilot — suggestions, autopilot, tone, persona, talk-like-me |
 | `secret-chat/components/ShareMenu.jsx` | Share popover — copy link, WhatsApp, Telegram, SMS, email, X, native share sheet |
 | `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
+
+Private chat rules worth knowing before changing this feature:
+
+* The creating browser holds a `host_key`; the room list, settings, clear/delete, participant
+  details and the AI copilot are all authorised against it, so a link guest can chat but can
+  never manage the room or see anyone's device details. A room with no owner — created before
+  host keys existed, or by a client that sends none — falls back to the app's own auth gate
+  (`auth.GUEST_SECRET_CHAT_ROUTES`), and the first host key to manage it claims it. Guests
+  additionally reach only five routes through that gate: read room, read/post messages,
+  stream, and presence.
+* `link_expires_at` only stops *new* clients joining — anyone already known keeps chatting.
+  `expires_at` ends the room for everybody, and the data is deleted on first touch after that.
+* Disappearing messages are enforced server-side and broadcast as a `purge` event, so every
+  open client drops the same messages at the same moment; the client also hides them locally
+  on a one-second tick so the countdown looks live.
+* Unread state is a server-side read cursor per participant, pushed on presence heartbeats.
+  The in-room "New messages" divider is frozen at open time so it does not vanish as you read.
+* Copilot drafts never send themselves in suggest mode. Autopilot only answers messages that
+  arrive after it is switched on, and every AI-sent message is stored with `via_ai` so it is
+  labelled in the thread and excluded from talk-like-me style samples.
 
 Link guests never mount the app shell: `resolveSecretChatEntry()` runs before `createRoot`, so a
 visitor arriving on a share link only ever loads the standalone chat and only calls

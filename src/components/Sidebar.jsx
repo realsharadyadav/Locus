@@ -37,7 +37,7 @@ export const NAV_SECTIONS = [
 ];
 
 export function Sidebar({
-  page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact,
+  page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact, secretUnread = 0,
   files = [], onOpenFile, onOpenSecretChat, onNewChat, historyCollapsed, setHistoryCollapsed,
   theme, setTheme,
 }) {
@@ -111,6 +111,11 @@ export function Sidebar({
                   <span className="nav-label">{label}</span>
                   {id === 'library' && <span className="nav-count">{fileCount}</span>}
                   {id === 'ask' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
+                  {id === 'secret-chat' && secretUnread > 0 && (
+                    <span className="nav-count unread" title={`${secretUnread} unread private message${secretUnread === 1 ? '' : 's'}`}>
+                      {secretUnread}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

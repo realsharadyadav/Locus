@@ -16,7 +16,7 @@ import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
-import { PrivateChatsPage, useSecretChatRoute } from './secret-chat';
+import { PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
 
 export function App({ initialSecretChatToken = null }) {
   // 'checking' until the backend says whether a password is configured, then
@@ -298,6 +298,7 @@ export function App({ initialSecretChatToken = null }) {
     }
   };
 
+  const secretChatUnread = useSecretChatUnread();
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
   const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
 
@@ -344,6 +345,7 @@ export function App({ initialSecretChatToken = null }) {
         close={() => setMobileOpen(false)}
         fileCount={files.length}
         readyCount={readyCount}
+        secretUnread={secretChatUnread}
         compact={sidebarCompact}
         toggleCompact={() => setSidebarCompact(value => !value)}
         files={files}

@@ -116,7 +116,20 @@ class SecretChatSession(Base):
     title: Mapped[str] = mapped_column(String(160), default="Private")
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_activity: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+    # Only the creating browser knows this key; every host-only action is checked against it.
+    host_key: Mapped[str] = mapped_column(String(64), default="", index=True)
+    # 0 disables auto-disappear; otherwise messages are purged this many seconds after posting.
+    message_ttl_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    # The invite stops admitting *new* people at link_expires_at; the room itself dies at expires_at.
+    link_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ai_tone: Mapped[str] = mapped_column(String(40), default="friendly")
+    ai_persona: Mapped[str] = mapped_column(Text, default="")
+    ai_autopilot: Mapped[bool] = mapped_column(Boolean, default=False)
+    ai_mimic_me: Mapped[bool] = mapped_column(Boolean, default=True)
     messages: Mapped[list["SecretChatMessage"]] = relationship(back_populates="session", cascade="all, delete-orphan")
+    participants: Mapped[list["SecretChatParticipant"]] = relationship(back_populates="session", cascade="all, delete-orphan")
 
 
 class SecretChatMessage(Base):
@@ -127,4 +140,33 @@ class SecretChatMessage(Base):
     sender: Mapped[str] = mapped_column(String(60), default="Anonymous")
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # Set when the author was the AI copilot on someone's behalf, so the UI can label it.
+    via_ai: Mapped[bool] = mapped_column(Boolean, default=False)
     session: Mapped[SecretChatSession] = relationship(back_populates="messages")
+
+
+class SecretChatParticipant(Base):
+    """One row per browser that has opened a private chat — the host's live view of who is in."""
+
+    __tablename__ = "secret_chat_participants"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    session_token: Mapped[str] = mapped_column(ForeignKey("secret_chat_sessions.token"), index=True)
+    client_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(60), default="Anonymous")
+    role: Mapped[str] = mapped_column(String(10), default="guest")
+    first_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    typing_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_read_id: Mapped[int] = mapped_column(Integer, default=0)
+    message_count: Mapped[int] = mapped_column(Integer, default=0)
+    ip: Mapped[str] = mapped_column(String(64), default="")
+    user_agent: Mapped[str] = mapped_column(String(400), default="")
+    browser: Mapped[str] = mapped_column(String(60), default="")
+    os: Mapped[str] = mapped_column(String(60), default="")
+    device: Mapped[str] = mapped_column(String(24), default="")
+    language: Mapped[str] = mapped_column(String(40), default="")
+    timezone: Mapped[str] = mapped_column(String(60), default="")
+    screen: Mapped[str] = mapped_column(String(40), default="")
+    viewport: Mapped[str] = mapped_column(String(40), default="")
+    session: Mapped[SecretChatSession] = relationship(back_populates="participants")

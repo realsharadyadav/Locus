@@ -126,6 +126,8 @@ def _ensure_schema_columns():
     chat_job_columns = {column["name"] for column in inspector.get_columns("chat_jobs")}
     chat_message_columns = {column["name"] for column in inspector.get_columns("chat_messages")}
     stored_file_columns = {column["name"] for column in inspector.get_columns("stored_files")}
+    secret_chat_session_columns = {column["name"] for column in inspector.get_columns("secret_chat_sessions")}
+    secret_chat_message_columns = {column["name"] for column in inspector.get_columns("secret_chat_messages")}
     with engine.begin() as connection:
         if "file_ids" not in chat_job_columns:
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN file_ids JSON"))
@@ -157,6 +159,21 @@ def _ensure_schema_columns():
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0"))
         if "partial_answer" not in chat_job_columns:
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN partial_answer TEXT"))
+        for column, ddl in (
+            ("host_key", "ALTER TABLE secret_chat_sessions ADD COLUMN host_key VARCHAR(64) NOT NULL DEFAULT ''"),
+            ("message_ttl_seconds", "ALTER TABLE secret_chat_sessions ADD COLUMN message_ttl_seconds INTEGER NOT NULL DEFAULT 0"),
+            ("link_expires_at", "ALTER TABLE secret_chat_sessions ADD COLUMN link_expires_at DATETIME"),
+            ("expires_at", "ALTER TABLE secret_chat_sessions ADD COLUMN expires_at DATETIME"),
+            ("closed_at", "ALTER TABLE secret_chat_sessions ADD COLUMN closed_at DATETIME"),
+            ("ai_tone", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_tone VARCHAR(40) NOT NULL DEFAULT 'friendly'"),
+            ("ai_persona", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_persona TEXT NOT NULL DEFAULT ''"),
+            ("ai_autopilot", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_autopilot BOOLEAN NOT NULL DEFAULT 0"),
+            ("ai_mimic_me", "ALTER TABLE secret_chat_sessions ADD COLUMN ai_mimic_me BOOLEAN NOT NULL DEFAULT 1"),
+        ):
+            if column not in secret_chat_session_columns:
+                connection.execute(text(ddl))
+        if "via_ai" not in secret_chat_message_columns:
+            connection.execute(text("ALTER TABLE secret_chat_messages ADD COLUMN via_ai BOOLEAN NOT NULL DEFAULT 0"))
 
 
 def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:

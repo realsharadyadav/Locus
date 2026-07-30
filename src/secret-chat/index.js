@@ -1,8 +1,9 @@
 export { secretChatApi } from './api';
-export { default as PrivateChatsPage } from './components/PrivateChatsPage';
 export { default as SecretChatPage } from './components/SecretChatPage';
 export { default as SecretChatStandalone } from './components/SecretChatStandalone';
 export { default as ShareMenu } from './components/ShareMenu';
+export { default as PrivateChatsPage } from './components/PrivateChatsPage';
+export { useSecretChatUnread } from './useSecretChatUnread';
 import './styles.css';
 
 import { useEffect, useState } from 'react';
@@ -59,9 +60,9 @@ export function useSecretChatRoute(initialToken = null) {
   }, [token]);
 
   /**
-   * Point the route at one room, or at the room list when given null. The host
-   * keeps the same /j/{token} URL a guest would use, so copying it out of the
-   * address bar still produces a working invite.
+   * Point the route at one room, or at the room list when given null. The host keeps the
+   * same /j/{token} URL a guest would use, so copying it out of the address bar still
+   * produces a working invite.
    */
   const select = (nextToken) => {
     markSecretChatHost();

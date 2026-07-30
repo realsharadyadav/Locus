@@ -167,3 +167,135 @@ html[data-theme='dark'] .secret-chat-revoked h2 { color: #e6edf3; }
 @media (prefers-reduced-motion: reduce) {
   .private-shell .chat-rail { transition: none; }
 }
+
+/* ─── Rail rows: unread, preview and room facts ─── */
+
+/* A room row carries more than its name now, so it stacks rather than sitting on one line. */
+.chat-rail-item {
+  flex-wrap: wrap;
+}
+
+.chat-rail-item.unread .chat-rail-name span:first-of-type {
+  font-weight: 700;
+}
+
+.chat-rail-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: hsl(341 85% 66%);
+  animation: unread-pulse 1.8s ease-in-out infinite;
+}
+
+.private-rail-unread {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: hsl(341 85% 66%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+}
+
+.chat-rail-preview,
+.chat-rail-facts {
+  flex: 1 1 100%;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+.chat-rail-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-rail-item.unread .chat-rail-preview {
+  color: var(--ink);
+}
+
+.chat-rail-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 10px;
+}
+
+.chat-rail-facts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.chat-rail-online { color: #3fb950; }
+.chat-rail-warn { color: #e5a33b; }
+
+.chat-rail-delete-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color .18s ease, color .18s ease;
+}
+
+.chat-rail-delete-all:hover { border-color: #e5534b; color: #e5534b; }
+
+/* ─── New-chat form on the empty state ─── */
+
+.private-new {
+  width: min(560px, 100%);
+  margin: 6px 0 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  text-align: left;
+}
+
+.private-new-title {
+  width: 100%;
+  padding: 9px 11px;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 16px; /* iOS Safari zooms the page on focus below 16px. */
+  outline: none;
+  transition: border-color .18s ease;
+}
+
+.private-new-title:focus { border-color: var(--violet); }
+
+.private-new .room-option:first-of-type { border-top: 0; }
+
+/* The editable room name in the header behaves like text until you focus it. */
+.secret-chat-title-input {
+  min-width: 0;
+  flex: 0 1 auto;
+  width: 22ch;
+  max-width: 40vw;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: inherit;
+  outline: none;
+}
+
+.secret-chat-title-input:hover { border-color: var(--line); }
+.secret-chat-title-input:focus { border-color: var(--violet); background: var(--canvas); }

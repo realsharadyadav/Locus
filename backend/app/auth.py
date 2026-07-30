@@ -36,15 +36,18 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 PUBLIC_PATHS = {"/api/health", "/api/auth/status", "/api/auth/login"}
 
 # Secret Chat is split rather than blanket-public. A guest holding a share link
-# needs exactly these four calls — read the room, read and post messages, and
-# stream (EventSource cannot send an Authorization header, so the stream has to
-# be reachable on the token alone). Everything else under the prefix — listing
-# rooms, creating, renaming, deleting — is the host's and stays guarded.
+# needs exactly these five calls — read the room, read and post messages, stream
+# (EventSource cannot send an Authorization header, so the stream has to be
+# reachable on the token alone), and check in so the room can show them as online,
+# typing and up to date. Everything else under the prefix — listing rooms, creating,
+# changing options, participant details, the AI copilot, clearing and deleting — is
+# the host's and stays guarded, and is separately checked against their host key.
 GUEST_SECRET_CHAT_ROUTES = (
     ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+$")),
     ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+/messages$")),
     ("POST", re.compile(r"^/api/secret-chat/[a-f0-9]+/messages$")),
     ("GET", re.compile(r"^/api/secret-chat/[a-f0-9]+/stream$")),
+    ("POST", re.compile(r"^/api/secret-chat/[a-f0-9]+/presence$")),
 )
 
 LOGIN_MAX_FAILURES = 10
