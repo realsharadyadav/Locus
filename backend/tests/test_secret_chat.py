@@ -1,18 +1,13 @@
 """Private chat: room lifecycle, presence, disappearing messages and the reply copilot."""
 
-import os
 from datetime import datetime, timedelta
 
 import pytest
 
-# Only claim a database if no other test module has already picked one: this suite touches
-# nothing but its own tables, so it can safely share whichever database is already in play.
-os.environ.setdefault("LOCUS_DATABASE_URL", "sqlite:///./test_secret_chat.db")
-
 from fastapi.testclient import TestClient
 from sqlalchemy import delete
 
-from backend.app.database import Base, SessionLocal, engine
+from backend.app.database import SessionLocal
 from backend.app.main import app
 from backend.app.models import SecretChatMessage, SecretChatParticipant, SecretChatSession
 import backend.app.secret_chat as secret_chat
@@ -32,11 +27,8 @@ def _clear_private_chat_tables():
 
 
 def setup_module():
-    # Other suites delete their sqlite file in teardown while this engine still holds it
-    # open, which leaves every later write failing as "readonly database". Dropping the
-    # pooled connections first lets SQLite recreate the file cleanly.
-    engine.dispose()
-    Base.metadata.create_all(bind=engine)
+    # conftest.py owns the database URL and hands every module an empty schema, so there is
+    # no sqlite file being deleted under this engine any more (see AGENTS.md note 16).
     _clear_private_chat_tables()
 
 
