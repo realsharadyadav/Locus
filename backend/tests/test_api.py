@@ -1,15 +1,12 @@
 import json
-import os
+import subprocess
 import time
 from types import SimpleNamespace
 from threading import Event, Thread
 import pytest
 
-os.environ["LOCUS_DATABASE_URL"] = "sqlite:///./test_locus.db"
-
 from fastapi.testclient import TestClient
 
-from backend.app.database import Base, engine
 from backend.app.database import SessionLocal
 from backend.app.config import ENV_PATH, require_environment_variable
 from backend.app.deep_summary import CoverageManifest, chunk_document, deep_summarize_documents, is_full_summary_intent, missing_sections
@@ -19,6 +16,7 @@ import backend.app.main as main_module
 import backend.app.web_research as web_research_module
 from backend.app.modes import MODE_CONFIG
 from backend.app.models import ChatJob, ChatMessage, ChatSession
+from backend.app.schemas import ChatResponse
 
 
 def chat(client, **payload):
@@ -37,22 +35,21 @@ def chat(client, **payload):
     return result
 
 
+def chat_response(answer, conversation_id=1):
+    """A real ChatResponse, so job-runner tests exercise the attributes the runner reads.
+
+    An ad-hoc stand-in with only model_dump() used to make every retry test look like a
+    late-stage crash the moment the runner started reading result.conversation_id.
+    """
+    return ChatResponse(answer=answer, sources=[], model="test-model", conversation_id=conversation_id)
+
+
 @pytest.fixture(autouse=True)
 def mock_quality_layer(monkeypatch):
     monkeypatch.setattr("backend.app.main.enhance_question", lambda question, history, model: {"enhanced_question": question, "subquestions": [], "answer_format": "Clear answer", "supporting_details": [], "visualization": "none", "completeness_criteria": ["Answer the question"], "requires_full_relevant_files": False, "aggregation_operation": "none", "entity_type": None})
     monkeypatch.setattr("backend.app.main.verify_response", lambda question, answer, plan, model, sources=None: {"complete": True, "missing": [], "quality_score": 95})
     monkeypatch.setattr("backend.app.main.answer_planned_question", lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None: ("Test answer", model))
     monkeypatch.setattr("backend.app.main.extract_shared_evidence", lambda question, requirements, documents, model, notify=lambda detail: None: documents)
-
-
-def setup_module():
-    Base.metadata.drop_all(bind=engine)
-
-
-def teardown_module():
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("test_locus.db"):
-        os.remove("test_locus.db")
 
 
 def test_health_and_seeded_data():
@@ -1002,16 +999,12 @@ def test_chat_job_retries_three_times_before_succeeding(monkeypatch):
             model_requests.append(kwargs["model"])
             return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="Completed checkpoint"))])
 
-    class Result:
-        def model_dump(self, mode="json"):
-            return {"answer": "Recovered"}
-
     def flaky_process(payload, db, notify):
         attempts.append(payload.question)
         assert _chat("Checkpoint system", "Checkpoint prompt", "llama3.2:latest") == "Completed checkpoint"
         if len(attempts) <= 3:
             raise RuntimeError("Temporary Ollama failure")
-        return Result()
+        return chat_response("Recovered")
 
     monkeypatch.setattr("backend.app.llm._load_litellm", lambda: FakeLiteLLM)
     monkeypatch.setattr(main_module, "_process_chat", flaky_process)
@@ -1035,10 +1028,6 @@ def test_chat_job_retry_count_resets_after_successful_progress(monkeypatch):
     failures_after_progress = 0
     updates = []
 
-    class Result:
-        def model_dump(self, mode="json"):
-            return {"answer": "Recovered after multiple failure episodes"}
-
     class FakeLiteLLM:
         @staticmethod
         def completion(**kwargs):
@@ -1054,7 +1043,7 @@ def test_chat_job_retry_count_resets_after_successful_progress(monkeypatch):
                 completed_steps += 1
                 failures_after_progress += 1
                 raise RuntimeError(f"Failure episode {failures_after_progress}")
-        return Result()
+        return chat_response("Recovered after multiple failure episodes")
 
     monkeypatch.setattr("backend.app.llm._load_litellm", lambda: FakeLiteLLM)
     monkeypatch.setattr(main_module, "_process_chat", progressing_process)
@@ -1105,7 +1094,10 @@ def test_thinking_mode_inspects_complete_dataset(monkeypatch):
 
     monkeypatch.setattr("backend.app.main.extract_shared_evidence", fake_comprehensive)
     with TestClient(app) as client:
-        result = chat(client, question="Compare everything", reasoning_mode="thinking")
+        # Deliberately not phrased as a comparison: "compare"/"vs"/"difference between"
+        # are auto-web-search triggers, which would route the request away from the
+        # file pipeline this test is about.
+        chat(client, question="Inspect every selected document", reasoning_mode="thinking")
         assert len(captured["documents"]) == len(client.get("/api/files").json())
         assert all(text for _, text in captured["documents"])
 
@@ -1227,13 +1219,15 @@ def test_mode_configuration_separates_light_and_thinking():
     assert MODE_CONFIG["deep_summary"].use_quality_layer
 
 
-def test_env_file_matches_example_and_is_ignored():
-    def keys(path):
-        return {line.split("=", 1)[0] for line in path.read_text().splitlines() if line and not line.startswith("#") and "=" in line}
-
-    assert ENV_PATH.exists()
-    assert keys(ENV_PATH) == keys(ENV_PATH.with_name(".env.example"))
-    assert os.system(f"git check-ignore -q '{ENV_PATH}'") == 0
+def test_env_file_is_git_ignored_and_example_is_tracked():
+    # The old version of this asserted ENV_PATH.exists() and that its keys matched
+    # .env.example. That only ever passed on a machine where a developer had already
+    # created a local .env, so it failed in every fresh clone. What is actually worth
+    # protecting is that real secrets can never be committed while the template can.
+    assert subprocess.run(["git", "check-ignore", "-q", str(ENV_PATH)], cwd=ENV_PATH.parent).returncode == 0
+    example = ENV_PATH.with_name(".env.example")
+    assert example.exists()
+    assert subprocess.run(["git", "check-ignore", "-q", str(example)], cwd=ENV_PATH.parent).returncode == 1
 
 
 def test_missing_required_environment_variable_has_clear_error(monkeypatch):

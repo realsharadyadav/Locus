@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 import backend.app.diagnostics as diagnostics
 import backend.app.main as main_module
-from backend.app.schemas import ChatRequest
+from backend.app.schemas import ChatRequest, ChatResponse
 
 
 def records(path):
@@ -33,11 +33,8 @@ def test_successful_job_deletes_diagnostic_log(monkeypatch, tmp_path):
     monkeypatch.setattr(diagnostics, "DIAGNOSTICS_DIR", tmp_path)
     monkeypatch.setattr(main_module, "_update_chat_job", lambda *args, **kwargs: None)
 
-    class Result:
-        def model_dump(self, mode="json"):
-            return {"answer": "done"}
-
-    monkeypatch.setattr(main_module, "_process_chat", lambda *args, **kwargs: Result())
+    result = ChatResponse(answer="done", sources=[], model="llama3.2:latest", conversation_id=1)
+    monkeypatch.setattr(main_module, "_process_chat", lambda *args, **kwargs: result)
     main_module._run_chat_job("successful-job", ChatRequest(question="Successful request", provider="ollama", model="llama3.2:latest"))
     assert not diagnostics.log_path("successful-job").exists()
 

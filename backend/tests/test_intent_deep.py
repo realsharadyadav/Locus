@@ -4,7 +4,7 @@ Tests: LLM classifier, keyword fallback, context persistence, Hinglish,
        edge cases, output validation, auto-web-search routing.
 """
 import pytest
-from backend.app.intent import classify_query_llm, classify_and_enhance, _fallback_classify, validate_search_output, QueryIntent
+from backend.app.intent import classify_and_enhance, _fallback_classify, validate_search_output, QueryIntent
 from backend.app.main import should_auto_web_search
 
 

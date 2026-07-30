@@ -137,7 +137,7 @@ def _fallback_classify(question: str, history: list[tuple[str, str]] | None = No
     _currency_kw = ("dollar", "euro", "rupee", "usd", "eur", "inr", "gbp", "yen", "exchange rate", "currency", "convert", "rupaye")
     _flight_kw = ("flight", "airline", "pnr", "boarding", "airport", "departure", "arrival")
     _news_kw = ("news", "headlines", "breaking", "latest")
-    _product_kw = ("phone", "laptop", "earbuds", "camera", "speaker", "monitor", "tablet", "headphones")
+    _product_kw = ("phone", "iphone", "laptop", "macbook", "earbuds", "camera", "speaker", "monitor", "tablet", "ipad", "headphones", "samsung", "galaxy", "pixel", "oneplus", "xiaomi", "realme")
 
     all_kw = [
         ("weather", _weather_kw), ("food", _food_kw), ("health", _health_kw),
@@ -145,25 +145,43 @@ def _fallback_classify(question: str, history: list[tuple[str, str]] | None = No
         ("sports", _sports_kw), ("stock", _stock_kw), ("currency", _currency_kw),
         ("flight", _flight_kw), ("news", _news_kw), ("product", _product_kw),
     ]
+    # Longest matched keyword wins, with the list order above as the tie-break. A plain
+    # first-match-wins scan let a short generic keyword beat a longer specific one from a
+    # later domain — "formula 1 standings" classified as math because _math_kw has
+    # "formula" and math is checked before sports.
+    best_domain = ""
+    best_length = 0
     for domain, keywords in all_kw:
-        if any(re.search(rf"\b{re.escape(kw)}\b", normalized) for kw in keywords):
-            query_map = {
-                "weather": f"{question} weather forecast temperature",
-                "food": f"{question} recipe easy quick",
-                "health": f"{question} symptoms treatment medicine",
-                "entertainment": f"{question} watch stream online",
-                "code": f"{question} code tutorial documentation",
-                "math": f"{question} calculation formula",
-                "sports": f"{question} live score result today",
-                "stock": f"{question} stock price today NSE BSE",
-                "currency": f"{question} exchange rate today",
-                "flight": f"{question} flight status today",
-                "news": f"{question} latest news today",
-                "product": f"{question} best price comparison India",
-            }
-            return QueryIntent(domain, "en", query_map[domain], question, question, {}, True)
+        for kw in keywords:
+            if len(kw) > best_length and re.search(_keyword_pattern(kw), normalized):
+                best_domain, best_length = domain, len(kw)
+    if best_domain:
+        query_map = {
+            "weather": f"{question} weather forecast temperature",
+            "food": f"{question} recipe easy quick",
+            "health": f"{question} symptoms treatment medicine",
+            "entertainment": f"{question} watch stream online",
+            "code": f"{question} code tutorial documentation",
+            "math": f"{question} calculation formula",
+            "sports": f"{question} live score result today",
+            "stock": f"{question} stock price today NSE BSE",
+            "currency": f"{question} exchange rate today",
+            "flight": f"{question} flight status today",
+            "news": f"{question} latest news today",
+            "product": f"{question} best price comparison India",
+        }
+        return QueryIntent(best_domain, "en", query_map[best_domain], question, question, {}, True)
 
     return QueryIntent("general", "en", question, question, question, {}, True)
+
+
+def _keyword_pattern(keyword: str) -> str:
+    """Word-boundary match that also accepts the regular English plural.
+
+    Every keyword here is stored in the singular, so a strict `\\bflight\\b` missed
+    "mumbai to delhi flights", "top 10 laptops" and "bollywood movies" outright.
+    """
+    return rf"\b{re.escape(keyword)}(?:e?s)?\b"
 
 
 def _build_inherited_intent(question: str, previous_context: str, intent: str, language: str) -> QueryIntent:

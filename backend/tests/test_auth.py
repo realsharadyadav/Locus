@@ -5,18 +5,14 @@ the gate must be completely absent, because every other test module in this
 suite calls the API without a token.
 """
 
-import os
-
 import pytest
-
-os.environ["LOCUS_DATABASE_URL"] = "sqlite:///./test_locus.db"
 
 from fastapi.testclient import TestClient
 
 from backend.app import auth as auth_module
 from sqlalchemy import select
 
-from backend.app.database import Base, SessionLocal, engine
+from backend.app.database import SessionLocal
 from backend.app.main import app
 from backend.app.models import SecretChatMessage
 
@@ -33,22 +29,8 @@ def reset_login_throttle():
 
 @pytest.fixture
 def client():
-    # Other modules delete test_locus.db in their teardown; disposing drops any
-    # pooled connection still pointing at that removed file.
-    engine.dispose()
-    Base.metadata.create_all(bind=engine)
     with TestClient(app) as test_client:
         yield test_client
-
-
-def teardown_module():
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("test_locus.db"):
-        os.remove("test_locus.db")
-    # Removing the file out from under pooled connections leaves them pointing at
-    # a deleted inode, which SQLite reports as "readonly database" in whichever
-    # module runs next. Dispose so the next connection opens a fresh file.
-    engine.dispose()
 
 
 @pytest.fixture
