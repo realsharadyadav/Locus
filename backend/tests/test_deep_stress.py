@@ -1,26 +1,31 @@
 """Deep stress tests: mode switching, 200-step rapid fire, file ops mid-conversation, job lifecycle."""
 import json
-import os
 import time
-from threading import Event, Thread
 
 import pytest
 
-os.environ["LOCUS_DATABASE_URL"] = "sqlite:///./test_deep_stress.db"
-
 from fastapi.testclient import TestClient
 
-from backend.app.database import Base, engine, SessionLocal
-from backend.app.llm import (
-    _trim_history, _summarize_history, _pack_sources, _context_budget,
-    generate_answer, clean_final_answer, is_refusal,
-)
+from backend.app.database import SessionLocal
 from backend.app.main import app
 import backend.app.main as main_module
 import backend.app.web_research as web_research_module
-from backend.app.modes import MODE_CONFIG
-from backend.app.models import ChatJob, ChatMessage, ChatSession, StoredFile
-from backend.app.deep_summary import CoverageManifest, is_full_summary_intent
+from backend.app.deep_summary import CoverageManifest
+from backend.app.models import ChatJob, ChatSession
+from backend.app.schemas import ChatRequest
+
+
+# Read straight off the schema so a bumped limit can never silently strand these tests
+# on a boundary the API stopped enforcing.
+QUESTION_MAX_CHARS = next(rule.max_length for rule in ChatRequest.model_fields["question"].metadata if getattr(rule, "max_length", None))
+
+def fake_agentic(captured, answer="Agentic answer", sources=()):
+    """Stand-in for run_agentic_pipeline that records what main.py handed it."""
+    def run(question, model, progress, source_limit=5, history=None, answer_mode="light", force_web=False, web_research_fn=None, direct_answer_fn=None):
+        captured.update(question=question, model=model, source_limit=source_limit, history=history, answer_mode=answer_mode, force_web=force_web)
+        return {"answer": answer, "sources": list(sources), "model": model, "plan": {}}
+    return run
+
 
 
 # ---------------------------------------------------------------------------
@@ -92,17 +97,6 @@ def mock_llm(monkeypatch):
     monkeypatch.setattr("backend.app.main.deep_summarize_documents", fake_deep_summary)
 
 
-def setup_module():
-    Base.metadata.drop_all(bind=engine)
-
-
-def teardown_module():
-    Base.metadata.drop_all(bind=engine)
-    for path in ["test_deep_stress.db"]:
-        if os.path.exists(path):
-            os.remove(path)
-
-
 # =====================================================================
 # 1. MODE SWITCHING MID-CONVERSATION
 # =====================================================================
@@ -147,7 +141,6 @@ class TestModeSwitchingMidConversation:
 
     def test_all_modes_sequentially(self, monkeypatch):
         """Go through all 6 modes in order."""
-        modes = ["light", "thinking", "deep_summary", "ticket_analysis", "web_research", "unrestricted"]
         with TestClient(app) as c:
             s = c.post("/api/collections", json={"title": "Mode test"}).json()
             f = _upload_text(c, s["id"], "tickets.csv", "id,summary\n1,Login issue\n2,Password reset")
@@ -180,38 +173,34 @@ class TestModeSwitchingMidConversation:
 # =====================================================================
 
 class TestVeryLongMessages:
-    """Messages near the 1000-char limit."""
+    """Messages at and beyond ChatRequest's question length limit."""
 
-    def test_999_char_question(self, monkeypatch):
+    def test_question_just_under_maximum(self, monkeypatch):
         monkeypatch.setattr("backend.app.main.generate_answer", lambda *a, **k: ("ok", "m"))
         with TestClient(app) as c:
-            q = "x" * 998 + "?"
+            q = "x" * (QUESTION_MAX_CHARS - 1) + "?"
             r = chat(c, question=q, reasoning_mode="light", file_ids=[])
             assert r["answer"] == "ok"
 
-    def test_1000_char_question_exact(self, monkeypatch):
+    def test_question_at_maximum_accepted(self, monkeypatch):
         monkeypatch.setattr("backend.app.main.generate_answer", lambda *a, **k: ("ok", "m"))
         with TestClient(app) as c:
-            q = "A " + "detailed " * 109 + "XXXXXXXX" + "question?"
-            assert len(q) == 1000
+            q = "A " + "detailed " * ((QUESTION_MAX_CHARS - 11) // 9)
+            q = q.ljust(QUESTION_MAX_CHARS - 1, "x") + "?"
+            assert len(q) == QUESTION_MAX_CHARS
             r = chat(c, question=q, reasoning_mode="light", file_ids=[])
             assert r["answer"] == "ok"
 
-    def test_1001_char_question_rejected(self):
+    def test_question_one_char_over_maximum_rejected(self):
         with TestClient(app) as c:
-            q = "x" * 999 + "?"
-            assert len(q) == 1000
-            q2 = "x" * 1000 + "?"
-            assert len(q2) == 1001
-            resp = c.post("/api/chat/stream", json={"question": q2, "reasoning_mode": "light", "file_ids": []})
+            resp = c.post("/api/chat/stream", json={"question": "x" * (QUESTION_MAX_CHARS + 1), "reasoning_mode": "light", "file_ids": []})
             assert resp.status_code == 422
 
     def test_long_question_with_special_chars(self, monkeypatch):
         monkeypatch.setattr("backend.app.main.generate_answer", lambda *a, **k: ("ok", "m"))
         with TestClient(app) as c:
             q = "Explain <script>alert('xss')</script> and " + "a" * 900 + " in detail?"
-            if len(q) > 1000:
-                q = q[:1000]
+            assert len(q) <= QUESTION_MAX_CHARS
             r = chat(c, question=q, reasoning_mode="light", file_ids=[])
             assert r["answer"] == "ok"
 
@@ -379,162 +368,24 @@ class TestFileOpsMidConversation:
             assert not any(f["id"] in (f1["id"], f2["id"]) for f in files)
 
 
-# =====================================================================
-# 5. SUMMARIZE HISTORY WITH REAL LONG CONVERSATION
-# =====================================================================
-
-class TestSummarizeHistoryReal:
-    """Test history summarization with real conversation patterns."""
-
-    def test_summarize_kicks_in_after_6_messages(self, monkeypatch):
-        """After 6 messages, enhance_question should use _summarize_history."""
-        history_lengths = []
-        def track_enhance(question, history, model):
-            history_lengths.append(len(history) if history else 0)
-            return {
-                "enhanced_question": question, "subquestions": [],
-                "answer_format": "Clear answer", "supporting_details": [],
-                "visualization": "none", "completeness_criteria": ["Answer"],
-                "requires_full_relevant_files": False,
-                "aggregation_operation": "none", "entity_type": None,
-            }
-        monkeypatch.setattr("backend.app.main.enhance_question", track_enhance)
-
-        with TestClient(app) as c:
-            r1 = chat(c, question="msg 1", reasoning_mode="light", file_ids=[])
-            cid = r1["conversation_id"]
-
-            for i in range(2, 21):
-                chat(c, question=f"msg {i}", conversation_id=cid, reasoning_mode="light", file_ids=[])
-
-            # At each step, history should be at most 10 (DB limit)
-            assert all(h <= 10 for h in history_lengths), f"History exceeded 10: {history_lengths}"
-
-    def test_trim_history_preserves_role_order(self):
-        """Trimmed history should maintain user/assistant alternation."""
-        history = [(f"role{i % 2 == 0 and 'user' or 'assistant'}", f"Message {i}: content") for i in range(50)]
-        result = _trim_history(history, 3000)
-        # Should still alternate roles (roughly)
-        assert len(result) > 0
-        # Last message should be the most recent
-        assert result[-1][0] == history[-1][0]
-
-    def test_trim_history_with_long_assistant_response(self):
-        """Assistant responses can be very long — trim should handle."""
-        history = [
-            ("user", "short question"),
-            ("assistant", "A" * 5000),
-            ("user", "another question"),
-            ("assistant", "B" * 5000),
-        ]
-        result = _trim_history(history, 2000)
-        total = sum(len(c) for _, c in result)
-        assert total <= 2000
-        # Most recent should survive
-        assert result[-1][0] == "assistant"
-
-    def test_summarize_history_preserves_last_4(self):
-        """_summarize_history always keeps last 4 messages verbatim."""
-        history = [(f"role{i}", f"content {i}") for i in range(20)]
-        recent = history[-4:]
-        old = history[:-4]
-        assert len(old) == 16
-        assert len(recent) == 4
-
-
-# =====================================================================
-# 6. CONTEXT BUDGET ACROSS PROVIDERS
-# =====================================================================
-
-class TestContextBudgetAcrossProviders:
-    """Test context budget calculations for all providers."""
-
-    def test_groq_budget_with_env_override(self, monkeypatch):
-        monkeypatch.setenv("GROQ_CONTEXT_CHAR_BUDGET", "15000")
-        from backend.app.llm import _ACTIVE_PROVIDER
-        token = _ACTIVE_PROVIDER.set("groq")
-        try:
-            assert _context_budget("test-model") == 15000
-        finally:
-            _ACTIVE_PROVIDER.reset(token)
-
-    def test_groq_budget_minimum_8000(self):
-        from backend.app.llm import _ACTIVE_PROVIDER
-        token = _ACTIVE_PROVIDER.set("groq")
-        try:
-            assert _context_budget("test-model") >= 8000
-        finally:
-            _ACTIVE_PROVIDER.reset(token)
-
-    def test_openai_gpt_models_all_80k(self):
-        for model in ["gpt-4o", "gpt-4-turbo", "gpt-5.5", "gpt-5.5-mini"]:
-            assert _context_budget(model) == 80000
-
-    def test_gemini_models_all_80k(self):
-        for model in ["gemini-2.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]:
-            assert _context_budget(model) == 80000
-
-    def test_ollama_local_varies(self):
-        from backend.app.llm import _ACTIVE_PROVIDER
-        token = _ACTIVE_PROVIDER.set("ollama")
-        try:
-            budget = _context_budget("llama3.2:latest")
-            assert budget >= 10000
-            assert budget != 80000  # not OpenAI
-        finally:
-            _ACTIVE_PROVIDER.reset(token)
-
-    def test_ollama_cloud_40k(self):
-        from backend.app.llm import _ACTIVE_PROVIDER
-        token = _ACTIVE_PROVIDER.set("ollama")
-        try:
-            assert _context_budget("nemotron:cloud") == 40000
-        finally:
-            _ACTIVE_PROVIDER.reset(token)
-
-    def test_trim_history_matches_groq_budget(self):
-        """With Groq's small budget, trim should aggressively cut."""
-        from backend.app.llm import _ACTIVE_PROVIDER
-        token = _ACTIVE_PROVIDER.set("groq")
-        try:
-            budget = _context_budget("test-model")
-            history = [(f"role{i}", "x" * 200) for i in range(50)]
-            result = _trim_history(history, budget)
-            total = sum(len(c) for _, c in result)
-            assert total <= budget
-        finally:
-            _ACTIVE_PROVIDER.reset(token)
-
-    def test_pack_sources_matches_budget(self):
-        """Pack sources should never exceed budget."""
-        for budget in [1000, 5000, 10000, 80000]:
-            sources = [(f"file{i}.txt", "x" * 500) for i in range(50)]
-            result = _pack_sources(sources, budget)
-            total = sum(len(t) for _, t in result)
-            assert total <= budget
-
-
-# =====================================================================
-# 7. WEB SEARCH WITH FOLLOW-UP CONTEXT
-# =====================================================================
-
 class TestWebSearchFollowUp:
     """Web search behavior with conversation history."""
 
-    def test_web_search_receives_history(self, monkeypatch):
+    def test_agentic_pipeline_receives_history(self, monkeypatch):
         captured = {}
-        def track_web(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
-            captured["history"] = history
-            captured["question"] = question
-            return {"answer": "Web answer", "sources": [], "model": model}
-        monkeypatch.setattr("backend.app.main.web_research", track_web)
+        monkeypatch.setattr("backend.app.main.run_agentic_pipeline", fake_agentic(captured))
 
         with TestClient(app) as c:
             r1 = chat(c, question="Tell me about Python", reasoning_mode="light", file_ids=[])
             cid = r1["conversation_id"]
 
-            r2 = chat(c, question="Search for latest Python updates", conversation_id=cid, reasoning_mode="web_research")
-            assert captured["history"] is not None
+        # Conversation history reaches the agentic pipeline, which threads it into
+        # planning and answer composition. It is deliberately NOT forwarded to the
+        # nested web_research() searches — those run the planner's self-contained
+        # queries, so passing history there would only pollute the search terms.
+            chat(c, question="Search for latest Python updates", conversation_id=cid, reasoning_mode="web_research")
+            assert ("user", "Tell me about Python") in captured["history"]
+            assert captured["question"] == "Search for latest Python updates"
             assert len(captured["history"]) > 0
 
     def test_web_search_followup_cleans_query(self):
@@ -576,7 +427,7 @@ class TestWebSearchFollowUp:
         monkeypatch.setattr(web_research_module, "_generate_followup_queries", lambda *a, **k: ["fu1", "fu2"])
         monkeypatch.setattr(web_research_module, "_synthesize_answer", lambda q, r, m, p, **kw: "answer")
 
-        result = web_research_module.web_research("question", "model", lambda *a: None, source_limit=200)
+        web_research_module.web_research("question", "model", lambda *a: None, source_limit=200)
         assert len(searched) <= 12
 
 

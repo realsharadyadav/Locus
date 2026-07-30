@@ -2,8 +2,8 @@ from pathlib import Path
 
 import httpx
 import pytest
-from backend.app.config import GROQ_MODEL_PRESETS, GroqSettings, groq_settings, llm_provider
-from backend.app.llm import GroqClient, OllamaClient, get_llm_client, list_groq_models, llm_provider_context
+from backend.app.config import GROQ_MODEL_PRESETS, GroqSettings, llm_provider
+from backend.app.llm import LLM_REQUEST_TIMEOUT_SECONDS, GroqClient, OllamaClient, get_llm_client, list_groq_models, llm_provider_context
 from backend.app.main import llm_config
 
 
@@ -90,7 +90,19 @@ def test_groq_sends_openai_messages_and_config(monkeypatch):
     assert url == "https://groq.test/openai/v1/chat/completions"
     assert request["json"] == {"model": "openai/gpt-oss-20b", "messages": messages, "temperature": 0.3, "max_tokens": 123}
     assert request["headers"]["Authorization"] == "Bearer test-secret-key"
-    assert client["timeout"] == 120
+    # The per-provider timeout is clamped by the global LLM request ceiling, so a
+    # generous GroqSettings value never lets one call hang past that ceiling.
+    assert client["timeout"] == min(120, LLM_REQUEST_TIMEOUT_SECONDS)
+
+
+def test_groq_timeout_below_global_ceiling_is_used_as_is(monkeypatch):
+    FakeClient.responses = [FakeResponse()]
+    FakeClient.calls = []
+    monkeypatch.setattr("backend.app.llm.httpx.Client", FakeClient)
+    lower = LLM_REQUEST_TIMEOUT_SECONDS - 10
+    GroqClient(settings(timeout_seconds=lower)).generate([{"role": "user", "content": "Question"}])
+    _, _, client = FakeClient.calls[0]
+    assert client["timeout"] == lower
 
 
 def test_groq_retries_rate_limit_then_succeeds(monkeypatch):
