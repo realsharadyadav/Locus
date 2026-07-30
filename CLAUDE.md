@@ -38,12 +38,13 @@ git log --oneline origin/main -5      # what landed since last time
 ```bash
 npm run build                                  # frontend
 npm run lint                                   # eslint src
-.venv/bin/python -m pytest backend/tests/<file>.py -q
+.venv/bin/python -m pytest backend/tests -q    # whole suite, ~60s
 ```
 
-`backend/tests` has pre-existing failures when files run together (each module points the
-app at its own SQLite file and deletes it in teardown). Run the files your change touches,
-and compare against the same run on `origin/main` before calling a failure yours.
+Run the whole suite. It is hermetic and order-independent — no network, no local `.env` —
+so any failure is yours. `conftest.py` owns `LOCUS_DATABASE_URL` and hands each module an
+empty schema; never set that variable in a test module or delete the database file (see
+AGENTS.md note 16 for why that used to break every suite but the first).
 
 ## Notes
 
