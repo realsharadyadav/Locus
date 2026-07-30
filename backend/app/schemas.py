@@ -205,9 +205,33 @@ class SecretChatCreateResponse(BaseModel):
     url: str
 
 
+class SecretChatCreate(BaseModel):
+    title: str = Field(default="Private", max_length=160)
+    host_key: str = Field(default="", max_length=64)
+    # Auto-disappear: messages vanish this many seconds after they are posted (0 = keep).
+    message_ttl_seconds: int = Field(default=0, ge=0, le=86400)
+    # The invite link stops admitting new people after this many minutes (0 = never).
+    link_expiry_minutes: int = Field(default=0, ge=0, le=10080)
+    # The whole room is destroyed after this many minutes of existence (0 = never).
+    room_expiry_minutes: int = Field(default=0, ge=0, le=10080)
+
+
+class SecretChatOptionsUpdate(BaseModel):
+    host_key: str = Field(max_length=64)
+    title: str | None = Field(default=None, max_length=160)
+    message_ttl_seconds: int | None = Field(default=None, ge=0, le=86400)
+    link_expiry_minutes: int | None = Field(default=None, ge=0, le=10080)
+    room_expiry_minutes: int | None = Field(default=None, ge=0, le=10080)
+    ai_tone: str | None = Field(default=None, max_length=40)
+    ai_persona: str | None = Field(default=None, max_length=2000)
+    ai_autopilot: bool | None = None
+    ai_mimic_me: bool | None = None
+
+
 class SecretChatMessageSend(BaseModel):
     sender: str = Field(default="Anonymous", min_length=1, max_length=60)
     content: str = Field(min_length=1, max_length=2000)
+    via_ai: bool = False
 
 
 class SecretChatMessageRead(BaseModel):
@@ -217,6 +241,51 @@ class SecretChatMessageRead(BaseModel):
     sender: str
     content: str
     created_at: datetime
+    via_ai: bool = False
+    expires_at: datetime | None = None
+
+
+class SecretChatPresenceUpdate(BaseModel):
+    client_id: str = Field(min_length=1, max_length=64)
+    name: str = Field(default="Anonymous", min_length=1, max_length=60)
+    role: str = Field(default="guest", pattern="^(host|guest)$")
+    host_key: str = Field(default="", max_length=64)
+    typing: bool = False
+    last_read_id: int = Field(default=0, ge=0)
+    language: str = Field(default="", max_length=40)
+    timezone: str = Field(default="", max_length=60)
+    screen: str = Field(default="", max_length=40)
+    viewport: str = Field(default="", max_length=40)
+
+
+class SecretChatParticipantRead(BaseModel):
+    """Public shape — everyone in the room sees this much about everyone else."""
+
+    client_id: str
+    name: str
+    role: str
+    online: bool
+    typing: bool
+    joined_at: datetime
+    last_seen: datetime
+    message_count: int
+    last_read_id: int
+
+
+class SecretChatParticipantDetail(SecretChatParticipantRead):
+    """Host-only shape: the connection and device details behind a participant."""
+
+    ip: str = ""
+    user_agent: str = ""
+    browser: str = ""
+    os: str = ""
+    device: str = ""
+    language: str = ""
+    timezone: str = ""
+    local_time: str = ""
+    screen: str = ""
+    viewport: str = ""
+    minutes_in_room: int = 0
 
 
 class SecretChatSessionRead(BaseModel):
@@ -226,4 +295,54 @@ class SecretChatSessionRead(BaseModel):
     title: str
     created_at: datetime
     last_activity: datetime
+    message_ttl_seconds: int = 0
+    link_expires_at: datetime | None = None
+    expires_at: datetime | None = None
+    link_expired: bool = False
+    ai_tone: str = "friendly"
+    ai_persona: str = ""
+    ai_autopilot: bool = False
+    ai_mimic_me: bool = True
     messages: list[SecretChatMessageRead] = []
+    participants: list[SecretChatParticipantRead] = []
+
+
+class SecretChatRoomSummary(BaseModel):
+    """One row of the host's own room list."""
+
+    token: str
+    url: str
+    title: str
+    created_at: datetime
+    last_activity: datetime
+    message_count: int
+    unread_count: int
+    last_message_id: int
+    last_message_preview: str = ""
+    last_sender: str = ""
+    participant_count: int
+    online_count: int
+    message_ttl_seconds: int = 0
+    link_expires_at: datetime | None = None
+    expires_at: datetime | None = None
+    link_expired: bool = False
+
+
+class SecretChatAssistRequest(BaseModel):
+    host_key: str = Field(default="", max_length=64)
+    client_id: str = Field(default="", max_length=64)
+    sender: str = Field(default="", max_length=60)
+    mode: str = Field(default="suggest", pattern="^(suggest|autopilot)$")
+    tone: str = Field(default="friendly", max_length=40)
+    persona: str = Field(default="", max_length=2000)
+    mimic_me: bool = True
+    instruction: str = Field(default="", max_length=400)
+    model: str | None = None
+    provider: str | None = None
+
+
+class SecretChatAssistResponse(BaseModel):
+    suggestions: list[str] = []
+    tone: str = "friendly"
+    model: str = ""
+    style_samples: int = 0

@@ -2,6 +2,8 @@ export { secretChatApi } from './api';
 export { default as SecretChatPage } from './components/SecretChatPage';
 export { default as SecretChatStandalone } from './components/SecretChatStandalone';
 export { default as ShareMenu } from './components/ShareMenu';
+export { default as SecretChatRoster } from './components/SecretChatRoster';
+export { useSecretChatUnread } from './useSecretChatUnread';
 import './styles.css';
 
 import { useEffect, useState } from 'react';
@@ -57,18 +59,18 @@ export function useSecretChatRoute(initialToken = null) {
     if (token) markSecretChatHost();
   }, [token]);
 
-  const open = async (createFn) => {
+  /** Open one of this host's rooms; the address bar carries the room's own guest link. */
+  const openRoom = (roomToken) => {
     markSecretChatHost();
-    const session = await createFn();
-    setToken(session.token);
-    window.history.replaceState({}, '', guestPath(session.token));
-    return session.token;
+    setToken(roomToken);
+    window.history.replaceState({}, '', guestPath(roomToken));
   };
 
+  /** Back out to the roster, which is the Private page itself. */
   const close = () => {
     setToken(null);
-    window.history.replaceState({}, '', '/');
+    window.history.replaceState({}, '', '/secret-chat');
   };
 
-  return { token, open, close };
+  return { token, openRoom, close };
 }

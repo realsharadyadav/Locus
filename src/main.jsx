@@ -18,7 +18,10 @@ import { api } from './api';
 import { CommandPalette } from './components/CommandPalette';
 import { ConfirmModal } from './components/ConfirmModal';
 import { ToastStack } from './components/Toast';
-import { SecretChatPage, SecretChatStandalone, useSecretChatRoute, resolveSecretChatEntry, secretChatApi } from './secret-chat';
+import {
+  SecretChatPage, SecretChatRoster, SecretChatStandalone, resolveSecretChatEntry,
+  useSecretChatRoute, useSecretChatUnread,
+} from './secret-chat';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { BRAND, assistantLabel, readStorage, readSessionFlag, storageKey, writeSessionFlag, writeStorage } from './brand';
 import TextareaAutosize from 'react-textarea-autosize';
@@ -63,7 +66,7 @@ const NAV_SECTIONS = [
 function Sidebar({
   page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact,
   files = [], onOpenFile, onOpenSecretChat, onNewChat, historyCollapsed, setHistoryCollapsed,
-  theme, setTheme,
+  theme, setTheme, secretUnread = 0,
 }) {
   const railRef = useRef(null);
   const [marker, setMarker] = useState(null);
@@ -130,6 +133,11 @@ function Sidebar({
                   <span className="nav-label">{label}</span>
                   {id === 'library' && <span className="nav-count">{fileCount}</span>}
                   {id === 'ask' && readyCount > 0 && <span className="nav-ready-dot" title={`${readyCount} answer${readyCount === 1 ? '' : 's'} ready`} />}
+                  {id === 'secret-chat' && secretUnread > 0 && (
+                    <span className="nav-count unread" title={`${secretUnread} unread private message${secretUnread === 1 ? '' : 's'}`}>
+                      {secretUnread}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -3394,7 +3402,7 @@ function App({ initialSecretChatToken = null }) {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const { token: secretChatToken, open: openSecretChatRoute, close: closeSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
+  const { token: secretChatToken, openRoom: openSecretChatRoom, close: closeSecretChatRoute } = useSecretChatRoute(initialSecretChatToken);
   const [files, setFiles] = useState([]);
   const [collections, setCollections] = useState([]);
   const [chats, setChats] = useState([]);
@@ -3527,7 +3535,7 @@ function App({ initialSecretChatToken = null }) {
     if (!preferencesLoaded) return;
     const path = window.location.pathname;
     const pageFromUrl = normalizePageId(path === '/' ? 'home' : path.replace(/^\//, ''));
-    if (APP_PAGES.includes(pageFromUrl) && pageFromUrl !== 'secret-chat') {
+    if (APP_PAGES.includes(pageFromUrl)) {
       setPage(pageFromUrl);
       const canonicalPath = pageFromUrl === 'home' ? '/' : `/${pageFromUrl}`;
       if (path !== canonicalPath) window.history.replaceState({}, '', canonicalPath);
@@ -3535,7 +3543,7 @@ function App({ initialSecretChatToken = null }) {
     const onPopState = () => {
       const p = window.location.pathname;
       const next = normalizePageId(p === '/' ? 'home' : p.replace(/^\//, ''));
-      if (APP_PAGES.includes(next) && next !== 'secret-chat') setPage(next);
+      if (APP_PAGES.includes(next)) setPage(next);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -3614,14 +3622,15 @@ function App({ initialSecretChatToken = null }) {
     }
   };
 
+  const secretChatUnread = useSecretChatUnread();
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
   const hasActiveJobs = jobs.some(job => ['queued', 'running'].includes(job.status));
 
-  const openSecretChat = async () => {
-    try {
-      await openSecretChatRoute(secretChatApi.create);
-      setMobileOpen(false);
-    } catch {}
+  // The Private nav item lands on the roster; rooms are opened from there.
+  const openSecretChat = () => {
+    closeSecretChatRoute();
+    navigate('secret-chat');
+    setMobileOpen(false);
   };
 
   const requestDeleteChat = (chat, onDeleted) => setConfirm({
@@ -3660,6 +3669,7 @@ function App({ initialSecretChatToken = null }) {
         setHistoryCollapsed={setHistoryCollapsed}
         onOpenFile={file => navigate('library', { storeId: file.store_id })}
         onOpenSecretChat={openSecretChat}
+        secretUnread={secretChatUnread}
         onNewChat={() => {
           setExploreChatId(null);
           setNewChatSignal(value => value + 1);
@@ -3738,15 +3748,21 @@ function App({ initialSecretChatToken = null }) {
         {page === 'ticket-analysis' && (
           <TicketAnalysisPage files={files} openMenu={() => setMobileOpen(true)} />
         )}
-        {page === 'secret-chat' && secretChatToken && (
+        {page === 'secret-chat' && (secretChatToken ? (
           <SecretChatPage
             token={secretChatToken}
-            onBack={() => {
-              setPage('home');
-              closeSecretChatRoute();
-            }}
+            onBack={closeSecretChatRoute}
+            onDeleted={closeSecretChatRoute}
+            toast={toast}
+            confirm={setConfirm}
           />
-        )}
+        ) : (
+          <SecretChatRoster
+            onOpen={openSecretChatRoom}
+            toast={toast}
+            confirm={setConfirm}
+          />
+        ))}
         {page === 'settings' && <SettingsPage toast={toast} />}
       </main>
 

@@ -1,25 +1,75 @@
-"""Secret Chat — standalone micro-feature for shareable real-time chat rooms."""
+"""Secret Chat — standalone micro-feature for shareable real-time chat rooms.
+
+Three things are worth knowing before editing this module:
+
+* **Host vs guest.** The browser that creates a room generates a `host_key` and keeps it
+  locally. Every administrative action (room list, options, deletion, participant details,
+  AI assist) is authorised against that key, so a link guest can chat but can never manage
+  the room or see anyone's device details.
+* **Rooms expire in two independent ways.** `link_expires_at` only stops *new* people from
+  joining; already-known clients keep chatting. `expires_at` (and an explicit close) ends
+  the room for everyone, and the data is deleted the first time anyone touches it after that.
+* **Auto-disappear** is enforced server-side by `_purge_expired_messages`, which also pushes
+  a `purge` event so every open client drops the same messages at the same moment.
+"""
 
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+import re
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from threading import Lock
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
+from .config import configured_model
 from .database import get_db
-from .models import SecretChatMessage, SecretChatSession
-from .schemas import SecretChatCreateResponse, SecretChatMessageRead, SecretChatMessageSend, SecretChatSessionRead
+from .llm import LLMProviderError, _chat, llm_provider_context
+from .models import SecretChatMessage, SecretChatParticipant, SecretChatSession
+from .schemas import (
+    SecretChatAssistRequest,
+    SecretChatAssistResponse,
+    SecretChatCreate,
+    SecretChatCreateResponse,
+    SecretChatMessageRead,
+    SecretChatMessageSend,
+    SecretChatOptionsUpdate,
+    SecretChatParticipantDetail,
+    SecretChatParticipantRead,
+    SecretChatPresenceUpdate,
+    SecretChatRoomSummary,
+    SecretChatSessionRead,
+)
 
 router = APIRouter(prefix="/api/secret-chat", tags=["secret-chat"])
 
+# A participant counts as online while their heartbeat is this fresh.
+ONLINE_WINDOW_SECONDS = 25
+# How long a single "typing" ping stays hot without a refresh.
+TYPING_WINDOW_SECONDS = 6
+ASSIST_HISTORY_MESSAGES = 24
+ASSIST_STYLE_SAMPLES = 12
+
 _SECRET_CHAT_EVENTS: dict[str, list[asyncio.Queue]] = {}
 _SECRET_CHAT_EVENTS_LOCK = Lock()
+
+
+def _now() -> datetime:
+    """Naive UTC, matching what the DateTime columns store."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _naive(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def _secret_chat_queues(token: str) -> list[asyncio.Queue]:
@@ -27,65 +77,652 @@ def _secret_chat_queues(token: str) -> list[asyncio.Queue]:
         return _SECRET_CHAT_EVENTS.setdefault(token, [])
 
 
-@router.post("", response_model=SecretChatCreateResponse, status_code=status.HTTP_201_CREATED)
-def create_secret_chat(db: Session = Depends(get_db)):
-    token = uuid4().hex[:16]
-    session = SecretChatSession(token=token)
-    db.add(session)
+def _broadcast(token: str, payload: dict) -> None:
+    for queue in _secret_chat_queues(token):
+        queue.put_nowait(payload)
+
+
+def _message_payload(message: SecretChatMessage, ttl_seconds: int) -> dict:
+    created = _naive(message.created_at) or _now()
+    expires_at = created + timedelta(seconds=ttl_seconds) if ttl_seconds else None
+    return {
+        "id": message.id,
+        "sender": message.sender,
+        "content": message.content,
+        "created_at": created.isoformat(),
+        "via_ai": bool(message.via_ai),
+        "expires_at": expires_at.isoformat() if expires_at else None,
+    }
+
+
+# ─── Room lifecycle ───
+
+def _link_expired(session: SecretChatSession) -> bool:
+    link_expiry = _naive(session.link_expires_at)
+    return bool(link_expiry and link_expiry <= _now())
+
+
+def _room_finished(session: SecretChatSession) -> bool:
+    room_expiry = _naive(session.expires_at)
+    return bool(session.closed_at) or bool(room_expiry and room_expiry <= _now())
+
+
+def _purge_expired_messages(db: Session, session: SecretChatSession) -> list[int]:
+    """Delete messages past the room's auto-disappear window and tell open clients."""
+    if not session.message_ttl_seconds:
+        return []
+    cutoff = _now() - timedelta(seconds=session.message_ttl_seconds)
+    stale = db.scalars(
+        select(SecretChatMessage).where(
+            SecretChatMessage.session_token == session.token,
+            SecretChatMessage.created_at <= cutoff,
+        )
+    ).all()
+    if not stale:
+        return []
+    ids = [message.id for message in stale]
+    db.execute(delete(SecretChatMessage).where(SecretChatMessage.id.in_(ids)))
     db.commit()
-    host = os.getenv("SECRET_CHAT_HOST", "http://127.0.0.1:5173")
-    # Guests join on the short neutral path; see src/secret-chat/links.js.
-    return SecretChatCreateResponse(token=token, url=f"{host}/j/{token}")
+    _broadcast(session.token, {"type": "purge", "ids": ids})
+    return ids
 
 
-@router.get("/{token}", response_model=SecretChatSessionRead)
-def get_secret_chat(token: str, db: Session = Depends(get_db)):
+def _destroy(db: Session, session: SecretChatSession) -> None:
+    token = session.token
+    db.delete(session)
+    db.commit()
+    _broadcast(token, {"type": "room", "state": "ended"})
+
+
+def _load_room(db: Session, token: str) -> SecretChatSession:
     session = db.get(SecretChatSession, token)
     if not session:
         raise HTTPException(status_code=404, detail="Private chat not found")
+    if _room_finished(session):
+        # An ended room keeps nothing around: the data goes on first touch after expiry.
+        _destroy(db, session)
+        raise HTTPException(status_code=410, detail="This private chat has ended")
+    _purge_expired_messages(db, session)
     return session
 
 
-@router.get("/{token}/messages", response_model=list[SecretChatMessageRead])
-def get_secret_chat_messages(token: str, after: int = 0, db: Session = Depends(get_db)):
+def _is_host(session: SecretChatSession, host_key: str) -> bool:
+    return bool(session.host_key) and bool(host_key) and session.host_key == host_key
+
+
+def _require_host(session: SecretChatSession, host_key: str) -> None:
+    if not _is_host(session, host_key):
+        raise HTTPException(status_code=403, detail="Only the chat host can do that")
+
+
+def _guard_join(db: Session, session: SecretChatSession, client_id: str, host_key: str) -> None:
+    """An expired invite link still serves people who were already in the room."""
+    if _is_host(session, host_key) or not _link_expired(session):
+        return
+    if client_id:
+        known = db.scalar(
+            select(func.count())
+            .select_from(SecretChatParticipant)
+            .where(
+                SecretChatParticipant.session_token == session.token,
+                SecretChatParticipant.client_id == client_id,
+            )
+        )
+        if known:
+            return
+    raise HTTPException(status_code=403, detail="This invite link has expired")
+
+
+# ─── Participants ───
+
+_BROWSER_PATTERNS = (
+    ("Edg/", "Edge"),
+    ("OPR/", "Opera"),
+    ("SamsungBrowser/", "Samsung Internet"),
+    ("Firefox/", "Firefox"),
+    ("Chrome/", "Chrome"),
+    ("Safari/", "Safari"),
+)
+
+_OS_PATTERNS = (
+    ("Windows NT 10", "Windows 10/11"),
+    ("Windows", "Windows"),
+    ("iPhone", "iOS"),
+    ("iPad", "iPadOS"),
+    ("Android", "Android"),
+    ("Mac OS X", "macOS"),
+    ("CrOS", "ChromeOS"),
+    ("Linux", "Linux"),
+)
+
+
+def _describe_client(user_agent: str) -> tuple[str, str, str]:
+    """(browser, os, device) from a user-agent string — best effort, never raises."""
+    agent = user_agent or ""
+    browser = next((label for token, label in _BROWSER_PATTERNS if token in agent), "Unknown browser")
+    if browser in {"Chrome", "Safari"}:
+        version = re.search(r"(?:Chrome|Version)/(\d+)", agent)
+        if version:
+            browser = f"{browser} {version.group(1)}"
+    os_label = next((label for token, label in _OS_PATTERNS if token in agent), "Unknown OS")
+    device = "Tablet" if ("iPad" in agent or ("Android" in agent and "Mobile" not in agent)) else "Phone" if "Mobile" in agent else "Desktop"
+    return browser, os_label, device
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()[:64]
+    return (request.client.host if request.client else "")[:64]
+
+
+def _is_online(participant: SecretChatParticipant) -> bool:
+    last_seen = _naive(participant.last_seen) or datetime.min
+    return (_now() - last_seen).total_seconds() <= ONLINE_WINDOW_SECONDS
+
+
+def _is_typing(participant: SecretChatParticipant) -> bool:
+    typing_until = _naive(participant.typing_until)
+    return bool(typing_until and typing_until > _now())
+
+
+def _participants(db: Session, token: str) -> list[SecretChatParticipant]:
+    return list(
+        db.scalars(
+            select(SecretChatParticipant)
+            .where(SecretChatParticipant.session_token == token)
+            .order_by(SecretChatParticipant.first_seen)
+        ).all()
+    )
+
+
+def _public_participant(participant: SecretChatParticipant) -> SecretChatParticipantRead:
+    return SecretChatParticipantRead(
+        client_id=participant.client_id,
+        name=participant.name,
+        role=participant.role,
+        online=_is_online(participant),
+        typing=_is_typing(participant),
+        joined_at=_naive(participant.first_seen) or _now(),
+        last_seen=_naive(participant.last_seen) or _now(),
+        message_count=participant.message_count,
+        last_read_id=participant.last_read_id,
+    )
+
+
+def _local_time(timezone_name: str) -> str:
+    """The participant's own wall-clock time, so the host sees when *they* are reading."""
+    if not timezone_name:
+        return ""
+    try:
+        from zoneinfo import ZoneInfo
+
+        return datetime.now(ZoneInfo(timezone_name)).strftime("%H:%M")
+    except Exception:
+        return ""
+
+
+def _detailed_participant(participant: SecretChatParticipant) -> SecretChatParticipantDetail:
+    joined = _naive(participant.first_seen) or _now()
+    return SecretChatParticipantDetail(
+        **_public_participant(participant).model_dump(),
+        ip=participant.ip,
+        user_agent=participant.user_agent,
+        browser=participant.browser,
+        os=participant.os,
+        device=participant.device,
+        language=participant.language,
+        timezone=participant.timezone,
+        local_time=_local_time(participant.timezone),
+        screen=participant.screen,
+        viewport=participant.viewport,
+        minutes_in_room=max(0, int((_now() - joined).total_seconds() // 60)),
+    )
+
+
+def _touch_participant(
+    db: Session,
+    session: SecretChatSession,
+    request: Request,
+    payload: SecretChatPresenceUpdate,
+) -> SecretChatParticipant:
+    participant = db.scalar(
+        select(SecretChatParticipant).where(
+            SecretChatParticipant.session_token == session.token,
+            SecretChatParticipant.client_id == payload.client_id,
+        )
+    )
+    user_agent = request.headers.get("user-agent", "")[:400]
+    browser, os_label, device = _describe_client(user_agent)
+    joined = participant is None
+    if participant is None:
+        participant = SecretChatParticipant(
+            session_token=session.token,
+            client_id=payload.client_id,
+            first_seen=_now(),
+            last_read_id=0,
+            message_count=0,
+        )
+        db.add(participant)
+    participant.name = payload.name
+    # A browser that proves the host key is the host, whatever it claims to be.
+    participant.role = "host" if _is_host(session, payload.host_key) else "guest"
+    participant.last_seen = _now()
+    participant.typing_until = _now() + timedelta(seconds=TYPING_WINDOW_SECONDS) if payload.typing else None
+    participant.last_read_id = max(participant.last_read_id or 0, payload.last_read_id)
+    participant.ip = _client_ip(request)
+    participant.user_agent = user_agent
+    participant.browser = browser
+    participant.os = os_label
+    participant.device = device
+    participant.language = payload.language[:40]
+    participant.timezone = payload.timezone[:60]
+    participant.screen = payload.screen[:40]
+    participant.viewport = payload.viewport[:40]
+    db.commit()
+    db.refresh(participant)
+    if joined:
+        _broadcast(session.token, {"type": "presence", "event": "joined", "name": participant.name})
+    return participant
+
+
+# ─── Rooms ───
+
+def _share_url(token: str) -> str:
+    host = os.getenv("SECRET_CHAT_HOST", "http://127.0.0.1:5173")
+    # Guests join on the short neutral path; see src/secret-chat/links.js.
+    return f"{host}/j/{token}"
+
+
+@router.post("", response_model=SecretChatCreateResponse, status_code=status.HTTP_201_CREATED)
+def create_secret_chat(payload: SecretChatCreate | None = None, db: Session = Depends(get_db)):
+    options = payload or SecretChatCreate()
+    token = uuid4().hex[:16]
+    now = _now()
+    session = SecretChatSession(
+        token=token,
+        title=(options.title or "Private").strip()[:160] or "Private",
+        host_key=options.host_key,
+        message_ttl_seconds=options.message_ttl_seconds,
+        link_expires_at=now + timedelta(minutes=options.link_expiry_minutes) if options.link_expiry_minutes else None,
+        expires_at=now + timedelta(minutes=options.room_expiry_minutes) if options.room_expiry_minutes else None,
+    )
+    db.add(session)
+    db.commit()
+    return SecretChatCreateResponse(token=token, url=_share_url(token))
+
+
+@router.get("", response_model=list[SecretChatRoomSummary])
+def list_secret_chats(host_key: str = "", client_id: str = "", db: Session = Depends(get_db)):
+    """The host's own rooms, newest first, with the unread count for their client."""
+    if not host_key:
+        return []
+    sessions = db.scalars(
+        select(SecretChatSession)
+        .where(SecretChatSession.host_key == host_key)
+        .order_by(SecretChatSession.last_activity.desc())
+    ).all()
+    summaries: list[SecretChatRoomSummary] = []
+    for session in sessions:
+        if _room_finished(session):
+            _destroy(db, session)
+            continue
+        _purge_expired_messages(db, session)
+        messages = db.scalars(
+            select(SecretChatMessage)
+            .where(SecretChatMessage.session_token == session.token)
+            .order_by(SecretChatMessage.id)
+        ).all()
+        participants = _participants(db, session.token)
+        reader = next((item for item in participants if item.client_id == client_id), None)
+        last_read = reader.last_read_id if reader else 0
+        # Unread means posted by somebody else and newer than this host's read cursor.
+        unread = [message for message in messages if message.id > last_read and _sender_client(message.sender) != client_id]
+        last = messages[-1] if messages else None
+        summaries.append(SecretChatRoomSummary(
+            token=session.token,
+            url=_share_url(session.token),
+            title=session.title,
+            created_at=_naive(session.created_at) or _now(),
+            last_activity=_naive(session.last_activity) or _now(),
+            message_count=len(messages),
+            unread_count=len(unread),
+            last_message_id=last.id if last else 0,
+            last_message_preview=(last.content[:80] if last else ""),
+            last_sender=(_sender_name(last.sender) if last else ""),
+            participant_count=len(participants),
+            online_count=sum(1 for item in participants if _is_online(item)),
+            message_ttl_seconds=session.message_ttl_seconds,
+            link_expires_at=_naive(session.link_expires_at),
+            expires_at=_naive(session.expires_at),
+            link_expired=_link_expired(session),
+        ))
+    return summaries
+
+
+def _sender_name(sender: str) -> str:
+    return (sender or "").split("|||")[0] or "Anonymous"
+
+
+def _sender_client(sender: str) -> str:
+    parts = (sender or "").split("|||")
+    return parts[1] if len(parts) > 1 else ""
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+def delete_all_secret_chats(host_key: str, db: Session = Depends(get_db)):
+    """Delete every room this host owns — messages, participants and links go with them."""
+    if not host_key:
+        raise HTTPException(status_code=403, detail="Only the chat host can do that")
+    sessions = db.scalars(select(SecretChatSession).where(SecretChatSession.host_key == host_key)).all()
+    for session in sessions:
+        token = session.token
+        db.delete(session)
+        _broadcast(token, {"type": "room", "state": "ended"})
+    db.commit()
+    return None
+
+
+@router.get("/{token}", response_model=SecretChatSessionRead)
+def get_secret_chat(token: str, client_id: str = "", host_key: str = "", db: Session = Depends(get_db)):
+    session = _load_room(db, token)
+    _guard_join(db, session, client_id, host_key)
+    messages = db.scalars(
+        select(SecretChatMessage)
+        .where(SecretChatMessage.session_token == token)
+        .order_by(SecretChatMessage.id)
+    ).all()
+    return SecretChatSessionRead(
+        token=session.token,
+        title=session.title,
+        created_at=_naive(session.created_at) or _now(),
+        last_activity=_naive(session.last_activity) or _now(),
+        message_ttl_seconds=session.message_ttl_seconds,
+        link_expires_at=_naive(session.link_expires_at),
+        expires_at=_naive(session.expires_at),
+        link_expired=_link_expired(session),
+        ai_tone=session.ai_tone,
+        ai_persona=session.ai_persona,
+        ai_autopilot=session.ai_autopilot,
+        ai_mimic_me=session.ai_mimic_me,
+        messages=[SecretChatMessageRead(**_message_payload(message, session.message_ttl_seconds)) for message in messages],
+        participants=[_public_participant(item) for item in _participants(db, token)],
+    )
+
+
+@router.patch("/{token}", response_model=SecretChatSessionRead)
+def update_secret_chat(token: str, payload: SecretChatOptionsUpdate, db: Session = Depends(get_db)):
+    session = _load_room(db, token)
+    _require_host(session, payload.host_key)
+    now = _now()
+    if payload.title is not None:
+        session.title = payload.title.strip()[:160] or "Private"
+    if payload.message_ttl_seconds is not None:
+        session.message_ttl_seconds = payload.message_ttl_seconds
+    if payload.link_expiry_minutes is not None:
+        session.link_expires_at = now + timedelta(minutes=payload.link_expiry_minutes) if payload.link_expiry_minutes else None
+    if payload.room_expiry_minutes is not None:
+        session.expires_at = now + timedelta(minutes=payload.room_expiry_minutes) if payload.room_expiry_minutes else None
+    if payload.ai_tone is not None:
+        session.ai_tone = payload.ai_tone[:40]
+    if payload.ai_persona is not None:
+        session.ai_persona = payload.ai_persona[:2000]
+    if payload.ai_autopilot is not None:
+        session.ai_autopilot = payload.ai_autopilot
+    if payload.ai_mimic_me is not None:
+        session.ai_mimic_me = payload.ai_mimic_me
+    db.commit()
+    _purge_expired_messages(db, session)
+    _broadcast(token, {"type": "room", "state": "updated", "message_ttl_seconds": session.message_ttl_seconds})
+    return get_secret_chat(token, host_key=payload.host_key, db=db)
+
+
+@router.delete("/{token}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_secret_chat(token: str, host_key: str, db: Session = Depends(get_db)):
+    """End the room: the link dies and every message and participant record is deleted."""
     session = db.get(SecretChatSession, token)
     if not session:
-        raise HTTPException(status_code=404, detail="Private chat not found")
+        return None
+    _require_host(session, host_key)
+    _destroy(db, session)
+    return None
+
+
+@router.delete("/{token}/messages", status_code=status.HTTP_204_NO_CONTENT)
+def clear_secret_chat_messages(token: str, host_key: str, db: Session = Depends(get_db)):
+    """Delete every message but keep the room and its link alive."""
+    session = _load_room(db, token)
+    _require_host(session, host_key)
+    ids = db.scalars(select(SecretChatMessage.id).where(SecretChatMessage.session_token == token)).all()
+    db.execute(delete(SecretChatMessage).where(SecretChatMessage.session_token == token))
+    db.execute(
+        update(SecretChatParticipant)
+        .where(SecretChatParticipant.session_token == token)
+        .values(last_read_id=0, message_count=0)
+    )
+    db.commit()
+    _broadcast(token, {"type": "purge", "ids": list(ids), "cleared": True})
+    return None
+
+
+# ─── Messages ───
+
+@router.get("/{token}/messages", response_model=list[SecretChatMessageRead])
+def get_secret_chat_messages(token: str, after: int = 0, db: Session = Depends(get_db)):
+    session = _load_room(db, token)
     messages = db.scalars(
         select(SecretChatMessage)
         .where(SecretChatMessage.session_token == token, SecretChatMessage.id > after)
         .order_by(SecretChatMessage.id)
     ).all()
-    return messages
+    return [SecretChatMessageRead(**_message_payload(message, session.message_ttl_seconds)) for message in messages]
 
 
 @router.post("/{token}/messages", response_model=SecretChatMessageRead, status_code=status.HTTP_201_CREATED)
 def send_secret_chat_message(token: str, payload: SecretChatMessageSend, db: Session = Depends(get_db)):
-    session = db.get(SecretChatSession, token)
-    if not session:
-        raise HTTPException(status_code=404, detail="Private chat not found")
-    message = SecretChatMessage(session_token=token, sender=payload.sender, content=payload.content)
+    session = _load_room(db, token)
+    message = SecretChatMessage(
+        session_token=token,
+        sender=payload.sender,
+        content=payload.content,
+        via_ai=payload.via_ai,
+    )
     db.add(message)
-    session.last_activity = datetime.now(timezone.utc)
+    session.last_activity = _now()
     db.commit()
     db.refresh(message)
-    for queue in _secret_chat_queues(token):
-        queue.put_nowait(message)
-    return message
+    client_id = _sender_client(payload.sender)
+    if client_id:
+        author = db.scalar(
+            select(SecretChatParticipant).where(
+                SecretChatParticipant.session_token == token,
+                SecretChatParticipant.client_id == client_id,
+            )
+        )
+        if author:
+            author.message_count = (author.message_count or 0) + 1
+            author.last_read_id = max(author.last_read_id or 0, message.id)
+            author.typing_until = None
+            db.commit()
+    payload_dict = _message_payload(message, session.message_ttl_seconds)
+    _broadcast(token, {"type": "message", **payload_dict})
+    return SecretChatMessageRead(**payload_dict)
 
+
+# ─── Presence ───
+
+@router.post("/{token}/presence")
+def update_secret_chat_presence(
+    token: str,
+    payload: SecretChatPresenceUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Heartbeat: refreshes who is online, who is typing and how far each has read."""
+    session = _load_room(db, token)
+    _guard_join(db, session, payload.client_id, payload.host_key)
+    participant = _touch_participant(db, session, request, payload)
+    participants = _participants(db, token)
+    host = _is_host(session, payload.host_key)
+    _broadcast(token, {
+        "type": "presence",
+        "participants": [item.model_dump(mode="json") for item in (_public_participant(entry) for entry in participants)],
+    })
+    return {
+        "you": _public_participant(participant).model_dump(mode="json"),
+        "participants": [
+            (_detailed_participant(entry) if host else _public_participant(entry)).model_dump(mode="json")
+            for entry in participants
+        ],
+        "room": {
+            "title": session.title,
+            "message_ttl_seconds": session.message_ttl_seconds,
+            "link_expires_at": (_naive(session.link_expires_at).isoformat() if session.link_expires_at else None),
+            "expires_at": (_naive(session.expires_at).isoformat() if session.expires_at else None),
+            "link_expired": _link_expired(session),
+        },
+    }
+
+
+@router.get("/{token}/participants", response_model=list[SecretChatParticipantDetail])
+def get_secret_chat_participants(token: str, host_key: str, db: Session = Depends(get_db)):
+    session = _load_room(db, token)
+    _require_host(session, host_key)
+    return [_detailed_participant(item) for item in _participants(db, token)]
+
+
+# ─── AI copilot ───
+
+TONE_GUIDANCE = {
+    "friendly": "warm, easy-going and human",
+    "playful": "playful and teasing, quick with a joke",
+    "flirty": "flirty and charming, but never crude",
+    "formal": "polite, precise and professional",
+    "blunt": "direct and blunt, no padding",
+    "funny": "funny, a little absurd, land a punchline",
+    "short": "extremely brief — a few words per reply",
+    "supportive": "supportive and reassuring",
+}
+
+
+@contextmanager
+def _no_provider_override():
+    yield
+
+
+def _assist_prompt(
+    transcript: list[tuple[str, str]],
+    style_samples: list[str],
+    payload: SecretChatAssistRequest,
+) -> tuple[str, str]:
+    tone = TONE_GUIDANCE.get(payload.tone, payload.tone or "natural")
+    system_parts = [
+        f"You are drafting chat replies on behalf of {payload.sender or 'the user'} in a private one-to-one or small group chat.",
+        f"Write in a {tone} tone.",
+        "Reply the way a real person texts: short lines, no greetings unless the chat just started, no sign-offs, no emoji spam.",
+        "Never mention that you are an AI, never explain your reasoning, never add quotation marks around the reply.",
+        "Match the language the other person is using, including mixed languages such as Hinglish.",
+    ]
+    if payload.persona.strip():
+        system_parts.append(f"Extra instructions about how this person sounds: {payload.persona.strip()}")
+    if payload.mimic_me and style_samples:
+        joined = "\n".join(f"- {sample}" for sample in style_samples)
+        system_parts.append(
+            "Copy this person's own writing style — their vocabulary, message length, punctuation habits, "
+            f"capitalisation and slang. Real examples of their past messages:\n{joined}"
+        )
+    system_parts.append(
+        'Return only JSON in the form {"replies": ["...", "...", "..."]} with three distinct options, '
+        "ordered best first. No prose outside the JSON."
+    )
+
+    lines = [f"{name}: {content}" for name, content in transcript] or ["(no messages yet)"]
+    prompt_parts = ["Conversation so far (oldest first):", "\n".join(lines)]
+    if payload.instruction.strip():
+        prompt_parts.append(f"What I want to get across in this reply: {payload.instruction.strip()}")
+    prompt_parts.append(f"Write the next message from {payload.sender or 'me'}.")
+    return "\n\n".join(system_parts), "\n\n".join(prompt_parts)
+
+
+def _parse_replies(content: str) -> list[str]:
+    text = (content or "").strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(0))
+            replies = parsed.get("replies") or parsed.get("suggestions") or []
+            cleaned = [str(item).strip().strip('"') for item in replies if str(item).strip()]
+            if cleaned:
+                return cleaned[:3]
+        except json.JSONDecodeError:
+            pass
+    # A model that ignored the JSON contract still gives usable lines.
+    lines = [re.sub(r"^\s*(?:[-*\d.]+\s*)", "", line).strip().strip('"') for line in text.splitlines()]
+    return [line for line in lines if line][:3]
+
+
+@router.post("/{token}/assist", response_model=SecretChatAssistResponse)
+def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session = Depends(get_db)):
+    """Draft replies for the host — reviewed in the composer, or sent by autopilot."""
+    session = _load_room(db, token)
+    _require_host(session, payload.host_key)
+
+    messages = db.scalars(
+        select(SecretChatMessage)
+        .where(SecretChatMessage.session_token == token)
+        .order_by(SecretChatMessage.id.desc())
+        .limit(ASSIST_HISTORY_MESSAGES)
+    ).all()
+    ordered = list(reversed(messages))
+    transcript = [(_sender_name(message.sender), message.content) for message in ordered]
+    style_samples: list[str] = []
+    if payload.mimic_me:
+        mine = db.scalars(
+            select(SecretChatMessage.content)
+            .where(
+                SecretChatMessage.session_token == token,
+                SecretChatMessage.sender.like(f"%|||{payload.client_id}"),
+                SecretChatMessage.via_ai.is_(False),
+            )
+            .order_by(SecretChatMessage.id.desc())
+            .limit(ASSIST_STYLE_SAMPLES)
+        ).all()
+        style_samples = [content for content in mine if content.strip()]
+
+    system, prompt = _assist_prompt(transcript, style_samples, payload)
+    model = payload.model or configured_model()
+    try:
+        with llm_provider_context(payload.provider) if payload.provider else _no_provider_override():
+            content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=400)
+    except LLMProviderError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    except Exception as error:  # noqa: BLE001 - surfaced to the composer as a toast
+        raise HTTPException(status_code=502, detail=f"The AI could not draft a reply: {error}") from error
+
+    suggestions = _parse_replies(content)
+    if not suggestions:
+        raise HTTPException(status_code=502, detail="The AI returned an empty reply")
+    return SecretChatAssistResponse(
+        suggestions=suggestions,
+        tone=payload.tone,
+        model=model,
+        style_samples=len(style_samples),
+    )
+
+
+# ─── Stream ───
 
 @router.get("/{token}/stream")
 async def stream_secret_chat(token: str, after: int = 0, db: Session = Depends(get_db)):
-    session = db.get(SecretChatSession, token)
-    if not session:
-        raise HTTPException(status_code=404, detail="Private chat not found")
+    session = _load_room(db, token)
+    ttl_seconds = session.message_ttl_seconds
 
     existing = db.scalars(
         select(SecretChatMessage)
         .where(SecretChatMessage.session_token == token, SecretChatMessage.id > after)
         .order_by(SecretChatMessage.id)
     ).all()
-    existing_payload = [{'id': m.id, 'sender': m.sender, 'content': m.content, 'created_at': m.created_at.isoformat()} for m in existing]
+    existing_payload = [{"type": "message", **_message_payload(message, ttl_seconds)} for message in existing]
 
     async def event_stream():
         queue: asyncio.Queue = asyncio.Queue()
@@ -95,8 +732,7 @@ async def stream_secret_chat(token: str, after: int = 0, db: Session = Depends(g
                 yield f"data: {json.dumps(payload)}\n\n"
             while True:
                 try:
-                    msg = await asyncio.wait_for(queue.get(), timeout=30)
-                    payload = {'id': msg.id, 'sender': msg.sender, 'content': msg.content, 'created_at': msg.created_at.isoformat()}
+                    payload = await asyncio.wait_for(queue.get(), timeout=25)
                     yield f"data: {json.dumps(payload)}\n\n"
                 except asyncio.TimeoutError:
                     yield ": keepalive\n\n"
