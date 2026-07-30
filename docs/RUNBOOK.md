@@ -113,7 +113,10 @@ LOCUS_AUTH_PASSWORD='something long' npm run dev:api
   a stolen token stays valid until it expires; rotate `LOCUS_AUTH_PASSWORD` to kill it early.
 - Can't reach the login screen at all, and every URL bounces to a Private chat? That browser is
   remembered as a link guest. Open `/login` — it forgets the remembered chat and loads the app
-  with the gate. Opening a share link afterwards still puts that browser back in guest mode.
+  with the gate. It also marks the browser as a host for good, so your own share links stay in
+  the app from then on instead of reopening as the guest view. The flip side: a guest who finds
+  `/login` gets the same treatment, and on a deployment with no `LOCUS_AUTH_PASSWORD` there is
+  nothing behind it — set the password if guest sandboxing matters.
 
 To lock the Render deployment, set `LOCUS_AUTH_PASSWORD` on `locus-backend` and
 `LOCUS_ALLOWED_ORIGINS` to the frontend URL. Both are declared in `render.yaml` with

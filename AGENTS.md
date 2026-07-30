@@ -297,9 +297,13 @@ visitor arriving on a share link only ever loads the standalone chat and only ca
 `/api/secret-chat/*`. A browser that has only ever followed a share link is remembered as a guest,
 and visiting the app root or any app path sends it back to its own chat instead of into Locus.
 That memory lives in localStorage and nothing else clears it, so `/login` is reserved as the way
-out: `resolveSecretChatEntry()` checks it first, forgets the remembered chat and mounts the app
-(and its sign-in gate) at `/`. Needed because the host opening their own invite in a phone or a
-fresh profile becomes a guest in that browser permanently otherwise.
+out: `resolveSecretChatEntry()` checks it first, forgets the remembered chat, marks the browser a
+host and mounts the app (and its sign-in gate) at `/`. Needed because the host opening their own
+invite in a phone or a fresh profile becomes a guest in that browser permanently otherwise. The
+host marking is the point rather than a side effect — leave it off and the host's next click on
+their own share link puts them back in the standalone chat. It cuts the other way too: anyone who
+visits `/login` keeps the app shell on later share links, so on an ungated deployment that one
+path is all that separates a link guest from the app.
 
 ---
 

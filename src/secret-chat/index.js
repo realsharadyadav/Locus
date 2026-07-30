@@ -21,10 +21,7 @@ export function markSecretChatHost() {
   writeSessionFlag('session', '1');
 }
 
-/**
- * Forgets the chat this browser was remembered for. Deliberately does not mark the browser as
- * a host — opening a share link again should still land in guest mode.
- */
+/** Forgets the chat this browser was remembered for. */
 export function forgetGuestChat() {
   writeStorage('guest-chat', '');
 }
@@ -42,8 +39,15 @@ export function resolveSecretChatEntry() {
   // Checked ahead of everything else so it works from inside a remembered guest browser,
   // which is the only state it exists for. The URL is tidied back to the root because
   // /login is an entry point rather than a page the app knows how to render.
+  //
+  // Reaching for /login is treated as a host asking for the app, so the browser is marked
+  // host on the spot: without that it stays guest-eligible, and the host's next click on
+  // their own share link would drop them straight back into the standalone chat. It also
+  // means anyone who visits /login keeps the app shell on later share links, so on an
+  // ungated deployment this path is the whole of what separates a guest from the app.
   if (isHostEscapePath(window.location.pathname)) {
     forgetGuestChat();
+    markSecretChatHost();
     window.history.replaceState({}, '', '/');
     return { mode: 'app', token: null };
   }
