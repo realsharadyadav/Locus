@@ -247,7 +247,7 @@ reorder them, and add new overrides as a new highest-numbered file.
 |---|---|
 | `secret-chat/api.js` | Secret Chat API client — sends `authHeaders()`, since host routes sit behind the password gate |
 | `secret-chat/index.js` | Guest-vs-app entry resolution (`resolveSecretChatEntry`) and the in-app route hook |
-| `secret-chat/links.js` | Share link shape — guests join on `/j/<token>`; `/secret-chat/<token>` still resolves |
+| `secret-chat/links.js` | Share link shape — guests join on `/j/<token>`; `/secret-chat/<token>` still resolves; `/login` reserved as the guest→app escape |
 | `secret-chat/identity.js` | Per-browser client id, host key (room ownership proof) and the device/locale profile sent with presence |
 | `secret-chat/useSecretChatRoom.js` | Room runtime shared by both views: history, SSE, presence, typing, read cursors, disappear pruning |
 | `secret-chat/useSecretChatUnread.js` | Unread total across the host's rooms, for the Private nav badge |
@@ -296,6 +296,10 @@ Link guests never mount the app shell: `resolveSecretChatEntry()` runs before `c
 visitor arriving on a share link only ever loads the standalone chat and only calls
 `/api/secret-chat/*`. A browser that has only ever followed a share link is remembered as a guest,
 and visiting the app root or any app path sends it back to its own chat instead of into Locus.
+That memory lives in localStorage and nothing else clears it, so `/login` is reserved as the way
+out: `resolveSecretChatEntry()` checks it first, forgets the remembered chat and mounts the app
+(and its sign-in gate) at `/`. Needed because the host opening their own invite in a phone or a
+fresh profile becomes a guest in that browser permanently otherwise.
 
 ---
 

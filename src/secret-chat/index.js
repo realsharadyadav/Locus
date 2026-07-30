@@ -8,7 +8,7 @@ import './styles.css';
 
 import { useEffect, useState } from 'react';
 import { readSessionFlag, readStorage, writeSessionFlag, writeStorage } from '../brand';
-import { guestChatPath as guestPath, matchChatPath } from './links';
+import { guestChatPath as guestPath, isHostEscapePath, matchChatPath } from './links';
 
 export { chatShareUrl, guestChatPath } from './links';
 
@@ -22,14 +22,32 @@ export function markSecretChatHost() {
 }
 
 /**
+ * Forgets the chat this browser was remembered for. Deliberately does not mark the browser as
+ * a host — opening a share link again should still land in guest mode.
+ */
+export function forgetGuestChat() {
+  writeStorage('guest-chat', '');
+}
+
+/**
  * Decides, before anything mounts, whether this page load is a link guest or the app.
  *
  * Guests never mount the app shell: they get the standalone chat only, so no app data is
  * fetched in their browser and the surrounding product is never exposed to them. Trimming
  * the link back to the origin does not hand them the app either — a remembered guest is
- * sent back to their own chat.
+ * sent back to their own chat. `/login` is the one way out, for the case where the person
+ * behind a guest browser is actually the host.
  */
 export function resolveSecretChatEntry() {
+  // Checked ahead of everything else so it works from inside a remembered guest browser,
+  // which is the only state it exists for. The URL is tidied back to the root because
+  // /login is an entry point rather than a page the app knows how to render.
+  if (isHostEscapePath(window.location.pathname)) {
+    forgetGuestChat();
+    window.history.replaceState({}, '', '/');
+    return { mode: 'app', token: null };
+  }
+
   const token = matchChatPath(window.location.pathname);
   const host = isHost();
 
