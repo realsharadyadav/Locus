@@ -90,3 +90,17 @@ def test_migration_emits_no_sqlite_only_ddl():
         assert not re.search(r"BOOLEAN[^,]*DEFAULT\s+[01]\b", statement, re.IGNORECASE), (
             f"Postgres rejects 0/1 as a BOOLEAN default; use TRUE/FALSE: {statement}"
         )
+
+
+def test_stream_terminates_when_the_worker_dies_before_its_try_block():
+    """Both streaming endpoints must always emit their sentinel.
+
+    `run()` queues the sentinel in a `finally`, but only once execution is inside its try
+    block — a failure while opening the session happens before that. Without the guard the
+    consumer loop blocks on an empty queue and the request hangs open forever.
+    """
+    source = inspect_module.getsource(main_module)
+    assert source.count("def run_guarded():") == 2, "a streaming endpoint lost its sentinel guard"
+    assert "Thread(target=run, daemon=True)" not in source, (
+        "a stream still starts run() directly, so a pre-try failure would hang the response"
+    )

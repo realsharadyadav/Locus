@@ -1568,7 +1568,18 @@ def chat_stream(payload: ChatRequest):
                         _forget_chat_stream_cancel_event(stream_chat_id, stream_cancel_event)
                     events.put(None)
 
-        Thread(target=run, daemon=True).start()
+        def run_guarded():
+            # run() queues its own sentinel in a finally, but only once it is inside its
+            # try block: anything that fails before that (opening the session, say) would
+            # otherwise leave the consumer below blocked on an empty queue forever.
+            try:
+                run()
+            except BaseException as exception:  # noqa: BLE001 - surfaced to the client
+                events.put({"type": "error", "detail": str(exception)})
+            finally:
+                events.put(None)
+
+        Thread(target=run_guarded, daemon=True).start()
         while True:
             event = events.get()
             if event is None:
@@ -1664,7 +1675,18 @@ def chat_direct_stream(payload: ChatRequest):
                         _forget_chat_stream_cancel_event(stream_chat_id, stream_cancel_event)
                     events.put(None)
 
-        Thread(target=run, daemon=True).start()
+        def run_guarded():
+            # run() queues its own sentinel in a finally, but only once it is inside its
+            # try block: anything that fails before that (opening the session, say) would
+            # otherwise leave the consumer below blocked on an empty queue forever.
+            try:
+                run()
+            except BaseException as exception:  # noqa: BLE001 - surfaced to the client
+                events.put({"type": "error", "detail": str(exception)})
+            finally:
+                events.put(None)
+
+        Thread(target=run_guarded, daemon=True).start()
         while True:
             event = events.get()
             if event is None:
