@@ -92,9 +92,15 @@ export default function AiCopilot({
   return (
     <div className={`ai-copilot${autopilot ? ' autopilot' : ''}`}>
       <div className="ai-copilot-bar">
-        <button type="button" className="ai-action" onClick={suggest} disabled={busy}>
+        <button
+          type="button"
+          className="ai-action"
+          onClick={suggest}
+          disabled={busy}
+          aria-label={busy ? 'Thinking…' : composerText.trim() ? 'Rewrite my draft' : 'Suggest a reply'}
+          title={busy ? 'Thinking…' : composerText.trim() ? 'Rewrite my draft' : 'Suggest a reply'}
+        >
           {busy ? <Loader2 size={13} className="spin" /> : <WandSparkles size={13} />}
-          {busy ? 'Thinking…' : composerText.trim() ? 'Rewrite my draft' : 'Suggest a reply'}
         </button>
 
         <label className={`ai-autopilot-toggle${autopilot ? ' on' : ''}`}>
@@ -121,8 +127,10 @@ export default function AiCopilot({
           className={`ai-action subtle${settingsOpen ? ' active' : ''}`}
           onClick={() => setSettingsOpen(value => !value)}
           aria-expanded={settingsOpen}
+          aria-label="Voice settings"
+          title="Voice settings"
         >
-          <Settings2 size={13} /> Voice
+          <Settings2 size={13} />
         </button>
 
         {autopilot && <span className="ai-autopilot-note">AI is answering for you</span>}
