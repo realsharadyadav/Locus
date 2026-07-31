@@ -229,11 +229,9 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
-            <Users size={16} />
-            <span className="secret-chat-title-text" title={title}>{title}</span>
             <span className="live-badge" title={`${room.onlineCount} online right now`}>
               <span className="live-dot" aria-hidden="true" />
-              {room.onlineCount} online
+              {room.onlineCount}
             </span>
             {ttl > 0 && (
               <span className="ttl-badge" title="Messages delete themselves">

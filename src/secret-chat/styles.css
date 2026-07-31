@@ -64,10 +64,14 @@
 }
 
 .secret-chat-back-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  box-sizing: border-box;
   background: transparent;
   border: 1px solid var(--line);
   border-radius: 8px;
-  padding: 6px 10px;
+  padding: 0 10px;
   color: var(--ink);
   cursor: pointer;
   font-size: 12px;
@@ -99,18 +103,12 @@
   font-size: 14px;
 }
 
-.secret-chat-title-text {
-  font-size: 14px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
 .secret-chat-title-row .live-badge,
 .secret-chat-title-row .ttl-badge {
   flex-shrink: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
 }
 
 .secret-chat-sender-row {
@@ -646,7 +644,9 @@ html[data-theme='dark'] .scs-day span {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: transparent;
@@ -667,8 +667,7 @@ html[data-theme='dark'] .scs-day span {
 
 .share-menu-trigger.icon-only {
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
   padding: 0;
 }
 
@@ -963,7 +962,9 @@ html[data-theme='dark'] .scs-day span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 7px 10px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: transparent;
@@ -978,8 +979,7 @@ html[data-theme='dark'] .scs-day span {
 
 .secret-chat-icon-btn.icon-only {
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 32px;
   padding: 0;
 }
 
