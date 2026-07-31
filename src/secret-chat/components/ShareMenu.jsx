@@ -108,8 +108,10 @@ export default function ShareMenu({ url, title, variant = 'app' }) {
         onClick={() => setOpen(value => !value)}
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Share this chat"
+        title="Share this chat"
       >
-        <Share2 size={14} /> Share
+        <Share2 size={14} />
       </button>
 
       {open && (

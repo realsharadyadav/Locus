@@ -87,9 +87,10 @@ export default function TelegramConnect({ token, hostKey, toast, onChanged }) {
         className={`secret-chat-icon-btn${connected ? ' bridged' : ''}${open ? ' active' : ''}`}
         onClick={() => setOpen(value => !value)}
         aria-expanded={open}
+        aria-label={connected ? `Connected to ${label} on Telegram` : 'Connect this chat to a phone number'}
         title={connected ? `Connected to ${label} on Telegram` : 'Connect this chat to a phone number'}
       >
-        <Send size={13} /> {label}
+        <Send size={13} />
       </button>
       {open && (
         <div className="room-options-menu bridge-menu" role="menu">
