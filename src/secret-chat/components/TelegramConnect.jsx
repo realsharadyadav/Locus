@@ -84,7 +84,7 @@ export default function TelegramConnect({ token, hostKey, toast, onChanged }) {
     <div className="room-options-wrap" ref={wrapRef}>
       <button
         type="button"
-        className={`secret-chat-icon-btn${connected ? ' bridged' : ''}${open ? ' active' : ''}`}
+        className={`secret-chat-icon-btn icon-only${connected ? ' bridged' : ''}${open ? ' active' : ''}`}
         onClick={() => setOpen(value => !value)}
         aria-expanded={open}
         aria-label={connected ? `Connected to ${label} on Telegram` : 'Connect this chat to a phone number'}

@@ -665,6 +665,13 @@ html[data-theme='dark'] .scs-day span {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--violet) 15%, transparent);
 }
 
+.share-menu-trigger.icon-only {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
 .share-menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -969,6 +976,13 @@ html[data-theme='dark'] .scs-day span {
 .secret-chat-icon-btn:hover,
 .secret-chat-icon-btn.active { border-color: var(--violet); color: var(--violet); }
 
+.secret-chat-icon-btn.icon-only {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+
 .room-options-wrap { position: relative; }
 
 .room-options-menu {
@@ -1182,6 +1196,13 @@ html[data-theme='dark'] .scs-day span {
 .ai-action.active { border-color: var(--violet); color: var(--violet); }
 .ai-action:disabled { opacity: .6; cursor: default; }
 .ai-action.subtle { color: var(--muted); }
+
+.ai-action.icon-only {
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
 
 .ai-autopilot-toggle {
   display: inline-flex;

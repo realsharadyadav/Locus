@@ -260,7 +260,7 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
           <div className="room-options-wrap" ref={optionsRef}>
             <button
               type="button"
-              className={`secret-chat-icon-btn${showOptions ? ' active' : ''}`}
+              className={`secret-chat-icon-btn icon-only${showOptions ? ' active' : ''}`}
               onClick={() => setShowOptions(value => !value)}
               aria-expanded={showOptions}
               title="Chat settings"

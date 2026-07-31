@@ -104,7 +104,7 @@ export default function ShareMenu({ url, title, variant = 'app' }) {
     <div className={`share-menu-wrap ${variant}`} ref={wrapRef}>
       <button
         type="button"
-        className={`share-menu-trigger${open ? ' open' : ''}`}
+        className={`share-menu-trigger icon-only${open ? ' open' : ''}`}
         onClick={() => setOpen(value => !value)}
         aria-haspopup="menu"
         aria-expanded={open}

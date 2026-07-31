@@ -94,7 +94,7 @@ export default function AiCopilot({
       <div className="ai-copilot-bar">
         <button
           type="button"
-          className="ai-action"
+          className="ai-action icon-only"
           onClick={suggest}
           disabled={busy}
           aria-label={busy ? 'Thinking…' : composerText.trim() ? 'Rewrite my draft' : 'Suggest a reply'}
@@ -124,7 +124,7 @@ export default function AiCopilot({
 
         <button
           type="button"
-          className={`ai-action subtle${settingsOpen ? ' active' : ''}`}
+          className={`ai-action icon-only subtle${settingsOpen ? ' active' : ''}`}
           onClick={() => setSettingsOpen(value => !value)}
           aria-expanded={settingsOpen}
           aria-label="Voice settings"
