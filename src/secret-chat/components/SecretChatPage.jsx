@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Ban, ChevronDown, Eraser, Flame, Menu, MessageCircle, Send, SlidersHorizontal, Trash2, User, Users } from 'lucide-react';
+import { Ban, ChevronDown, Eraser, Flame, Menu, MessageCircle, Send, SlidersHorizontal, Trash2, Users } from 'lucide-react';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 import { secretChatApi } from '../api';
@@ -14,10 +14,35 @@ import TelegramConnect from './TelegramConnect';
 import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS, ttlLabel } from './PrivateChatsPage';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
 
-function RoomOptionsMenu({ session, onSave, onClear, onDelete, close }) {
+function RoomOptionsMenu({
+  session, title, onTitleChange, onTitleCommit, sender, onSenderChange, onSave, onClear, onDelete, close,
+}) {
   const ttl = session?.message_ttl_seconds || 0;
   return (
     <div className="room-options-menu" role="menu">
+      <div className="room-options-group">
+        <span className="room-options-label">Chat name</span>
+        <input
+          className="room-options-input"
+          value={title}
+          onChange={event => onTitleChange(event.target.value)}
+          onBlur={onTitleCommit}
+          onKeyDown={event => { if (event.key === 'Enter') event.target.blur(); }}
+          maxLength={160}
+          aria-label="Chat name"
+        />
+      </div>
+      <div className="room-options-group">
+        <span className="room-options-label">Your name</span>
+        <input
+          className="room-options-input"
+          value={sender}
+          onChange={event => onSenderChange(event.target.value)}
+          maxLength={60}
+          placeholder="Your name"
+          aria-label="Your name"
+        />
+      </div>
       <div className="room-options-group">
         <span className="room-options-label"><Flame size={12} /> Disappearing messages</span>
         <div className="room-option-choices">
@@ -205,16 +230,7 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
             <Users size={16} />
-            {/* Renaming is a host action, authorised by the host key like every other one. */}
-            <input
-              className="secret-chat-title-input"
-              value={title}
-              onChange={event => setTitle(event.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={event => { if (event.key === 'Enter') event.target.blur(); }}
-              maxLength={160}
-              aria-label="Chat name"
-            />
+            <span className="secret-chat-title-text" title={title}>{title}</span>
             <span className="live-badge" title={`${room.onlineCount} online right now`}>
               <span className="live-dot" aria-hidden="true" />
               {room.onlineCount} online
@@ -225,19 +241,11 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
               </span>
             )}
           </div>
-          <div className="secret-chat-sender-row">
-            <User size={12} />
-            <input
-              className="secret-chat-sender-input"
-              value={room.sender}
-              onChange={event => room.updateSender(event.target.value)}
-              maxLength={60}
-              placeholder="Your name"
-            />
-            {room.typingNames.length > 0 && (
+          {room.typingNames.length > 0 && (
+            <div className="secret-chat-sender-row">
               <span className="header-typing">{room.typingNames.join(', ')} typing…</span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         <div className="secret-chat-actions">
           <button
@@ -262,6 +270,11 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
             {showOptions && (
               <RoomOptionsMenu
                 session={room.session}
+                title={title}
+                onTitleChange={setTitle}
+                onTitleCommit={commitTitle}
+                sender={room.sender}
+                onSenderChange={room.updateSender}
                 onSave={saveOptions}
                 onClear={clearMessages}
                 onDelete={deleteRoom}

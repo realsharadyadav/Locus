@@ -99,6 +99,20 @@
   font-size: 14px;
 }
 
+.secret-chat-title-text {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.secret-chat-title-row .live-badge,
+.secret-chat-title-row .ttl-badge {
+  flex-shrink: 0;
+}
+
 .secret-chat-sender-row {
   display: flex;
   align-items: center;
@@ -106,24 +120,6 @@
   margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
-}
-
-.secret-chat-sender-input {
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  font-size: 16px; /* iOS Safari zooms the page on focus if an input's font-size is under 16px. */
-  padding: 2px 4px;
-  width: 110px;
-  min-width: 0;
-  max-width: 34vw;
-  outline: none;
-  transition: border-color .18s ease;
-}
-
-.secret-chat-sender-input:focus {
-  border-color: var(--violet);
 }
 
 .secret-chat-actions {
@@ -1382,7 +1378,8 @@ html[data-theme='dark'] .scs-day span {
 
 .bridge-menu { width: 320px; }
 
-.bridge-input {
+.bridge-input,
+.room-options-input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -1392,7 +1389,8 @@ html[data-theme='dark'] .scs-day span {
   font-size: 13px;
 }
 
-.bridge-input:focus {
+.bridge-input:focus,
+.room-options-input:focus {
   outline: none;
   border-color: var(--violet);
 }
