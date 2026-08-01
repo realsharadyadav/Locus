@@ -106,7 +106,18 @@ export function ExplorePage({
   const activeChatTitle = chats.find(item => item.id === activeChat)?.title || 'New chat';
   const modeLabel = SLASH_COMMANDS.find(command => command.id === reasoningMode)?.label.slice(1) || reasoningMode;
   const headerSubtitle = [model, modeLabel].filter(Boolean).join(' · ');
-  const activeJob = jobs.find(job => job.conversation_id === activeChat && ['queued', 'running'].includes(job.status));
+  // `jobs` comes back newest-first (see api.chatJobs), so matching on conversation_id and status
+  // together in one .find() is a trap: if this conversation's latest job has already completed,
+  // .find() keeps scanning past it and can surface an *older* job for the same conversation that
+  // never got a terminal status - e.g. one whose background thread died without the process
+  // itself restarting, which is the one case the startup cleanup in main.py's lifespan handler
+  // can't catch. That stale match then pins `thinking` true forever for this conversation, which
+  // is why the chat-rail list below computes "in progress" the same way (latestJob then check
+  // its status) rather than folding both conditions into a single .find().
+  const latestJobForActiveChat = jobs.find(job => job.conversation_id === activeChat);
+  const activeJob = latestJobForActiveChat && ['queued', 'running'].includes(latestJobForActiveChat.status)
+    ? latestJobForActiveChat
+    : undefined;
   const thinking = Boolean(activeJob) || directStreaming;
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
   const runningCount = jobs.filter(job => ['queued', 'running'].includes(job.status)).length;

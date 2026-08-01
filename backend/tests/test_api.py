@@ -122,6 +122,68 @@ def test_delete_chat_only_cancels_that_chat_jobs():
         main_module._forget_chat_job_cancel_event("deleteonly2")
 
 
+class TestStaleChatJobs:
+    """A job's background thread can die without the process restarting (OOM kill the process
+    survives, a hung call with no timeout) - the lifespan handler's interrupted-job cleanup only
+    catches a full restart, so a job like that is left at status="running" forever with nothing
+    left to ever touch it again. That single stuck row then pins the *whole conversation* as
+    "busy" in the frontend indefinitely, since ExplorePage's activeJob and the chat rail's
+    per-chat status both match on conversation_id + status - hiding follow-up suggestions, the
+    stop button staying live, etc. - even though a *later* question in the same conversation
+    completed normally. list_chat_jobs lazily fails anything stuck past the timeout so the next
+    poll self-heals it."""
+
+    def test_list_chat_jobs_fails_a_job_stalled_past_the_timeout(self):
+        from datetime import datetime, timedelta, timezone
+        from sqlalchemy import update as sa_update
+
+        # TestClient's own startup (lifespan) fails every queued/running job as an "interrupted
+        # by a backend restart" - real behavior this app relies on, but it means a job has to be
+        # created *after* that lifespan has already run, or this test would just be exercising
+        # that cleanup instead of the lazy stale-timeout sweep in list_chat_jobs.
+        with TestClient(app) as client:
+            with SessionLocal() as db:
+                session = ChatSession(title="Stuck")
+                db.add(session)
+                db.flush()
+                db.add(ChatJob(
+                    id="stalejob1", status="running", stage="drafting", detail="Running",
+                    question="Stuck forever", conversation_id=session.id, model="test-model",
+                ))
+                db.commit()
+                # Backdate updated_at past the stale timeout - onupdate=func.now() would
+                # otherwise stamp it with "now" on this same commit.
+                db.execute(
+                    sa_update(ChatJob).where(ChatJob.id == "stalejob1").values(
+                        updated_at=datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=main_module.CHAT_JOB_STALE_TIMEOUT_SECONDS + 60)
+                    )
+                )
+                db.commit()
+
+            jobs = client.get("/api/chat/jobs").json()
+
+        stale = next(job for job in jobs if job["id"] == "stalejob1")
+        assert stale["status"] == "failed"
+        assert "stalled" in stale["detail"].lower()
+
+    def test_list_chat_jobs_leaves_a_recently_updated_running_job_alone(self):
+        with TestClient(app) as client:
+            with SessionLocal() as db:
+                session = ChatSession(title="Actually running")
+                db.add(session)
+                db.flush()
+                db.add(ChatJob(
+                    id="freshjob1", status="running", stage="drafting", detail="Running",
+                    question="In progress", conversation_id=session.id, model="test-model",
+                ))
+                db.commit()
+
+            jobs = client.get("/api/chat/jobs").json()
+
+        fresh = next(job for job in jobs if job["id"] == "freshjob1")
+        assert fresh["status"] == "running"
+
+
 def test_load_chat_history_keeps_more_than_ten_messages_with_char_cap():
     with SessionLocal() as db:
         session = ChatSession(title="Long context")

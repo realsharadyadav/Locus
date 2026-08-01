@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import httpx
 import json
@@ -499,6 +499,14 @@ CHAT_JOB_MAX_RETRIES = int(os.getenv("CHAT_JOB_MAX_RETRIES", "3"))
 # Each round costs one retrieval pass plus a repair and a re-verify call, so this stays small.
 CHAT_EVIDENCE_ROUNDS = int(os.getenv("LOCUS_CHAT_EVIDENCE_ROUNDS", "2"))
 CHAT_JOB_RETRY_DELAY_SECONDS = float(os.getenv("CHAT_JOB_RETRY_DELAY_SECONDS", "2"))
+# The lifespan handler fails any job still queued/running at boot, but that only catches a full
+# process restart. A job whose background thread dies some other way (OOM kill that the process
+# survives, a hung call with no timeout) leaves status="running" with nothing left ever going to
+# touch it again — updated_at stops advancing once the heartbeat thread stops too, which is what
+# this timeout actually detects. Generous on purpose: the heaviest jobs (deep research pulling
+# 20+ sources) still finish in a couple of minutes, so anything untouched this long is dead, not
+# slow.
+CHAT_JOB_STALE_TIMEOUT_SECONDS = float(os.getenv("CHAT_JOB_STALE_TIMEOUT_SECONDS", "900"))
 OPENAI_MODEL_FALLBACKS = ["gpt-5.4-mini", "gpt-5.5"]
 GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-pro"]
 from .auth import require_auth, router as auth_router
@@ -2212,8 +2220,47 @@ def create_chat_job(payload: ChatRequest, db: Session = Depends(get_db)):
     return job
 
 
+def _fail_stale_chat_jobs(db: Session) -> None:
+    """Lazily heal jobs whose background thread died without the process restarting.
+
+    Runs on every jobs poll (every 1.5s from the frontend) rather than on a schedule, so a
+    stuck job self-heals within one poll cycle without needing a background scheduler. Frontend
+    conversation-level "is this chat busy" checks match on conversation_id and status together
+    (see the chat rail and ExplorePage's activeJob), so a job stuck at "running" forever pins
+    that conversation's whole UI as busy indefinitely even after a later question in the same
+    conversation completes normally - this is the cheap fix on the other side of that.
+    """
+    # ChatJob.updated_at is a plain DateTime column (no timezone), and func.now() fills it with
+    # a naive UTC value on both SQLite and Postgres here — matching that convention rather than
+    # comparing against an aware datetime is what keeps this query dialect-portable.
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    cutoff = now - timedelta(seconds=CHAT_JOB_STALE_TIMEOUT_SECONDS)
+    stale_jobs = db.scalars(
+        select(ChatJob).where(ChatJob.status.in_(["queued", "running"]), ChatJob.updated_at < cutoff)
+    ).all()
+    if not stale_jobs:
+        return
+    for job in stale_jobs:
+        diagnostic_event(
+            "job.stale_timeout",
+            job_id=job.id,
+            conversation_id=job.conversation_id,
+            previous_status=job.status,
+            previous_stage=job.stage,
+            idle_seconds=(now - job.updated_at).total_seconds(),
+            log_retained=True,
+        )
+    db.execute(
+        update(ChatJob)
+        .where(ChatJob.id.in_([job.id for job in stale_jobs]))
+        .values(status="failed", stage="failed", detail="This task stalled and was stopped automatically. Please ask the question again.", error="Stale job timeout")
+    )
+    db.commit()
+
+
 @app.get("/api/chat/jobs", response_model=list[ChatJobRead])
 def list_chat_jobs(db: Session = Depends(get_db)):
+    _fail_stale_chat_jobs(db)
     return db.scalars(select(ChatJob).order_by(ChatJob.created_at.desc(), ChatJob.id.desc()).limit(100)).all()
 
 
