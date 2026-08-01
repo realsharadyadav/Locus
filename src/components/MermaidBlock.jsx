@@ -79,6 +79,15 @@ export function MermaidBlock({ code }) {
     window.setTimeout(() => setCopied(false), 1500);
   };
 
+  // The inline canvas only scrolls (touch-action: pan-x pan-y in CSS) — pinch-zoom needs pan
+  // bounds and a reset affordance that only make sense full-screen, and DiagramLightbox already
+  // has all of that. Rather than duplicate it here, a second finger touching down on the inline
+  // preview jumps straight into the lightbox mid-gesture, so "pinch to zoom" in the hint below is
+  // never a dead gesture — it always does something, even though the zoom itself starts fresh.
+  const handleCanvasTouchStart = event => {
+    if (event.touches.length >= 2) setZoomed(true);
+  };
+
   return (
     <div className="code-block mermaid-block">
       <div className="code-block-toolbar">
@@ -107,7 +116,13 @@ export function MermaidBlock({ code }) {
       ) : svg ? (
         <figure className="mermaid-figure">
           {title && <figcaption className="mermaid-figure-title">{title}</figcaption>}
-          <div ref={canvasRef} className="mermaid-canvas mermaid-canvas-zoomable" onClick={() => setZoomed(true)} dangerouslySetInnerHTML={{ __html: svg }} />
+          <div
+            ref={canvasRef}
+            className="mermaid-canvas mermaid-canvas-zoomable"
+            onClick={() => setZoomed(true)}
+            onTouchStart={handleCanvasTouchStart}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
           {legend.length > 0 && (
             <ul className="mermaid-legend">
               {legend.map(entry => (

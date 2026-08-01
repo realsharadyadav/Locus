@@ -92,10 +92,26 @@ export function naturalDiagramWidth(svgElement) {
   return Number.isFinite(width) && width > 0 ? width : 0;
 }
 
+// Every diagram Mermaid can render opens with one of these keywords (optionally after a
+// frontmatter block or blank lines). CodeBlock already withholds a ```mermaid fence from
+// MermaidBlock entirely until the whole message has finished streaming (see the
+// `mermaid-block-pending` branch), so by the time code reaches here it is never a
+// still-arriving partial chunk - a code block that doesn't start with one of these is a
+// genuinely malformed diagram, not a diagram that just needs more time. Checking this before
+// calling mermaid.render() turns "No diagram type detected" from a parser exception (thrown
+// from deep inside Mermaid, then retried once against the auto-repair pass for no benefit)
+// into an immediate, predictable fallback.
+const KNOWN_DIAGRAM_TYPES = /^\s*(?:---[\s\S]*?---\s*)?(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|gantt|pie|journey|gitGraph|mindmap|timeline|quadrantChart|requirementDiagram|c4Context|c4Container|c4Component|c4Dynamic|block-beta|xychart-beta|sankey-beta)\b/i;
+
+export function hasRecognizedDiagramType(code) {
+  return KNOWN_DIAGRAM_TYPES.test(code || '');
+}
+
 export function useMermaidRender(code) {
   const [result, setResult] = useState({ svg: null, error: null });
   const [themeTick, setThemeTick] = useState(0);
   const idRef = useRef(null);
+  const lastRenderedRef = useRef({ code: null, themeTick: null });
   if (!idRef.current) idRef.current = `mermaid-diagram-${++mermaidDiagramSeq}`;
 
   useEffect(() => {
@@ -105,11 +121,36 @@ export function useMermaidRender(code) {
   }, []);
 
   useEffect(() => {
+    // Guards against a parent re-render passing an equal-by-value code/themeTick pair back in -
+    // React already skips the effect when neither dependency changed, but a remount (a fresh
+    // component instance picking up the same finished message on route-back, for example)
+    // would otherwise re-run the whole render-and-fade-in sequence for a diagram already drawn.
+    if (lastRenderedRef.current.code === code && lastRenderedRef.current.themeTick === themeTick) return undefined;
+    if (!hasRecognizedDiagramType(code)) {
+      lastRenderedRef.current = { code, themeTick };
+      setResult({ svg: null, error: 'No diagram type detected' });
+      return undefined;
+    }
     let cancelled = false;
     loadMermaid()
       .then(async mermaid => {
         if (cancelled) return null;
-        mermaid.initialize({ startOnLoad: false, theme: readMermaidTheme(), securityLevel: 'strict', fontFamily: 'inherit', suppressErrorRendering: true });
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: readMermaidTheme(),
+          // 'strict' HTML-encodes label text, which turns an intentional <br/> line break
+          // inside a node label into the literal text "<br>" instead of a line break. 'loose'
+          // fixes that but disables Mermaid's own sanitization entirely - unacceptable here
+          // since diagram source can come from an LLM answer (including unrestricted-mode
+          // output) or a summarized untrusted document, and the rendered SVG is inserted via
+          // dangerouslySetInnerHTML. 'antiscript' is the middle ground Mermaid ships for
+          // exactly this: HTML tags in labels (including <br/>) render, only <script> is
+          // stripped.
+          securityLevel: 'antiscript',
+          flowchart: { htmlLabels: true },
+          fontFamily: 'inherit',
+          suppressErrorRendering: true,
+        });
         try {
           return await mermaid.render(idRef.current, code);
         } catch (firstError) {
@@ -122,8 +163,16 @@ export function useMermaidRender(code) {
           }
         }
       })
-      .then(rendered => { if (!cancelled && rendered) setResult({ svg: rendered.svg, error: null }); })
-      .catch(error => { if (!cancelled) setResult({ svg: null, error: error?.message || 'Invalid diagram syntax' }); });
+      .then(rendered => {
+        if (cancelled || !rendered) return;
+        lastRenderedRef.current = { code, themeTick };
+        setResult({ svg: rendered.svg, error: null });
+      })
+      .catch(error => {
+        if (cancelled) return;
+        lastRenderedRef.current = { code, themeTick };
+        setResult({ svg: null, error: error?.message || 'Invalid diagram syntax' });
+      });
     return () => { cancelled = true; };
   }, [code, themeTick]);
 
