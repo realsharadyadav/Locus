@@ -123,7 +123,15 @@ class ChatResponse(BaseModel):
 
 class SuggestionsRequest(BaseModel):
     question: str = Field(min_length=1, max_length=8000)
-    answer: str = Field(min_length=1, max_length=20000)
+    # generate_followup_questions() only ever uses the first 4000 chars of this (see
+    # answer_excerpt in llm.py), so this ceiling exists purely to reject abusive payloads, not
+    # to gate normal answers. 20000 was tight enough that a genuinely long unrestricted/web
+    # research/deep_summary answer (tens of thousands of chars once sources and formatting are
+    # included) got a 422 here before generate_followup_questions ever ran — invisible to the
+    # try/except in the endpoint below, since Pydantic validation happens before that code runs
+    # at all, and invisible to the user, since the frontend's catch turns any error into "no
+    # suggestions" either way.
+    answer: str = Field(min_length=1, max_length=200_000)
     model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
     provider: Literal["ollama", "groq", "openai", "gemini"] = Field(default_factory=llm_provider)
 

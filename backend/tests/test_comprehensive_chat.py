@@ -1380,3 +1380,21 @@ class TestFollowUpSuggestions:
             response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
         assert response.status_code == 200
         assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]
+
+    def test_long_answer_is_not_rejected_before_it_ever_reaches_generate_followup_questions(self, monkeypatch):
+        # A comprehensive unrestricted/web-research/deep_summary answer with several cited
+        # sources easily runs tens of thousands of characters. The old 20000-char ceiling on
+        # SuggestionsRequest.answer rejected those with a 422 from Pydantic validation - which
+        # runs before this endpoint's own try/except, so it never even showed up as a diagnostic
+        # event, and the frontend's catch turned it into indistinguishable-from-"no suggestions"
+        # silence. generate_followup_questions only ever uses the first 4000 chars anyway.
+        monkeypatch.setattr(
+            "backend.app.llm._chat",
+            lambda *a, **k: '{"suggestions": ["What about latency?", "How does it scale?"]}',
+        )
+        long_answer = "Detailed, source-backed finding. " * 1000  # ~34,000 chars
+        assert len(long_answer) > 20_000
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": long_answer})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]
