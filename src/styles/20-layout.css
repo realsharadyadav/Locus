@@ -73,18 +73,30 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
 }
 .settings-provider-card {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   padding: 12px 13px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--paper);
-  cursor: pointer;
-  text-align: left;
   transition: all .15s;
 }
 .settings-provider-card:hover { border-color: var(--violet); }
 .settings-provider-card.active { border-color: var(--violet); background: rgba(116,92,255,.06); box-shadow: 0 0 0 1px rgba(116,92,255,.2); }
+.settings-provider-card.disabled { opacity: .55; }
+.settings-provider-card-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
 .settings-provider-icon { font-size: 20px; flex-shrink: 0; }
 .settings-provider-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .settings-provider-info strong { font-size: 12.5px; color: var(--ink); }
@@ -102,6 +114,17 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
 }
 .settings-provider-status.ready { color: #1f9d6f; background: rgba(52,211,153,.14); }
 .settings-provider-status.idle { color: #b08900; background: rgba(251,191,36,.14); }
+.settings-provider-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  color: var(--muted);
+  cursor: pointer;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.settings-provider-toggle input { margin: 0; accent-color: var(--violet); }
 
 .settings-hint {
   display: flex;
@@ -170,6 +193,13 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
   color: inherit;
   opacity: .65;
   font-weight: 500;
+}
+.settings-model-chip-price {
+  flex-shrink: 0;
+  color: inherit;
+  opacity: .65;
+  font-weight: 500;
+  white-space: nowrap;
 }
 .settings-model-chip-free {
   flex-shrink: 0;
@@ -252,6 +282,7 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
   display: flex;
   justify-content: flex-start;
 }
+.settings-save-bar-inline { margin-top: 6px; }
 
 .settings-hint-text {
   margin: 0 0 12px;

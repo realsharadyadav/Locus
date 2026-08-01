@@ -4,6 +4,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .providers import PROVIDERS, provider_spec
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
@@ -59,10 +61,9 @@ def require_environment_variable(name: str) -> str:
 
 def llm_provider() -> str:
     provider = os.getenv("LLM_PROVIDER", "ollama").strip().lower()
-    if provider not in {"ollama", "groq", "openai", "gemini"}:
-        raise RuntimeError(
-            f"Unsupported LLM_PROVIDER '{provider}'. Set LLM_PROVIDER to 'ollama', 'groq', 'openai', or 'gemini'."
-        )
+    if provider not in PROVIDERS:
+        known = ", ".join(f"'{name}'" for name in PROVIDERS)
+        raise RuntimeError(f"Unsupported LLM_PROVIDER '{provider}'. Set LLM_PROVIDER to one of: {known}.")
     return provider
 
 
@@ -92,15 +93,35 @@ def groq_settings(require_key: bool = True) -> GroqSettings:
     )
 
 
+@dataclass(frozen=True)
+class GatewaySettings:
+    provider: str
+    api_key: str
+    base_url: str
+    model: str
+
+
+def gateway_settings(provider: str, require_key: bool = True) -> GatewaySettings:
+    spec = provider_spec(provider)
+    if spec.kind != "gateway":
+        raise RuntimeError(f"'{provider}' is not a gateway-kind provider.")
+    api_key = require_environment_variable(spec.api_key_env) if require_key else os.getenv(spec.api_key_env, "").strip()
+    model = os.getenv(spec.model_env, spec.default_model or "").strip() or (spec.default_model or "")
+    return GatewaySettings(provider=provider, api_key=api_key, base_url=spec.base_url, model=model)
+
+
 def configured_model() -> str:
     provider = llm_provider()
+    spec = provider_spec(provider)
     if provider == "groq":
         return groq_settings(require_key=False).model
     if provider == "openai":
-        return os.getenv("OPENAI_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
+        return os.getenv("OPENAI_MODEL", spec.default_model).strip() or spec.default_model
     if provider == "gemini":
-        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash"
-    return os.getenv("OLLAMA_MODEL", "llama3.2:latest")
+        return os.getenv("GEMINI_MODEL", spec.default_model).strip() or spec.default_model
+    if spec.kind == "gateway":
+        return gateway_settings(provider, require_key=False).model
+    return os.getenv("OLLAMA_MODEL", spec.default_model)
 
 
 def validate_model_environment(model: str) -> None:

@@ -48,9 +48,10 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
+from .providers import PROVIDER_ORDER, PROVIDERS
 from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from . import telegram_bridge
@@ -546,23 +547,18 @@ def llm_config():
     except Exception:
         ollama_models = []
     openai_models = []
-    if os.getenv("OPENAI_API_KEY", "").strip():
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if openai_key:
         try:
-            response = httpx.get(
-                "https://api.openai.com/v1/models",
-                headers={"Authorization": f"Bearer {os.environ['OPENAI_API_KEY'].strip()}"},
-                timeout=5,
-            )
-            if response.status_code == 200:
-                openai_models = sorted(
-                    item["id"] for item in response.json().get("data", [])
-                    if isinstance(item, dict)
-                    and str(item.get("id", "")).startswith(("gpt-", "o1", "o3", "o4", "chatgpt-"))
-                    and not any(
-                        excluded in str(item.get("id", "")).lower()
-                        for excluded in ("embedding", "whisper", "tts", "dall-e", "moderation", "davinci", "babbage", "computer-use")
-                    )
+            models, _pricing = list_openai_compatible_models(PROVIDERS["openai"].base_url, openai_key, timeout=5)
+            openai_models = sorted(
+                model_id for model_id in models
+                if model_id.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-"))
+                and not any(
+                    excluded in model_id.lower()
+                    for excluded in ("embedding", "whisper", "tts", "dall-e", "moderation", "davinci", "babbage", "computer-use")
                 )
+            )
         except Exception:
             openai_models = []
     gemini_models = []
@@ -583,21 +579,54 @@ def llm_config():
                 )
         except Exception:
             gemini_models = []
+
+    # Any OpenAI-compatible gateway provider (OpenRouter, TokenRouter, and future entries in
+    # the registry) is listed the same generic way — a registry entry is all that's needed to
+    # add another one, no new branch here.
+    gateway_models: dict[str, list[str]] = {}
+    gateway_pricing: dict[str, dict] = {}
+    for provider_id, spec in PROVIDERS.items():
+        if spec.kind != "gateway":
+            continue
+        api_key = os.getenv(spec.api_key_env, "").strip()
+        if not api_key:
+            gateway_models[provider_id] = []
+            continue
+        try:
+            models, pricing = list_openai_compatible_models(spec.base_url, api_key, timeout=5)
+            gateway_models[provider_id] = models
+            gateway_pricing[provider_id] = pricing
+        except Exception:
+            gateway_models[provider_id] = []
+
     provider_models = {
         "ollama": ollama_models,
         "groq": groq_models,
         "openai": openai_models,
         "gemini": gemini_models,
+        **gateway_models,
     }
     return {
         "provider": provider,
         "model": configured_model(),
-        "models": provider_models[provider],
+        "models": provider_models.get(provider, []),
         "providers": provider_models,
-        "presets": GROQ_MODEL_PRESETS if provider == "groq" else provider_models[provider],
+        "providers_catalog": {
+            provider_id: {
+                "label": spec.label,
+                "icon": spec.icon,
+                "blurb": spec.blurb,
+                "requires_key": spec.api_key_env is not None,
+                "env_hint": spec.env_hint,
+                "docs_url": spec.docs_url,
+            }
+            for provider_id, spec in PROVIDERS.items()
+        },
+        "provider_order": PROVIDER_ORDER,
+        "presets": GROQ_MODEL_PRESETS if provider == "groq" else provider_models.get(provider, []),
         "fallback_presets": {"openai": OPENAI_MODEL_FALLBACKS, "gemini": GEMINI_MODEL_FALLBACKS},
         "using_fallback_models": using_fallback,
-        "model_meta": build_model_meta(provider_models),
+        "model_meta": build_model_meta(provider_models, gateway_pricing),
     }
 
 

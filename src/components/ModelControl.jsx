@@ -2,12 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Search,
 } from 'lucide-react';
-import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS } from '../lib/appState';
-import { formatContextLength } from '../lib/format';
+import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, PROVIDER_META } from '../lib/appState';
+import { formatContextLength, formatPrice } from '../lib/format';
 import { useClickOutside } from '../hooks/useClickOutside';
 
-export function ModelControl({ config, provider, setProvider, model, setModel }) {
-  const providerIcons = { ollama: '🦙', groq: '⚡', openai: '🤖', gemini: '✨' };
+export function ModelControl({ config, provider, setProvider, model, setModel, enabledProviders }) {
   const [openMenu, setOpenMenu] = useState(null);
   const [modelQuery, setModelQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
@@ -39,6 +38,12 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
     setProvider(nextProvider);
     setModel(nextOptions[0] || (nextProvider === config?.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]));
   };
+  const availableProviders = Object.keys(config?.providers || DEFAULT_PROVIDER_MODELS);
+  // No enabledProviders prop (or nothing loaded yet) means "don't filter" — Settings defaults
+  // every provider to enabled, so an unset preference should behave the same way here.
+  const visibleProviders = enabledProviders
+    ? availableProviders.filter(item => (enabledProviders.has ? enabledProviders.has(item) : enabledProviders.includes(item)))
+    : availableProviders;
   return (
     <div className="model-control" ref={controlRef} aria-label="Choose the AI provider and model used for answers">
       <div className={`model-control-field mc-provider ${openMenu === 'provider' ? 'open' : ''}`}>
@@ -49,7 +54,7 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
           aria-expanded={openMenu === 'provider'}
           aria-label="LLM provider"
         >
-          <span className="mc-icon" aria-hidden="true">{providerIcons[provider]}</span>
+          <span className="mc-icon" aria-hidden="true">{PROVIDER_META[provider]?.icon}</span>
           <span className="mc-copy">
             <span className="mc-label">Provider</span>
             <span className="mc-value">{PROVIDER_LABELS[provider]}</span>
@@ -58,7 +63,7 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
         </button>
         {openMenu === 'provider' && (
           <div className="mc-menu" role="listbox" aria-label="LLM provider menu">
-            {Object.keys(config?.providers || DEFAULT_PROVIDER_MODELS).map(item => {
+            {visibleProviders.map(item => {
               const active = item === provider;
               return (
                 <button
@@ -72,10 +77,10 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
                   role="option"
                   aria-selected={active}
                 >
-                  <span className="mc-option-icon" aria-hidden="true">{providerIcons[item]}</span>
+                  <span className="mc-option-icon" aria-hidden="true">{PROVIDER_META[item]?.icon}</span>
                   <span className="mc-option-text">
                     <strong>{PROVIDER_LABELS[item]}</strong>
-                    <small>{item === 'ollama' ? 'Local models' : item === 'groq' ? 'Fast cloud' : item === 'openai' ? 'OpenAI' : 'Google Gemini'}</small>
+                    <small>{PROVIDER_META[item]?.blurb}</small>
                   </span>
                   {active && <span className="mc-option-check">✓</span>}
                 </button>
@@ -127,6 +132,7 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
             {visibleModelOptions.map(item => {
               const active = item === listedModel;
               const contextLabel = formatContextLength(contextOf(item));
+              const priceLabel = formatPrice(modelMeta[item]?.pricing);
               return (
                 <button
                   key={item}
@@ -145,6 +151,7 @@ export function ModelControl({ config, provider, setProvider, model, setModel })
                     <small>
                       {active ? 'Selected model' : 'Available preset'}
                       {contextLabel ? ` · ${contextLabel}` : ''}
+                      {priceLabel ? ` · ${priceLabel}` : ''}
                     </small>
                   </span>
                   {isFreeModel(item) && <span className="mc-free-tag">Free</span>}

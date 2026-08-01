@@ -57,6 +57,7 @@ export function ExplorePage({
   const [model, setModel] = useState(savedAiPreference.model || DEFAULT_PROVIDER_MODELS[savedAiPreference.provider] || DEFAULT_PROVIDER_MODELS.ollama);
   const [provider, setProvider] = useState(savedAiPreference.provider || 'ollama');
   const [llmConfig, setLlmConfig] = useState(null);
+  const [enabledProviders, setEnabledProviders] = useState(null);
   const [allowGeneralKnowledge, setAllowGeneralKnowledge] = useState(true);
   const [reasoningMode, setReasoningMode] = useState(savedAiPreference.reasoning_mode === 'web_research' ? 'light' : (savedAiPreference.reasoning_mode || 'light'));
   const [webSourceLimit] = useState(savedAiPreference.web_source_limit || 200);
@@ -169,7 +170,8 @@ export function ExplorePage({
     Promise.all([
       api.llmConfig(),
       api.preference('explore_ai').catch(() => ({ value: {} })),
-    ]).then(([config, preference]) => {
+      api.preference('enabled_providers').catch(() => ({ value: {} })),
+    ]).then(([config, preference, enabledProvidersPref]) => {
       setLlmConfig(config);
       const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
       const nextProvider = saved.provider || config.provider || 'ollama';
@@ -177,6 +179,13 @@ export function ExplorePage({
       setProvider(nextProvider);
       setModel(nextModel);
       setReasoningMode(saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'));
+      const knownProviders = Object.keys(config.providers || {});
+      const savedEnabled = enabledProvidersPref.value?.providers;
+      setEnabledProviders(new Set(
+        Array.isArray(savedEnabled) && savedEnabled.length
+          ? savedEnabled.filter(id => knownProviders.includes(id))
+          : knownProviders
+      ));
       aiPreferenceReady.current = true;
     }).catch(() => {});
   }, []);
@@ -919,7 +928,7 @@ export function ExplorePage({
               )}
             </div>
             <div className="desktop-controls">
-              <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
+              <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} enabledProviders={enabledProviders} />
             </div>
             <div className="options-popover-wrap" ref={optionsPopoverRef}>
               <button
@@ -932,7 +941,7 @@ export function ExplorePage({
                 <SlidersHorizontal size={18} />
               </button>
               <div className={`options-popover desktop-controls ${optionsOpen ? 'open' : ''}`}>
-                <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
+                <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} enabledProviders={enabledProviders} />
               </div>
             </div>
           </div>

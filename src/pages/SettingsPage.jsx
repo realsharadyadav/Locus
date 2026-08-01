@@ -14,15 +14,8 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { BRAND, writeStorage } from '../brand';
-import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, readSavedAiPreference } from '../lib/appState';
-import { formatContextLength } from '../lib/format';
-
-export const PROVIDER_META = {
-  ollama: { icon: '🦙', blurb: 'Local models, no API key needed', envHint: 'Runs against OLLAMA_URL — start Ollama and pull a model.' },
-  groq: { icon: '⚡', blurb: 'Fast cloud inference', envHint: 'Set GROQ_API_KEY in your .env file.' },
-  openai: { icon: '🤖', blurb: 'OpenAI models', envHint: 'Set OPENAI_API_KEY in your .env file.' },
-  gemini: { icon: '✨', blurb: 'Google Gemini models', envHint: 'Set GEMINI_API_KEY in your .env file.' },
-};
+import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, PROVIDER_META, PROVIDER_ORDER, readSavedAiPreference } from '../lib/appState';
+import { formatContextLength, formatPrice } from '../lib/format';
 
 export const REASONING_MODE_META = [
   { id: 'light', label: 'Light', icon: Radio, desc: 'Fast direct chat — default mode' },
@@ -42,6 +35,8 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [limits, setLimits] = useState(null);
   const [limitInput, setLimitInput] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
+  const [enabledProviders, setEnabledProviders] = useState(null);
+  const [savingProviders, setSavingProviders] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,8 +44,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       api.llmConfig(),
       api.preference('explore_ai').catch(() => ({ value: {} })),
       api.systemLimits().catch(() => null),
+      api.preference('enabled_providers').catch(() => ({ value: {} })),
     ])
-      .then(([llmConfig, preference, systemLimits]) => {
+      .then(([llmConfig, preference, systemLimits, enabledProvidersPref]) => {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
@@ -64,10 +60,39 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           setLimits(systemLimits);
           setLimitInput(String(systemLimits.upload_max_mb));
         }
+        const knownProviders = Object.keys(llmConfig.providers || {});
+        const savedEnabled = enabledProvidersPref.value?.providers;
+        // No preference saved yet means nothing has ever been hidden — default to everything on.
+        setEnabledProviders(new Set(
+          Array.isArray(savedEnabled) && savedEnabled.length
+            ? savedEnabled.filter(id => knownProviders.includes(id))
+            : knownProviders
+        ));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  const toggleProviderEnabled = (provider) => {
+    setEnabledProviders(current => {
+      const next = new Set(current);
+      if (next.has(provider)) next.delete(provider);
+      else next.add(provider);
+      return next;
+    });
+  };
+
+  const saveEnabledProviders = async () => {
+    setSavingProviders(true);
+    try {
+      await api.updatePreference('enabled_providers', { providers: Array.from(enabledProviders) });
+      toast('Enabled providers saved', 'success');
+    } catch (error) {
+      toast(error.message || 'Could not save enabled providers', 'error');
+    } finally {
+      setSavingProviders(false);
+    }
+  };
 
   const saveUploadLimit = async () => {
     if (!limits) return;
@@ -86,7 +111,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
-  if (loading || !draft) {
+  if (loading || !draft || !enabledProviders) {
     return (
       <div className="page settings-page">
         <div className="loading-grid">
@@ -96,7 +121,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     );
   }
 
-  const providers = ['ollama', 'groq', 'openai', 'gemini'];
+  const knownProviders = Object.keys(config?.providers || {});
+  const providerOrder = config?.provider_order?.length ? config.provider_order : PROVIDER_ORDER;
+  const providers = providerOrder.filter(id => knownProviders.includes(id));
   const providerModels = provider => config?.providers?.[provider] || [];
   const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
   const modelMeta = config?.model_meta || {};
@@ -157,25 +184,40 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
             const meta = PROVIDER_META[provider];
             const ready = providerReady(provider);
             const active = draft.provider === provider;
+            const enabled = enabledProviders.has(provider);
             return (
-              <button
-                key={provider}
-                type="button"
-                className={`settings-provider-card ${active ? 'active' : ''}`}
-                onClick={() => selectProvider(provider)}
-              >
-                <span className="settings-provider-icon">{meta.icon}</span>
-                <span className="settings-provider-info">
-                  <strong>{PROVIDER_LABELS[provider]}</strong>
-                  <small>{meta.blurb}</small>
-                </span>
-                <span className={`settings-provider-status ${ready ? 'ready' : 'idle'}`}>
-                  {ready ? <CircleCheck size={13} /> : <AlertTriangle size={13} />}
-                  {ready ? `${providerModels(provider).length} model${providerModels(provider).length === 1 ? '' : 's'}` : 'Not connected'}
-                </span>
-              </button>
+              <div key={provider} className={`settings-provider-card ${active ? 'active' : ''} ${enabled ? '' : 'disabled'}`}>
+                <button
+                  type="button"
+                  className="settings-provider-card-select"
+                  onClick={() => selectProvider(provider)}
+                >
+                  <span className="settings-provider-icon">{meta.icon}</span>
+                  <span className="settings-provider-info">
+                    <strong>{PROVIDER_LABELS[provider]}</strong>
+                    <small>{meta.blurb}</small>
+                  </span>
+                  <span className={`settings-provider-status ${ready ? 'ready' : 'idle'}`}>
+                    {ready ? <CircleCheck size={13} /> : <AlertTriangle size={13} />}
+                    {ready ? `${providerModels(provider).length} model${providerModels(provider).length === 1 ? '' : 's'}` : 'Not connected'}
+                  </span>
+                </button>
+                <label className="settings-provider-toggle">
+                  <input
+                    type="checkbox"
+                    checked={enabled}
+                    onChange={() => toggleProviderEnabled(provider)}
+                  />
+                  <span>Show in {BRAND.name}</span>
+                </label>
+              </div>
             );
           })}
+        </div>
+        <div className="settings-save-bar settings-save-bar-inline">
+          <button type="button" className="btn-primary" onClick={saveEnabledProviders} disabled={savingProviders}>
+            {savingProviders ? 'Saving...' : 'Save enabled providers'}
+          </button>
         </div>
 
         {!providerReady(draft.provider) && (
@@ -205,6 +247,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           )}
           {visibleModels.map(item => {
             const contextLabel = formatContextLength(contextOf(item));
+            const priceLabel = formatPrice(modelMeta[item]?.pricing);
             return (
               <button
                 key={item}
@@ -215,6 +258,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
               >
                 <span className="settings-model-chip-name">{item}</span>
                 {contextLabel && <small className="settings-model-chip-ctx">{contextLabel}</small>}
+                {priceLabel && <small className="settings-model-chip-price">{priceLabel}</small>}
                 {isFreeModel(item) && <span className="settings-model-chip-free">Free</span>}
                 {draft.model === item && <Check size={12} />}
               </button>

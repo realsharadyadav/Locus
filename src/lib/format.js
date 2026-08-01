@@ -70,6 +70,28 @@ export function formatContextLength(value) {
   return `${value} ctx`;
 }
 
+// Gateway providers (OpenRouter, TokenRouter, ...) report per-token pricing in their /models
+// response using slightly different field names depending on the gateway, so this reads
+// whichever of the common conventions is present rather than assuming one shape.
+export function formatPrice(pricing) {
+  if (!pricing || typeof pricing !== 'object') return null;
+  const toNumber = value => {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+  const promptCost = toNumber(pricing.prompt ?? pricing.input ?? pricing.input_cost_per_token);
+  const completionCost = toNumber(pricing.completion ?? pricing.output ?? pricing.output_cost_per_token);
+  if (promptCost == null && completionCost == null) return null;
+  const perMillion = value => (value == null ? null : value * 1_000_000);
+  const fmt = value => (value === 0 ? '0' : value < 0.01 ? value.toFixed(4) : value < 1 ? value.toFixed(3) : value.toFixed(2));
+  const parts = [];
+  const inCost = perMillion(promptCost);
+  const outCost = perMillion(completionCost);
+  if (inCost != null) parts.push(`$${fmt(inCost)}/1M in`);
+  if (outCost != null) parts.push(`$${fmt(outCost)}/1M out`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
 export function jobFailureMessage(job) {
   const error = job?.error || job?.detail || 'The answer could not be completed.';
   const diagnosticId = job?.id ? `\n\nDiagnostic ID: ${job.id}` : '';

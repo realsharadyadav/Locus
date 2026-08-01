@@ -74,11 +74,16 @@ Important settings:
 
 - `LOCUS_DATABASE_URL`: unset uses local SQLite (`backend/locus.db`); set to a Postgres URL to
   use Postgres + pgvector for both relational data and semantic search
-- `LLM_PROVIDER`: `ollama`, `groq`, `openai`, or `gemini`
+- `LLM_PROVIDER`: `ollama`, `groq`, `openai`, `gemini`, `openrouter`, or `tokenrouter` — the full
+  list lives in `backend/app/providers.py`'s `PROVIDERS` registry, which both the backend and
+  the Settings page read from, so adding another OpenAI-compatible gateway is a registry entry
+  there, not a new code path
 - `OLLAMA_URL`, `OLLAMA_MODEL`
 - `GROQ_API_KEY`, `GROQ_MODEL`
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
+- `OPENROUTER_API_KEY`, `OPENROUTER_MODEL` — OpenAI-compatible gateway across many providers
+- `TOKENROUTER_API_KEY`, `TOKENROUTER_MODEL` — another OpenAI-compatible gateway
 - `SEMANTIC_RETRIEVAL_ENABLED`
 - `VECTOR_FALLBACK_PATH`
 - `TICKET_ANALYSIS_ENABLED`

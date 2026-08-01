@@ -11,8 +11,9 @@ from abc import ABC, abstractmethod
 import httpx
 
 from .brand import BRAND_NAME, USER_AGENT
-from .config import GROQ_MODEL_PRESETS, configured_model, groq_settings, llm_provider, validate_model_environment
+from .config import GROQ_MODEL_PRESETS, configured_model, gateway_settings, groq_settings, llm_provider, validate_model_environment
 from .diagnostics import diagnostic_event
+from .providers import PROVIDER_ORDER, PROVIDERS, provider_spec
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.2:latest")
@@ -118,6 +119,11 @@ def _litellm_model(provider: str, model: str) -> str:
         return model if model.startswith("gemini/") else f"gemini/{model}"
     if provider == "ollama":
         return model if model.startswith(("ollama/", "ollama_chat/")) else f"ollama_chat/{model}"
+    if provider_spec(provider).kind == "gateway":
+        # Any OpenAI-compatible gateway (OpenRouter, TokenRouter, ...) is reached through
+        # LiteLLM's generic "openai/<model>" routing combined with a custom api_base below —
+        # this is the standard mechanism for talking to an unlisted OpenAI-compatible endpoint.
+        return model if model.startswith("openai/") else f"openai/{model}"
     return model
 
 
@@ -142,6 +148,9 @@ def _litellm_kwargs(provider: str, model: str, max_retry_after_seconds: float | 
     if provider == "gemini":
         validate_model_environment(model)
         return {"api_key": os.environ["GEMINI_API_KEY"].strip(), "timeout": LLM_REQUEST_TIMEOUT_SECONDS}
+    if provider_spec(provider).kind == "gateway":
+        settings = gateway_settings(provider)
+        return {"api_key": settings.api_key, "api_base": settings.base_url, "timeout": LLM_REQUEST_TIMEOUT_SECONDS}
     return {"timeout": LLM_REQUEST_TIMEOUT_SECONDS}
 
 
@@ -437,7 +446,30 @@ def get_llm_client(model: str | None = None, provider: str | None = None) -> LLM
         return OllamaClient(model=selected_model)
     if selected_provider in {"openai", "gemini"}:
         return RoutedChatClient(selected_provider, selected_model)
-    raise RuntimeError(f"Unsupported LLM provider '{selected_provider}'. Use 'ollama', 'groq', 'openai', or 'gemini'.")
+    if provider_spec(selected_provider).kind == "gateway":
+        return LiteLLMGatewayClient(selected_provider, selected_model)
+    known = ", ".join(f"'{name}'" for name in PROVIDER_ORDER)
+    raise RuntimeError(f"Unsupported LLM provider '{selected_provider}'. Use one of: {known}.")
+
+
+def list_openai_compatible_models(base_url: str, api_key: str, timeout: float = 15) -> tuple[list[str], dict[str, dict]]:
+    """List models from any endpoint that implements OpenAI's `GET /models` shape.
+
+    Returns (model ids, pricing by model id) — pricing is only populated for models whose
+    entry in the response includes a `pricing` object (OpenRouter and TokenRouter both do
+    this; plain OpenAI does not, so its pricing dict will just come back empty).
+    """
+    with httpx.Client(timeout=timeout) as client:
+        response = client.get(f"{base_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {api_key}"})
+        response.raise_for_status()
+    entries = [item for item in response.json().get("data", []) if isinstance(item, dict) and item.get("id")]
+    models = sorted({item["id"] for item in entries})
+    pricing = {
+        item["id"]: item["pricing"]
+        for item in entries
+        if isinstance(item.get("pricing"), dict)
+    }
+    return models, pricing
 
 
 def list_groq_models() -> tuple[list[str], bool]:
@@ -445,13 +477,7 @@ def list_groq_models() -> tuple[list[str], bool]:
     if not settings.api_key:
         return list(GROQ_MODEL_PRESETS), True
     try:
-        with httpx.Client(timeout=min(settings.timeout_seconds, 15)) as client:
-            response = client.get(
-                f"{settings.base_url}/models",
-                headers={"Authorization": f"Bearer {settings.api_key}"},
-            )
-            response.raise_for_status()
-        models = sorted({item["id"] for item in response.json().get("data", []) if isinstance(item, dict) and item.get("id")})
+        models, _pricing = list_openai_compatible_models(settings.base_url, settings.api_key, timeout=min(settings.timeout_seconds, 15))
         return (models or list(GROQ_MODEL_PRESETS)), not bool(models)
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
         return list(GROQ_MODEL_PRESETS), True
@@ -463,7 +489,7 @@ _FREE_GEMINI_NAME_HINTS = ("flash",)
 def _model_is_free(provider: str, model: str) -> bool:
     # Ollama runs locally and Groq's public API is free to use (rate-limited), so both are
     # always free. Gemini's free AI Studio tier centers on the Flash family; Pro models are
-    # effectively paid-tier. OpenAI's API always bills per token.
+    # effectively paid-tier. OpenAI's API and every gateway provider always bill per token.
     if provider in {"ollama", "groq"}:
         return True
     if provider == "gemini":
@@ -484,15 +510,18 @@ def _model_context_length(provider: str, model: str) -> int | None:
     return entry.get("max_input_tokens") or entry.get("max_tokens")
 
 
-def build_model_meta(provider_models: dict[str, list[str]]) -> dict[str, dict]:
+def build_model_meta(provider_models: dict[str, list[str]], provider_pricing: dict[str, dict[str, dict]] | None = None) -> dict[str, dict]:
+    provider_pricing = provider_pricing or {}
     meta: dict[str, dict] = {}
     for provider, models in provider_models.items():
+        pricing = provider_pricing.get(provider, {})
         for model in models:
             if model in meta:
                 continue
             meta[model] = {
                 "context_length": _model_context_length(provider, model),
                 "free": _model_is_free(provider, model),
+                "pricing": pricing.get(model),
             }
     return meta
 
