@@ -154,6 +154,26 @@ that will bite you again if forgotten.
     reason: without it, a repair pass rewrites the layout back into prose. `_answer_shape_guidance()`
     returns "" for `deep_summary` and `unrestricted`, which own their own output contracts.
 
+17. **Diagrams: fit to a legibility floor, then scroll** — Mermaid sizes its SVG to whatever box it
+    lands in, so a wide flowchart on a phone renders at ~17% and becomes an unreadable smudge.
+    `MermaidBlock` instead measures the container and sets the SVG width to
+    `min(1, max(available / natural, MIN_LEGIBLE_SCALE))` — diagrams that fit still fit, wider ones
+    stop shrinking at 70% and `.mermaid-canvas` scrolls. Two non-obvious requirements: the SVG needs
+    `flex: none` (the canvas is a flex container and would otherwise shrink it back regardless of
+    the width set on it), and `margin-inline: auto` is what keeps a fitting diagram centred while
+    letting an overflowing one start at its left edge. The figure title and colour legend are parsed
+    back out of the diagram source (`lib/mermaidMeta.js`: frontmatter `title:` and `classDef` names),
+    so they cannot drift from the drawing — and `dropDrawnTitle` removes Mermaid's own in-SVG title
+    and trims the viewBox band it occupied, or the title renders twice and wastes ~40% of the height.
+
+18. **The diagram lightbox owns its touch gestures** — pinch is implemented from pointer events
+    (a Map of live pointers; two entries is a pinch), zooming about the focal point so content stays
+    under the fingers. `touch-action: none` on `.diagram-lightbox-canvas` is what stops the browser
+    claiming the two-finger gesture for page zoom; without it Chromium fires `pointercancel`
+    mid-gesture and the pinch freezes part-way. The app does not disable page zoom globally and
+    should not — that is an accessibility regression. Double-tap is timed manually (300ms) rather
+    than using `dblclick`, and zooms in from 1x or resets when already magnified.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -248,6 +268,7 @@ that will bite you again if forgotten.
 | `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
 | `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering. All react-markdown `components` overrides live in one `useMemo` — a new identity remounts the code renderer and restarts in-flight Mermaid renders. Overrides must drop the `node` prop instead of spreading it onto the DOM |
 | `AnswerSection.jsx` | One collapsible answer section (h2 + its content). Starts expanded; collapsing sets `data-collapsed` and CSS hides the body, so children are never restructured |
+| `MermaidBlock.jsx` | Diagram figure: caption, colour legend, legibility-floor sizing (note 17) |
 | `CollapsibleSources.jsx` | Source/evidence display |
 | `CreateStoreModal.jsx` / `ConfirmModal.jsx` | Modals |
 | `CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
@@ -261,6 +282,7 @@ that will bite you again if forgotten.
 | `lib/appState.js` | Storage keys, page ids, provider defaults, cached app data |
 | `lib/pipelineNotes.js` | Turns pipeline events into human-readable working notes |
 | `lib/mermaid.js` / `lib/highlight.js` | Lazy-loaded diagram and syntax-highlighting integration |
+| `lib/mermaidMeta.js` | Parses a diagram's frontmatter title and `classDef` entries to build the figure caption and colour legend |
 | `lib/rehypeAnswerSections.js` | Wraps each `h2` and the siblings after it in a `<section>`. react-markdown emits headings and content as flat siblings, so without this there is no element to collapse or animate. Applied only once streaming ends |
 | `lib/ask.js` | Slash commands and auto web-search heuristics |
 | `hooks/useChatViewport.js` | Mobile keyboard / viewport locking for chat surfaces |

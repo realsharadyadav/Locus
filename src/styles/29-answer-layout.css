@@ -166,6 +166,113 @@
   to { opacity: 1; transform: none; }
 }
 
+/* Figure chrome: caption above, colour legend below. Both are derived from the diagram source
+   (frontmatter title and classDef names), so they cannot drift out of sync with the drawing.
+   All of it sits on the dark .code-block surface in BOTH themes, so the colours are fixed to
+   that surface rather than following the theme's ink/muted variables. The font family is set
+   explicitly because .code-block puts its descendants in monospace. */
+.markdown-answer .mermaid-figure {
+  margin: 0;
+  background: #21252b;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+}
+
+.markdown-answer .mermaid-figure-title {
+  padding: 9px 13px;
+  color: #e7ecf3;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-transform: none;
+}
+
+.markdown-answer .mermaid-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  margin: 0;
+  padding: 9px 13px;
+  list-style: none;
+}
+
+.markdown-answer .mermaid-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: #b7c2cf;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* The answer-layout bullet marker must not follow the legend into the figure. */
+.markdown-answer .mermaid-legend-item::before {
+  content: none;
+}
+
+.markdown-answer .mermaid-legend-swatch {
+  width: 11px;
+  height: 11px;
+  border: 1px solid;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* The zoom affordance is not discoverable on touch, where there is no cursor to change shape. */
+.markdown-answer .mermaid-figure-hint {
+  display: none;
+  margin: 0;
+  padding: 0 13px 9px;
+  color: #8b97a5;
+  font-size: 11px;
+}
+
+/* --- Diagram lightbox ------------------------------------------------------------------------ */
+.diagram-lightbox-toolbar {
+  align-items: center;
+  gap: 6px;
+}
+
+.diagram-lightbox-title {
+  margin-right: auto;
+  overflow: hidden;
+  color: #e7e9ee;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagram-lightbox-zoom {
+  min-width: 46px;
+  color: #aab2be;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* The transform is driven per pointer event; a transition here would lag the fingers. */
+.diagram-lightbox-content {
+  transition: none;
+  will-change: transform;
+}
+
+@media (max-width: 640px) {
+  .diagram-lightbox-content {
+    padding: 16px;
+  }
+
+  .diagram-lightbox-content svg {
+    max-width: 92vw;
+    max-height: 70vh;
+  }
+
+  .diagram-lightbox-title {
+    display: none;
+  }
+}
+
 /* --- Dark theme ----------------------------------------------------------------------------- */
 html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 1) { --section-accent: #a371f7; }
 html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 2) { --section-accent: #3fb950; }
@@ -202,7 +309,52 @@ html[data-theme='dark'] .answer-table-wrap {
   }
 }
 
-/* --- Narrow screens ------------------------------------------------------------------------- */
+/* --- Diagram sizing --------------------------------------------------------------------------- */
+/* MermaidBlock sets the SVG's width to fit the container, stopping at a legibility floor. Past
+   that floor the diagram overflows and this container scrolls. .mermaid-canvas is a flex
+   container, so the SVG needs flex: none or it would be shrunk back to the line regardless of
+   the width that was set on it. */
+.markdown-answer .mermaid-canvas {
+  justify-content: flex-start;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  /* Horizontal panning belongs to this scroll container; vertical stays with the page. */
+  touch-action: pan-x pan-y;
+}
+
+/* auto margins centre the diagram when it fits and collapse to nothing when it overflows, which
+   is what keeps a wide diagram scrollable from its left edge rather than clipped on both sides. */
+.markdown-answer .mermaid-canvas svg {
+  flex: none;
+  max-width: none;
+  margin-inline: auto;
+}
+
+/* --- Touch and narrow screens ---------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .markdown-answer .mermaid-canvas {
+    padding: 12px;
+  }
+
+  .markdown-answer .mermaid-figure-hint {
+    display: block;
+  }
+}
+
+/* Coarse pointers get larger lightbox controls regardless of viewport width — a 34px target is
+   below the comfortable minimum for a fingertip. */
+@media (pointer: coarse) {
+  .diagram-lightbox-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .diagram-lightbox-toolbar {
+    padding: 12px;
+    gap: 8px;
+  }
+}
+
 @media (max-width: 640px) {
   .markdown-answer [data-answer-section] {
     padding-left: 11px;

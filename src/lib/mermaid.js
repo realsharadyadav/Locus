@@ -84,6 +84,14 @@ export function repairMermaidCode(code) {
 
 export let mermaidDiagramSeq = 0;
 
+/** Natural pixel width the diagram was laid out at, read from its viewBox. */
+export function naturalDiagramWidth(svgElement) {
+  const viewBox = svgElement?.getAttribute?.('viewBox');
+  if (!viewBox) return 0;
+  const width = Number(viewBox.trim().split(/\s+/)[2]);
+  return Number.isFinite(width) && width > 0 ? width : 0;
+}
+
 export function useMermaidRender(code) {
   const [result, setResult] = useState({ svg: null, error: null });
   const [themeTick, setThemeTick] = useState(0);

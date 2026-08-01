@@ -46,7 +46,22 @@ DIAGRAM_INSTRUCTION = (
     "CRITICAL Mermaid subgraph rule: a subgraph's id is itself a node, so never reuse a subgraph's id "
     "for a node declared inside it — that creates a cycle and fails to render. If a subgraph groups a "
     "component, give the inner node a different id, e.g. `subgraph API[\"Backend API\"]` must contain "
-    "`APISvc[\"Express / NestJS\"]`, not `API[\"Express / NestJS\"]`."
+    "`APISvc[\"Express / NestJS\"]`, not `API[\"Express / NestJS\"]`.\n"
+    "Make the diagram readable, not just correct:\n"
+    "- Give it a title with YAML frontmatter as the first lines of the block: `---` then `title: Short title` "
+    "then `---`. The title is rendered as the figure caption.\n"
+    "- Colour-code node kinds with `classDef`, and apply them with `:::className`. Name each class after what "
+    "it means in snake_case — `classDef data_store`, `classDef external_api` — because the class names are "
+    "rendered as the figure's colour legend. Two to five classes is the useful range; skip classDef entirely "
+    "when every node is the same kind.\n"
+    "- Always set `fill:`, `stroke:` and `color:` together in a classDef so the text stays readable, e.g. "
+    "`classDef data_store fill:#dbe9f6,stroke:#6a9fd0,color:#1c3f5f`. Use light fills with dark text.\n"
+    "- Prefer `flowchart LR` for pipelines and sequences of steps, `flowchart TB` for hierarchies and layered "
+    "architectures. Left-to-right stays legible on a phone; a wide top-down graph does not.\n"
+    "- Keep node labels under about five words and never put a sentence in a node. Explain in the prose "
+    "around the diagram, not inside the boxes.\n"
+    "- Prefer two focused diagrams over one that tries to show everything. Mermaid lays out automatically, so "
+    "a graph past roughly twenty nodes spreads out and becomes unreadable."
 )
 
 ANSWER_SHAPE_INSTRUCTION = (
