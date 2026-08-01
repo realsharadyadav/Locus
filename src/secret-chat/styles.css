@@ -1218,7 +1218,16 @@ html[data-theme='dark'] .scs-day span {
   user-select: none;
 }
 
-.ai-autopilot-toggle input { accent-color: var(--violet); }
+.ai-autopilot-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
 
 .ai-autopilot-toggle.on {
   border-color: var(--violet);
@@ -1234,12 +1243,6 @@ html[data-theme='dark'] .scs-day span {
   color: var(--ink);
   font-size: 11px;
   cursor: pointer;
-}
-
-.ai-autopilot-note {
-  font-size: 10.5px;
-  color: var(--violet);
-  font-weight: 600;
 }
 
 .ai-copilot-settings {

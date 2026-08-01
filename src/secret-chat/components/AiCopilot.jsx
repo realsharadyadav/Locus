@@ -133,7 +133,6 @@ export default function AiCopilot({
           <Settings2 size={13} />
         </button>
 
-        {autopilot && <span className="ai-autopilot-note">AI is answering for you</span>}
       </div>
 
       {settingsOpen && (
