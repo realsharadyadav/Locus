@@ -11,6 +11,7 @@ Architecture:
 import json
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -37,6 +38,10 @@ _INTENT_SYSTEM_PROMPT = (
     "weather, sports, stock, currency, flight, food, health, entertainment, product, code, math, translate, news, general. "
     "For short follow-ups, use conversation history to inherit the previous topic. "
     "Normalize non-English or mixed-language questions into English for translated_query and search_query. "
+    "The current date is given in the user message below — use it as the real current date/year, not your training "
+    "data's stale notion of \"current\". Only put a specific year in search_query when the user explicitly named one; "
+    "for an open-ended \"best/latest/top X\" with no year mentioned, leave the year out of search_query rather than "
+    "guessing one. "
     "Return JSON only: "
     '{"intent":"...","language":"en|other","translated_query":"english version","search_query":"optimized English search engine query","needs_web_search":true|"false","entities":{"location":"","team":"","company":"","ticker":"","currency_from":"","currency_to":"","time":""}}'
 )
@@ -57,7 +62,8 @@ def classify_query_llm(question: str, history: list[tuple[str, str]] | None = No
             for role, content in recent
         ) + "\n\n"
 
-    user_prompt = f"{history_text}Current user question: {question}"
+    today = datetime.now(timezone.utc).strftime("%A, %Y-%m-%d")
+    user_prompt = f"Today's date: {today}\n\n{history_text}Current user question: {question}"
 
     try:
         from .llm import _chat

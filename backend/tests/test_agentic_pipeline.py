@@ -258,3 +258,22 @@ def test_planned_web_answer_still_gives_up_when_retry_also_fails(monkeypatch):
 
     assert "could not find reliable matching evidence" in result.answer
     assert result.sources == []
+
+
+def test_planner_prompt_carries_the_real_current_date(monkeypatch):
+    # A model's training data has its own stale idea of "current" - without today's real date in
+    # the prompt, an open-ended request like "best song in hindi" (no year mentioned) came back
+    # planned as a search for whatever year the model's training happened to end around, e.g.
+    # "best hindi songs 2024" months or years after that stopped being true.
+    captured = {}
+
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None):
+        captured["system"] = system
+        return '{"route":"web_research","resolved_request":"best song in hindi","needs_web_search":true,"search_queries":["best hindi songs"]}'
+
+    monkeypatch.setattr(pipeline, "_chat", fake_chat)
+    plan = pipeline._plan_with_llm("best song in hindi", "test-model", None, "light", False)
+
+    assert pipeline._today_for_prompt() in captured["system"]
+    assert "never leak into a search query" in captured["system"]
+    assert plan.search_queries == ["best hindi songs"]

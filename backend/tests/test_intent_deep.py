@@ -584,3 +584,25 @@ class TestAutoWebSearchRouting:
     ])
     def test_should_not_trigger(self, question):
         assert should_auto_web_search(question) is False
+
+
+class TestClassifierPromptCarriesCurrentDate:
+    def test_llm_classifier_prompt_includes_todays_date(self, monkeypatch):
+        # classify_query_llm's search_query feeds straight into a web search. Without today's
+        # real date in the prompt, the model falls back on its training data's stale idea of
+        # "current" - an open-ended "best song in hindi" (no year mentioned) came back with
+        # search_query padded with whatever year the model's training happened to end around.
+        from datetime import datetime, timezone
+        from backend.app import intent as intent_module
+
+        captured = {}
+
+        def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None):
+            captured["prompt"] = prompt
+            return '{"intent":"entertainment","language":"en","translated_query":"best song in hindi","search_query":"best hindi songs","needs_web_search":true,"entities":{}}'
+
+        monkeypatch.setattr("backend.app.llm._chat", fake_chat)
+        intent_module.classify_query_llm("best song in hindi", model="test-model")
+
+        today = datetime.now(timezone.utc).strftime("%A, %Y-%m-%d")
+        assert today in captured["prompt"]

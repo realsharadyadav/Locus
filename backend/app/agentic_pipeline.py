@@ -14,6 +14,15 @@ from .llm import ANSWER_LANGUAGE_INSTRUCTION, LLMProviderError, _chat, ensure_en
 from .web_research import web_research
 
 
+def _today_for_prompt() -> str:
+    # Every planning/search prompt needs this: without it, the model falls back on its training
+    # data's idea of "current", which drifts further from reality every month and shows up as
+    # search queries quietly padded with a stale year the user never asked for (e.g. "best hindi
+    # songs" turning into "best hindi songs 2024" on a model trained through late 2024, regardless
+    # of how long ago that actually was).
+    return datetime.now(timezone.utc).strftime("%A, %Y-%m-%d")
+
+
 Progress = Callable[[str, str], None]
 WebResearchFn = Callable[[str, str, Progress, int, list[tuple[str, str]] | None, str], dict]
 DirectAnswerFn = Callable[[str, list[tuple[str, str]], list[tuple[str, str]] | None, str], tuple[str, str]]
@@ -150,6 +159,10 @@ def _plan_with_llm(question: str, model: str, history: list[tuple[str, str]] | N
     context = "\n".join(f"{role}: {content[:600]}" for role, content in (history or [])[-8:])
     system = (
         f"You are {BRAND_NAME}'s planning agent. Resolve the user's actual request from the current message and conversation context. "
+        f"Today's date is {_today_for_prompt()}. Use this as the real current date/year — your training data's notion of "
+        "\"current\" or \"latest\" is out of date and must never leak into a search query or resolved request. "
+        "Only put a specific year in a search query when the user explicitly named one; for an open-ended \"best/latest/top X\" "
+        "with no year mentioned, search without a year rather than guessing one. "
         "Normalize any non-English or mixed-language user wording into English internally. "
         "Return JSON only. Do not answer the user. Prefer flexible reasoning over keyword rules. "
         "For follow-ups, carry forward the previous topic, entities, budget, and answer style. "
