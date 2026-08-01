@@ -4,7 +4,8 @@
    wrapped onto a second line and the pills floated over the top of the thread. This layer
    restructures it below 820px into three columns — one circular control, the conversation's
    identity, one circular control — drops the chrome that is not identity or navigation, and
-   gives the header no background of its own so the thread reads as the whole screen. */
+   floats the header over the thread as a frosted, translucent bar instead of a bar sitting
+   in its own row, so scrolled messages pass underneath and blur through it. */
 
 .chat-more-wrap {
   position: relative;
@@ -114,8 +115,13 @@
 }
 
 @media (max-width: 820px) {
-  /* Transparent and borderless: on a phone the header is the top of the thread, not a bar
-     sitting on top of it. */
+  /* Floating and frosted, like a native translucent nav bar: the header sits above the
+     thread instead of pushing it down a grid row, so scrolled messages pass underneath it
+     and blur through rather than stopping at a hard edge. Taking it out of grid flow
+     (position: absolute) means .chat-page drops to two row tracks below, and .chat-thread
+     needs its own top padding to sit clear of the header at rest - published as
+     --mobile-header-h by a ResizeObserver in ExplorePage.jsx rather than guessed, since the
+     title/subtitle can wrap to a different height per conversation. */
   /* 20-layout.css pins .chat-top to `display: flex` with !important, along with its padding,
      gap and min-height, so this layer has to match that weight to restructure the row at all. */
   .chat-page > .chat-top {
@@ -125,8 +131,19 @@
     gap: 8px !important;
     min-height: 0 !important;
     padding: 2px 0 8px !important;
-    border-bottom: 0;
-    background: transparent;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+    background: color-mix(in srgb, var(--paper) 72%, transparent);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+  }
+
+  .chat-page > .chat-thread {
+    padding-top: var(--mobile-header-h, 64px);
   }
 
   .chat-page > .chat-top > .chat-top-left {
@@ -195,9 +212,11 @@
     background: color-mix(in srgb, var(--ink) 12%, transparent);
   }
 
-  /* Reclaimed vertical space goes to the thread. */
+  /* Reclaimed vertical space goes to the thread. Two remaining grid items (thread, composer)
+     once the header leaves the flow above for .chat-top's absolute positioning. */
   .chat-page {
     padding-top: 4px;
+    grid-template-rows: minmax(0, 1fr) auto;
   }
 }
 

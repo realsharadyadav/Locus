@@ -75,6 +75,7 @@ export function ExplorePage({
   const [railOpen, setRailOpen] = useState(false);
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const composerRef = useRef(null);
+  const mobileHeaderRef = useRef(null);
 
   useChatViewportLock();
   const compactViewport = useCompactViewport();
@@ -297,6 +298,24 @@ export function ExplorePage({
     if (openedTranscript) scrollToBottom({ animation: 'instant', ignoreEscapes: true });
     else scrollToBottom({ preserveScrollPosition: true });
   }, [messages.length, thinking, directStreaming]);
+
+  // Below 820px the header floats over the thread (30-mobile-header.css) so its blur shows
+  // scrolled content behind it, which means it no longer pushes the thread down by itself.
+  // The thread needs the header's real height - title/subtitle can wrap to different line
+  // counts - to pad itself clear at rest, published as a CSS var rather than hardcoded.
+  useEffect(() => {
+    const node = mobileHeaderRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const root = document.documentElement;
+    const update = () => root.style.setProperty('--mobile-header-h', `${Math.ceil(node.getBoundingClientRect().height)}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--mobile-header-h');
+    };
+  }, []);
 
   // Keyboard, rotation and a resizing composer all change the thread container's height
   // rather than its content; see useRepinOnResize.
@@ -800,7 +819,7 @@ export function ExplorePage({
       </aside>
       {railOpen && <button type="button" className="chat-rail-scrim" aria-label="Close chat history" onClick={() => setRailOpen(false)} />}
       <div className="chat-page">
-        <div className="chat-top">
+        <div className="chat-top" ref={mobileHeaderRef}>
           <div className="chat-top-left">
             <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
               <Menu size={20} />
