@@ -216,3 +216,45 @@ def test_agentic_explicit_budget_overrides_llm_plan(monkeypatch):
     assert "25000" not in result["plan"]["search_queries"][0]
     assert calls["queries"][0] == "best phones under 10000 India 2026 price"
     assert "Phone B" in result["answer"]
+
+
+def test_planned_web_answer_retries_broadly_before_giving_up(monkeypatch):
+    """Narrow planned queries whose results all get rejected should trigger one broad retry."""
+    searched = []
+
+    def fake_web_research(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
+        searched.append(question)
+        return {
+            "answer": "",
+            "sources": [{"title": f"Result for {question}", "url": f"https://example.com/{len(searched)}", "snippet": "Evidence", "engine": "test"}],
+            "model": model,
+        }
+
+    # Reject everything from the planned queries, accept the broad retry's result.
+    def fake_validate(plan, sources, model, progress):
+        return [] if len(searched) <= 1 else list(sources)
+
+    monkeypatch.setattr(pipeline, "web_research", fake_web_research)
+    monkeypatch.setattr(pipeline, "_validate_evidence_with_llm", fake_validate)
+    monkeypatch.setattr(pipeline, "_compose_planned_answer", lambda *args, **kwargs: "Composed from the broad retry")
+
+    plan = pipeline.AgentPlan(route="news", user_goal="latest hiring news at Acme", search_queries=["acme q3 hiring memo leak"])
+    result = pipeline._planned_web_answer(plan, "any hiring news at Acme?", "test-model", lambda *args: None, 5, None, "web_research")
+
+    assert len(searched) == 2, "the broad retry should run after the planned query yields nothing usable"
+    assert searched[1] == "latest hiring news at Acme"
+    assert result.answer == "Composed from the broad retry"
+
+
+def test_planned_web_answer_still_gives_up_when_retry_also_fails(monkeypatch):
+    def fake_web_research(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
+        return {"answer": "", "sources": [{"title": "Irrelevant", "url": "https://example.com/x", "snippet": "No", "engine": "test"}], "model": model}
+
+    monkeypatch.setattr(pipeline, "web_research", fake_web_research)
+    monkeypatch.setattr(pipeline, "_validate_evidence_with_llm", lambda *args, **kwargs: [])
+
+    plan = pipeline.AgentPlan(route="news", user_goal="something unfindable", search_queries=["narrow query"])
+    result = pipeline._planned_web_answer(plan, "find it", "test-model", lambda *args: None, 5, None, "web_research")
+
+    assert "could not find reliable matching evidence" in result.answer
+    assert result.sources == []

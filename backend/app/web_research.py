@@ -13,7 +13,7 @@ from .brand import USER_AGENT
 from .config import OPENSERP_BASE_URL, WEB_RESEARCH_INITIAL_QUERIES, WEB_RESEARCH_RESULTS_PER_QUERY
 from .diagnostics import diagnostic_event
 from .intent import classify_and_enhance, validate_search_output, QueryIntent
-from .llm import ANSWER_LANGUAGE_INSTRUCTION, LLMProviderError, _chat, _context_budget, ensure_english_answer
+from .llm import ANSWER_LANGUAGE_INSTRUCTION, ANSWER_SHAPE_INSTRUCTION, LLMProviderError, _chat, _context_budget, ensure_english_answer
 
 
 _SEARCH_COUNT: ContextVar[dict | None] = ContextVar("locus_search_count", default=None)
@@ -704,11 +704,12 @@ def _synthesize_answer(question: str, search_results: list[dict], model: str, pr
         if answer_mode == "unrestricted" else ""
     )
     budget = _budget_from_question(question)
-    format_guidance = (
-        "The user explicitly requested a table/tabular format. Use a concise Markdown table with the requested columns, and cite facts inside cells where useful. "
-        if _wants_table(question)
-        else "Default to natural conversational prose. Use a Markdown table only if the user explicitly requested a table/tabular format. "
-    )
+    if _wants_table(question):
+        format_guidance = "The user explicitly requested a table/tabular format. Use a concise Markdown table with the requested columns, and cite facts inside cells where useful. "
+    elif answer_mode == "unrestricted":
+        format_guidance = "Default to natural conversational prose. Use a Markdown table only if the user explicitly requested a table/tabular format. "
+    else:
+        format_guidance = ANSWER_SHAPE_INSTRUCTION + "\n"
     constraint_guidance = (
         f"Hard constraint: the user's budget is at or under ₹{budget:,}. Include only items whose listed price is <= ₹{budget:,}. "
         f"Do not include a row or recommendation if a price range has any upper value above ₹{budget:,}. "

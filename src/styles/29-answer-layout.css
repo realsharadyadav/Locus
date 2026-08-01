@@ -1,0 +1,223 @@
+/* Scannable answer layout: summary lede, colour-accented collapsible sections, contained tables,
+   and a soft reveal for diagrams. Last in the cascade because it has to win over the readability
+   pass in 12-density.css and sit alongside the !important dark rules in 13-theme-dark.css. */
+
+/* --- Section accents ------------------------------------------------------------------------ */
+/* Sections cycle through a small palette so consecutive headings are visually distinct without
+   any of them shouting. Falls back to the violet brand accent for anything past the fifth. */
+.markdown-answer [data-answer-section] {
+  --section-accent: var(--violet);
+  position: relative;
+  margin: 0 0 18px;
+  padding-left: 14px;
+  border-left: 2px solid color-mix(in srgb, var(--section-accent) 35%, transparent);
+  animation: answer-section-in 320ms ease both;
+}
+
+.markdown-answer [data-answer-section]:nth-of-type(5n + 1) { --section-accent: #7663aa; }
+.markdown-answer [data-answer-section]:nth-of-type(5n + 2) { --section-accent: #2f8f6f; }
+.markdown-answer [data-answer-section]:nth-of-type(5n + 3) { --section-accent: #c07a2c; }
+.markdown-answer [data-answer-section]:nth-of-type(5n + 4) { --section-accent: #3f7cc0; }
+.markdown-answer [data-answer-section]:nth-of-type(5n + 5) { --section-accent: #b0567f; }
+
+.markdown-answer [data-answer-section]:nth-of-type(2) { animation-delay: 60ms; }
+.markdown-answer [data-answer-section]:nth-of-type(3) { animation-delay: 120ms; }
+.markdown-answer [data-answer-section]:nth-of-type(4) { animation-delay: 180ms; }
+.markdown-answer [data-answer-section]:nth-of-type(n + 5) { animation-delay: 220ms; }
+
+@keyframes answer-section-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.markdown-answer [data-section-head] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding-right: 26px;
+  color: var(--section-accent);
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+/* --- Collapse toggle ------------------------------------------------------------------------ */
+.markdown-answer .answer-section-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.markdown-answer [data-answer-section]:hover .answer-section-toggle,
+.markdown-answer .answer-section-toggle:focus-visible,
+.markdown-answer [data-answer-section][data-collapsed] .answer-section-toggle {
+  opacity: 1;
+}
+
+.markdown-answer .answer-section-toggle:hover {
+  background: color-mix(in srgb, var(--section-accent) 12%, transparent);
+  color: var(--section-accent);
+}
+
+.markdown-answer .answer-section-chevron {
+  transition: transform 160ms ease;
+}
+
+.markdown-answer .answer-section-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+/* The toggle is the section's first child, so "everything except the heading and the button" is
+   exactly the section body — no wrapper element and no child juggling in React. */
+.markdown-answer [data-answer-section][data-collapsed] > *:not([data-section-head]):not(.answer-section-toggle) {
+  display: none;
+}
+
+.markdown-answer [data-answer-section][data-collapsed] [data-section-head] {
+  margin-bottom: 0;
+  opacity: 0.75;
+}
+
+/* --- Summary lede --------------------------------------------------------------------------- */
+/* The composer is asked to open with the answer in one or two sentences; this makes that opening
+   read as a lede instead of as the first line of a wall of text. */
+.markdown-answer > p:first-of-type {
+  margin-bottom: 16px;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+/* --- Lists ---------------------------------------------------------------------------------- */
+.markdown-answer ul {
+  margin: 0 0 13px;
+  padding-left: 4px;
+  list-style: none;
+}
+
+.markdown-answer ul > li {
+  position: relative;
+  margin-bottom: 6px;
+  padding-left: 18px;
+}
+
+.markdown-answer ul > li::before {
+  content: '';
+  position: absolute;
+  top: 0.62em;
+  left: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--section-accent, var(--violet));
+}
+
+.markdown-answer ol {
+  margin: 0 0 13px;
+  padding-left: 22px;
+}
+
+.markdown-answer ol > li,
+.markdown-answer ul ul > li {
+  margin-bottom: 6px;
+}
+
+.markdown-answer ul ul {
+  margin: 6px 0 0;
+}
+
+/* --- Tables --------------------------------------------------------------------------------- */
+/* Wide comparison tables scroll inside their own box instead of stretching the chat bubble. */
+.answer-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.answer-table-wrap > table {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* --- Diagrams ------------------------------------------------------------------------------- */
+.markdown-answer .mermaid-canvas svg {
+  animation: answer-diagram-in 420ms ease both;
+}
+
+@keyframes answer-diagram-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* --- Dark theme ----------------------------------------------------------------------------- */
+html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 1) { --section-accent: #a371f7; }
+html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 2) { --section-accent: #3fb950; }
+html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 3) { --section-accent: #d29922; }
+html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 4) { --section-accent: #58a6ff; }
+html[data-theme='dark'] .markdown-answer [data-answer-section]:nth-of-type(5n + 5) { --section-accent: #db6d9d; }
+
+/* 13-theme-dark.css forces every dark-theme heading to --dark-heading with !important, which would
+   flatten the section accents back to grey. Matched here so section colour survives in dark mode. */
+html[data-theme='dark'] .markdown-answer [data-section-head] {
+  color: var(--section-accent) !important;
+}
+
+/* Dark mode mutes every paragraph with !important; the lede is the headline answer, so it gets the
+   brighter heading colour to stand apart from the body text below it. */
+html[data-theme='dark'] .markdown-answer > p:first-of-type {
+  color: var(--dark-heading) !important;
+}
+
+html[data-theme='dark'] .answer-table-wrap {
+  border-color: var(--dark-border-muted);
+}
+
+/* --- Reduced motion ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .markdown-answer [data-answer-section],
+  .markdown-answer .mermaid-canvas svg {
+    animation: none;
+  }
+
+  .markdown-answer .answer-section-chevron,
+  .markdown-answer .answer-section-toggle {
+    transition: none;
+  }
+}
+
+/* --- Narrow screens ------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .markdown-answer [data-answer-section] {
+    padding-left: 11px;
+  }
+
+  .markdown-answer [data-section-head] {
+    font-size: 15px;
+  }
+
+  .markdown-answer > p:first-of-type {
+    font-size: 15px;
+  }
+
+  /* Touch has no hover, so the collapse affordance has to stay visible. */
+  .markdown-answer .answer-section-toggle {
+    opacity: 1;
+  }
+}

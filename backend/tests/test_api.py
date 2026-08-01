@@ -1108,7 +1108,7 @@ def test_incomplete_draft_is_repaired(monkeypatch):
     monkeypatch.setattr("backend.app.main.answer_planned_question", lambda *args, **kwargs: ("Sushil worked at six companies.", "test-model"))
     captured = {}
 
-    def fake_repair(question, answer, plan, missing, sources, model, allow_general_knowledge):
+    def fake_repair(question, answer, plan, missing, sources, model, allow_general_knowledge, shape_guidance=""):
         captured.update(missing=missing, sources=sources)
         return "Sushil worked at **six companies**:\n\n| Company |\n|---|\n| Alkem |"
 

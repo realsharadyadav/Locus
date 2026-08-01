@@ -49,6 +49,20 @@ DIAGRAM_INSTRUCTION = (
     "`APISvc[\"Express / NestJS\"]`, not `API[\"Express / NestJS\"]`."
 )
 
+ANSWER_SHAPE_INSTRUCTION = (
+    "Shape the final answer so it can be scanned in seconds, not read like an essay:\n"
+    "- Open with the direct answer in one or two sentences. No preamble, no restating the question, "
+    "no 'Based on the provided files'.\n"
+    "- Follow with short bullets — at most six, one line each. Put the load-bearing fact first in each bullet.\n"
+    "- Use a Markdown table only when comparing three or more items across two or more attributes, "
+    "or when the user asked for one. Never use a table for a plain list.\n"
+    "- Draw any flow, sequence, architecture, pipeline, or state machine as a Mermaid diagram "
+    "instead of describing it step by step in prose.\n"
+    "- Use '## ' headings only when the answer genuinely has two or more sections. Start each such heading "
+    "with exactly one emoji that fits the section, then a space, then the title. Use no emoji anywhere else.\n"
+    "- Keep every paragraph to four lines or fewer. Break longer explanations into bullets or a diagram."
+)
+
 _NON_ENGLISH_SCRIPT_PATTERN = re.compile(
     r"[\u0900-\u097F\u0980-\u09FF\u0A00-\u0A7F\u0A80-\u0AFF\u0B00-\u0B7F"
     r"\u0B80-\u0BFF\u0C00-\u0C7F\u0C80-\u0CFF\u0D00-\u0D7F]"
@@ -722,16 +736,19 @@ def verify_response(question: str, answer: str, plan: dict, model: str, sources:
     return {"complete": bool(result.get("complete")), "missing": [str(item) for item in result.get("missing", [])][:8], "quality_score": int(result.get("quality_score", 0))}
 
 
-def repair_response(question: str, answer: str, plan: dict, missing: list[str], sources: list[tuple[str, str]], model: str, allow_general_knowledge: bool) -> str:
+def repair_response(question: str, answer: str, plan: dict, missing: list[str], sources: list[tuple[str, str]], model: str, allow_general_knowledge: bool, shape_guidance: str = "") -> str:
     budget = _context_budget(model)
     answer = answer[:int(budget * 0.35)]
     packed_sources = _pack_sources(sources, max(2_000, budget - len(answer) - 4_000))
     context = "\n\n".join(f"SOURCE {name}:\n{text}" for name, text in packed_sources)
     grounding = "You may use general knowledge where helpful." if allow_general_knowledge else "Use only the supplied source context."
+    # Without the shape guidance a repair pass rewrites the draft as plain prose, undoing the
+    # summary-then-bullets layout the composition step was asked for.
+    shaping = f"\n\n{shape_guidance}" if shape_guidance else ""
     repaired = _chat(
         "You are a senior answer editor. Produce only the final user-facing answer, never the plan, verification, or editing commentary. "
         "Resolve every listed omission, follow the requested presentation, preserve valid citations, and never invent file facts. "
-        + ANSWER_LANGUAGE_INSTRUCTION + " " + grounding,
+        + ANSWER_LANGUAGE_INSTRUCTION + " " + grounding + shaping,
         f"Question: {question}\nPlan: {json.dumps(plan)}\nMissing: {json.dumps(missing)}\nDraft:\n{answer}\n\nSource context:\n{context or '(none)'}",
         model,
         0.1,

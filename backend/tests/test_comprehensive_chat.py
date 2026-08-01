@@ -1192,3 +1192,127 @@ class TestEdgeCases:
         assert web_research_module._budget_from_question("budget of 30000") == 30000
         assert web_research_module._budget_from_question("upto 50000") == 50000
         assert web_research_module._budget_from_question("nothing about price") is None
+
+
+# =====================================================================
+# SECTION: GAP-DRIVEN EVIDENCE ROUNDS
+# =====================================================================
+
+class TestEvidenceGapRounds:
+    """The quality layer re-retrieves for the verifier's gaps before repairing."""
+
+    @staticmethod
+    def _hit(excerpt, file_id=1, score=0.9):
+        from backend.app.vector_store import SemanticHit
+        return SemanticHit(file_id=file_id, store_id=1, name="gap.txt", excerpt=excerpt, score=score, chunk_index=0)
+
+    def _setup(self, monkeypatch, hits_per_call, verify_results):
+        """Wire a thinking-mode run whose verifier reports gaps and whose vector store has more to give."""
+        calls = {"verify": 0, "repair": 0, "gap_search": 0, "repair_sources": []}
+
+        def fake_verify(question, answer, plan, model, sources=None):
+            index = min(calls["verify"], len(verify_results) - 1)
+            calls["verify"] += 1
+            return verify_results[index]
+
+        def fake_repair(question, answer, plan, missing, sources, model, allow_general_knowledge, shape_guidance=""):
+            calls["repair"] += 1
+            calls["repair_sources"].append(len(sources))
+            return f"Repaired {calls['repair']}"
+
+        def fake_search(query, file_ids=None, top_k=None):
+            index = min(calls["gap_search"], len(hits_per_call) - 1)
+            calls["gap_search"] += 1
+            return hits_per_call[index]
+
+        monkeypatch.setattr("backend.app.main.verify_response", fake_verify)
+        monkeypatch.setattr("backend.app.main.repair_response", fake_repair)
+        monkeypatch.setattr("backend.app.main.semantic_search", fake_search)
+        return calls
+
+    def test_gap_round_adds_new_evidence_before_repair(self, monkeypatch):
+        calls = self._setup(
+            monkeypatch,
+            hits_per_call=[[self._hit("Fresh chunk about company names")], []],
+            verify_results=[{"complete": False, "missing": ["Company names"], "quality_score": 40},
+                            {"complete": True, "missing": [], "quality_score": 95}],
+        )
+        with TestClient(app) as client:
+            store = client.post("/api/collections", json={"title": "Gap store"}).json()
+            _upload_text(client, store["id"], "gap.txt", "Some company records live here.")
+            chat(client, question="Which companies are listed?", reasoning_mode="thinking")
+
+        assert calls["gap_search"] >= 1, "verifier gaps should trigger a fresh retrieval"
+        assert calls["repair"] >= 1
+        # The repair after a productive gap round must see more context than the first pass had.
+        assert calls["repair_sources"][0] > 0
+
+    def test_no_progress_guard_stops_after_one_repair(self, monkeypatch):
+        """A gap round that finds nothing new must not loop — re-verifying would grade the same facts."""
+        calls = self._setup(
+            monkeypatch,
+            hits_per_call=[[]],
+            verify_results=[{"complete": False, "missing": ["Something absent"], "quality_score": 10}],
+        )
+        with TestClient(app) as client:
+            store = client.post("/api/collections", json={"title": "Empty gap store"}).json()
+            _upload_text(client, store["id"], "gap.txt", "Unrelated text.")
+            chat(client, question="What is missing?", reasoning_mode="thinking")
+
+        assert calls["repair"] == 1, "no new evidence means exactly one repair, not a retry loop"
+        assert calls["verify"] == 1
+
+    def test_rounds_are_capped(self, monkeypatch):
+        """Even when every round finds new evidence, CHAT_EVIDENCE_ROUNDS bounds the work."""
+        monkeypatch.setattr(main_module, "CHAT_EVIDENCE_ROUNDS", 2)
+        endless = [[self._hit(f"Fresh chunk {index}")] for index in range(1, 8)]
+        calls = self._setup(
+            monkeypatch,
+            hits_per_call=endless,
+            verify_results=[{"complete": False, "missing": ["Still missing"], "quality_score": 10}],
+        )
+        with TestClient(app) as client:
+            store = client.post("/api/collections", json={"title": "Deep gap store"}).json()
+            _upload_text(client, store["id"], "gap.txt", "Plenty of text here.")
+            chat(client, question="Dig as deep as you can", reasoning_mode="thinking")
+
+        assert calls["repair"] <= main_module.CHAT_EVIDENCE_ROUNDS + 1
+        assert calls["verify"] <= main_module.CHAT_EVIDENCE_ROUNDS + 1
+
+    def test_light_mode_runs_no_gap_rounds(self, monkeypatch):
+        """Light mode has no quality layer, so it must stay a single retrieval pass."""
+        calls = self._setup(
+            monkeypatch,
+            hits_per_call=[[self._hit("Fresh chunk")]],
+            verify_results=[{"complete": False, "missing": ["Anything"], "quality_score": 10}],
+        )
+        with TestClient(app) as client:
+            store = client.post("/api/collections", json={"title": "Light store"}).json()
+            _upload_text(client, store["id"], "light.txt", "Light mode content.")
+            chat(client, question="Quick question", reasoning_mode="light")
+
+        assert calls["verify"] == 0
+        assert calls["repair"] == 0
+
+
+class TestAnswerShapeGuidance:
+    """The scannable answer shape reaches composition, but not the modes that own their own shape."""
+
+    def test_shape_reaches_composition_guidance(self, monkeypatch):
+        captured = {}
+        monkeypatch.setattr(
+            "backend.app.main.answer_planned_question",
+            lambda question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None: (captured.update(guidance=guidance) or ("Answer", model)),
+        )
+        with TestClient(app) as client:
+            store = client.post("/api/collections", json={"title": "Shape store"}).json()
+            _upload_text(client, store["id"], "shape.txt", "Content to answer from.")
+            chat(client, question="Explain this", reasoning_mode="thinking")
+
+        assert "scanned in seconds" in captured["guidance"]
+
+    def test_deep_summary_keeps_its_own_shape(self):
+        assert main_module._answer_shape_guidance("deep_summary") == ""
+        assert main_module._answer_shape_guidance("unrestricted") == ""
+        assert main_module._answer_shape_guidance("thinking") != ""
+        assert main_module._answer_shape_guidance("light") != ""

@@ -652,6 +652,32 @@ def _planned_web_answer(
     _mark_done(plan, "Fetch Agent", f"Collected {len(collected)} candidate sources from planned queries")
     accepted = _validate_evidence_with_llm(plan, collected, model, progress)
     if not accepted:
+        # The planned queries can be narrow enough that every result gets rejected. Before giving up,
+        # search once more on the resolved request itself — a broader query often returns the same
+        # facts in a form the validator accepts.
+        broad_query = plan.user_goal or question
+        if broad_query not in selected_queries:
+            progress("gathering", f"Fetch Agent: planned queries returned no usable evidence, retrying broadly with '{broad_query[:80]}'")
+            if web_research_fn:
+                retry = web_research_fn(broad_query, model, progress, source_limit, None, answer_mode)
+            else:
+                retry = web_research(broad_query, model, progress, source_limit, history=None, answer_mode=answer_mode)
+            retry_items = []
+            for item in retry.get("sources", []):
+                url = item.get("url", "")
+                key = url or f"{item.get('title', '')}|{item.get('snippet', '')}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                retry_items.append(EvidenceItem(
+                    title=item.get("title", ""),
+                    url=url,
+                    snippet=item.get("snippet", ""),
+                    engine=item.get("engine", "web"),
+                ))
+            if retry_items:
+                accepted = _validate_evidence_with_llm(plan, retry_items[:source_limit], model, progress)
+    if not accepted:
         _mark_done(plan, "Evidence Check Agent", "No evidence matched the structured plan")
         answer = (
             "I could not find reliable matching evidence for that request. "

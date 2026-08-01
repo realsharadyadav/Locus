@@ -48,7 +48,7 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
 from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
@@ -495,6 +495,9 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # — useful on a memory-tight instance, at the cost of files staying unindexed until re-uploaded.
 STARTUP_MAINTENANCE = os.getenv("LOCUS_STARTUP_MAINTENANCE", "1").strip().lower() not in {"0", "false", "off", "no"}
 CHAT_JOB_MAX_RETRIES = int(os.getenv("CHAT_JOB_MAX_RETRIES", "3"))
+# Extra gap-driven retrieval rounds the quality layer may run when the verifier reports omissions.
+# Each round costs one retrieval pass plus a repair and a re-verify call, so this stays small.
+CHAT_EVIDENCE_ROUNDS = int(os.getenv("LOCUS_CHAT_EVIDENCE_ROUNDS", "2"))
 CHAT_JOB_RETRY_DELAY_SECONDS = float(os.getenv("CHAT_JOB_RETRY_DELAY_SECONDS", "2"))
 OPENAI_MODEL_FALLBACKS = ["gpt-5.4-mini", "gpt-5.5"]
 GEMINI_MODEL_FALLBACKS = ["gemini-2.5-flash", "gemini-2.5-pro"]
@@ -1121,6 +1124,65 @@ def _load_chat_history(db: Session, session_id: int, limit: int = CHAT_HISTORY_L
     return history
 
 
+def _evidence_key(file_id: int, excerpt: str) -> tuple[int, str]:
+    return (file_id, (excerpt or "")[:120])
+
+
+def _retrieve_for_gaps(
+    missing: list[str],
+    search_file_ids: list[int] | None,
+    seen_keys: set[tuple[int, str]],
+    notify=lambda stage, detail: None,
+) -> list[ChatSource]:
+    """Search the vector store again using the verifier's gap list as the query.
+
+    The repair step alone can only reword the draft against evidence it already has, so a gap that
+    needs an unretrieved chunk can never be closed. This runs one targeted semantic search per gap
+    and returns only chunks that are not already in the evidence set — an empty return is the
+    caller's signal that another round would be wasted.
+    """
+    if not missing or search_file_ids == []:
+        return []
+    fresh: list[ChatSource] = []
+    for gap in missing[:3]:
+        gap_text = str(gap).strip()
+        if not gap_text:
+            continue
+        notify("gathering", f"Searching files again for a gap the verifier found: {gap_text[:90]}")
+        try:
+            hits = semantic_search(gap_text, file_ids=search_file_ids)
+        except VectorStoreUnavailable:
+            notify("gathering", "Semantic retrieval unavailable for the gap round; keeping existing evidence")
+            return fresh
+        except Exception as exception:
+            diagnostic_event("gap_retrieval.failed", error=str(exception), gap=gap_text[:200])
+            continue
+        for hit in hits:
+            if hit.score < SEMANTIC_MIN_SCORE:
+                continue
+            key = _evidence_key(hit.file_id, hit.excerpt)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            fresh.append(ChatSource(id=hit.file_id, name=hit.name, store_id=hit.store_id, excerpt=hit.excerpt))
+    if fresh:
+        notify("gathering", f"Gap round added {len(fresh)} new chunk{'s' if len(fresh) != 1 else ''} of evidence")
+    else:
+        notify("gathering", "Gap round found no new evidence; answering with what is already retrieved")
+    return fresh
+
+
+def _answer_shape_guidance(reasoning_mode: str) -> str:
+    """The scannable answer shape, or an empty string for the modes that must keep their own shape.
+
+    Deep Summary's whole contract is exhaustive section-by-section coverage tracked by a manifest, and
+    Unrestricted deliberately runs without added guardrails, so neither gets the summary-first layout.
+    """
+    if reasoning_mode in {"deep_summary", "unrestricted"}:
+        return ""
+    return ANSWER_SHAPE_INSTRUCTION
+
+
 def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False, on_answer_token=lambda text: None):
     def ensure_not_cancelled():
         if cancelled():
@@ -1294,7 +1356,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
                     model,
                     allow_general_knowledge=True,
                     reasoning_mode="light",
-                    guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
+                    guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.\n\n" + _answer_shape_guidance("light"),
                 ),
             )
         except LLMProviderError as exception:
@@ -1408,11 +1470,12 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         f"{', '.join(plan.get('supporting_details', [])) or 'only details that improve the answer'}. "
         f"Visualization: {plan.get('visualization', 'none')} (render charts as compact Markdown bars using █). Completeness requirements: "
         f"{'; '.join(plan['completeness_criteria'])}. "
-        "Write in natural conversational prose like ChatGPT by default. "
         "If the user explicitly asks for a table/tabular format or the plan requests a table, use a concise Markdown table with the requested columns. "
-        "If listing items, use short inline sentences. "
         "Do not output internal planning text or labels such as Plan, enhanced_question, or completeness_criteria."
     )
+    shape_guidance = _answer_shape_guidance(payload.reasoning_mode)
+    if shape_guidance:
+        guidance += "\n\n" + shape_guidance
     if full_summary_requested and payload.reasoning_mode == "light" and stored_files:
         guidance += " This is excerpt-based Light mode. Clearly state that the result is based on selected excerpts and is not a full-document summary."
     if payload.reasoning_mode in ("thinking", "deep_summary"):
@@ -1452,57 +1515,89 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
             answer, model = answer_planned_question(payload.question, plan, evidence, history, payload.model, payload.allow_general_knowledge, guidance, lambda detail: notify("drafting", detail), on_answer_token)
             if full_summary_requested and payload.reasoning_mode == "light" and stored_files:
                 answer = "This is a partial summary based on retrieved excerpts, not a full-document summary.\n\n" + answer
+        verify_calls = 0
+        repair_calls = 0
+        needs_repair = False
         if mode.use_quality_layer:
-            notify("verifying", f"Calling {payload.model} to verify grounding, completeness, conflicts, and consistency")
-            deterministic_missing = missing_sections(answer, coverage_manifest) if coverage_manifest else []
-            if coverage_manifest and not deterministic_missing:
-                verification = {"complete": True, "missing": [], "quality_score": 100}
-                notify("verifying", "Deep Summary coverage manifest is complete; skipping extra verifier call")
-            else:
-                try:
-                    verification = verify_response(payload.question, answer, plan, payload.model, repair_context)
-                except RuntimeError as exception:
-                    diagnostic_event(
-                        "quality.verifier_failed",
-                        provider=payload.provider,
-                        model=payload.model,
-                        reasoning_mode=payload.reasoning_mode,
-                        error=str(exception),
-                        fallback="deterministic_coverage" if coverage_manifest else "skip_quality_repair",
-                    )
-                    notify("verifying", f"Verifier returned malformed output; continuing with {'deterministic coverage' if coverage_manifest else 'the drafted answer'}")
+            # Verify, and when the verifier reports gaps, go back to the vector store for evidence
+            # that answers those specific gaps before repairing. Bounded by CHAT_EVIDENCE_ROUNDS and
+            # by a no-progress guard, so the worst case is one extra retrieval per round plus the
+            # repair that was going to happen anyway.
+            gap_search_file_ids = payload.file_ids if payload.file_ids is not None else [stored_file.id for stored_file in stored_files]
+            seen_evidence_keys = {_evidence_key(source.id, source.excerpt) for source in sources}
+            gap_rounds_used = 0
+            while True:
+                ensure_not_cancelled()
+                notify("verifying", f"Calling {payload.model} to verify grounding, completeness, conflicts, and consistency")
+                deterministic_missing = missing_sections(answer, coverage_manifest) if coverage_manifest else []
+                if coverage_manifest and not deterministic_missing:
                     verification = {"complete": True, "missing": [], "quality_score": 100}
-            if deterministic_missing:
-                coverage_manifest.coverageStatus = "incomplete"
-                plan["coverage_manifest"] = coverage_manifest.to_dict()
-            # Deep Summary already appends every consolidated section
-            # deterministically. A verifier must not replace that complete answer
-            # using a context-limited repair call unless deterministic coverage
-            # itself detects a missing section.
-            needs_repair = bool(deterministic_missing) if coverage_manifest else (not verification["complete"] or verification["quality_score"] < 80)
-            if needs_repair:
+                    notify("verifying", "Deep Summary coverage manifest is complete; skipping extra verifier call")
+                else:
+                    verify_calls += 1
+                    try:
+                        verification = verify_response(payload.question, answer, plan, payload.model, repair_context)
+                    except RuntimeError as exception:
+                        diagnostic_event(
+                            "quality.verifier_failed",
+                            provider=payload.provider,
+                            model=payload.model,
+                            reasoning_mode=payload.reasoning_mode,
+                            error=str(exception),
+                            fallback="deterministic_coverage" if coverage_manifest else "skip_quality_repair",
+                        )
+                        notify("verifying", f"Verifier returned malformed output; continuing with {'deterministic coverage' if coverage_manifest else 'the drafted answer'}")
+                        verification = {"complete": True, "missing": [], "quality_score": 100}
+                if deterministic_missing:
+                    coverage_manifest.coverageStatus = "incomplete"
+                    plan["coverage_manifest"] = coverage_manifest.to_dict()
+                # Deep Summary already appends every consolidated section
+                # deterministically. A verifier must not replace that complete answer
+                # using a context-limited repair call unless deterministic coverage
+                # itself detects a missing section.
+                needs_repair = bool(deterministic_missing) if coverage_manifest else (not verification["complete"] or verification["quality_score"] < 80)
+                if not needs_repair:
+                    break
                 missing = verification["missing"] or []
                 missing.extend(f'Missing detected section: {section}' for section in deterministic_missing)
                 missing = missing or ["Improve grounding, completeness, and consistency"]
-                notify("repairing", f"Calling {payload.model} to repair the answer: {', '.join(missing[:3])}")
+                # Deep Summary is excluded: it already inspected every chunk, so a gap round could
+                # only return evidence it has seen, and its manifest owns coverage decisions.
+                gap_sources = []
+                if gap_rounds_used < CHAT_EVIDENCE_ROUNDS and coverage_manifest is None and stored_files:
+                    gap_sources = _retrieve_for_gaps(missing, gap_search_file_ids, seen_evidence_keys, notify)
+                    if gap_sources:
+                        sources.extend(gap_sources)
+                        repair_context = [*repair_context, *[(source.name, source.excerpt) for source in gap_sources]]
+                        diagnostic_event(
+                            "quality.gap_round",
+                            round=gap_rounds_used + 1,
+                            new_chunks=len(gap_sources),
+                            gaps=missing[:3],
+                            reasoning_mode=payload.reasoning_mode,
+                        )
+                round_label = f" (round {gap_rounds_used + 1})" if gap_sources else ""
+                notify("repairing", f"Calling {payload.model} to repair the answer{round_label}: {', '.join(missing[:3])}")
                 prioritized_context = repair_context
                 if deterministic_missing:
                     wanted = [section.lower() for section in deterministic_missing]
                     prioritized_context = sorted(repair_context, key=lambda source: not any(section in source[0].lower() or section in source[1].lower() for section in wanted))
-                answer = repair_response(payload.question, answer, plan, missing, prioritized_context, payload.model, payload.allow_general_knowledge and not repair_context)
+                repair_calls += 1
+                answer = repair_response(payload.question, answer, plan, missing, prioritized_context, payload.model, payload.allow_general_knowledge and not repair_context, shape_guidance)
                 if coverage_manifest and not missing_sections(answer, coverage_manifest):
                     coverage_manifest.coverageStatus = "complete"
                 on_answer_token(answer)
+                # Without fresh evidence a re-verify would grade the same facts again, so stop here.
+                if not gap_sources:
+                    break
+                gap_rounds_used += 1
         answer = clean_final_answer(answer)
     except LLMProviderError as exception:
         raise HTTPException(status_code=exception.status_code, detail=str(exception))
     except RuntimeError as exception:
         raise HTTPException(status_code=503, detail=str(exception))
-    llm_hits = 2
-    if mode.use_quality_layer:
-        llm_hits += 1
-        if needs_repair:
-            llm_hits += 1
+    # Planner + composer, plus however many verify/repair calls the gap loop actually made.
+    llm_hits = 2 + verify_calls + repair_calls
     web_queries = 0
     ensure_not_cancelled()
     db.add_all([ChatMessage(session_id=session.id, role="user", content=payload.question), ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta(sources, llm_hits, web_queries), model=model, provider=payload.provider)])
@@ -1686,7 +1781,7 @@ def chat_direct_stream(payload: ChatRequest):
                             payload.model,
                             payload.allow_general_knowledge,
                             payload.reasoning_mode,
-                            guidance="No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.",
+                            guidance=("No files are selected. Answer as a normal model chat without pretending to inspect uploaded files.\n\n" + _answer_shape_guidance(payload.reasoning_mode)).strip(),
                             provider=payload.provider,
                         )
                         for token in token_stream:

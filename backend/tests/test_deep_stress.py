@@ -84,7 +84,7 @@ def mock_llm(monkeypatch):
     monkeypatch.setattr("backend.app.main.generate_unrestricted_answer",
         lambda *a, **k: ("Unrestricted answer", "test-model"))
     monkeypatch.setattr("backend.app.main.repair_response",
-        lambda question, answer, plan, missing, sources, model, allow_general_knowledge: "Repaired answer")
+        lambda question, answer, plan, missing, sources, model, allow_general_knowledge, shape_guidance="": "Repaired answer")
 
     def fake_deep_summary(documents, model, notify=lambda d: None):
         manifest = CoverageManifest(

@@ -131,6 +131,29 @@ that will bite you again if forgotten.
     own `GET` is public to link guests, so the bridge is deliberately *not* on
     `SecretChatSessionRead` — the phone number would leak to anyone holding a share link.
 
+15. **The quality layer is a loop, and its exits are load-bearing** — `_process_chat_impl` no
+    longer verifies once and repairs once. When the verifier reports gaps it calls
+    `_retrieve_for_gaps()` to search the vector store *for those gaps*, merges anything new into
+    `repair_context`, repairs, and re-verifies. Repair alone can only reword the draft against
+    evidence it already had, which is why a gap needing an unretrieved chunk was previously
+    unfixable. Three guards keep it finite and must all stay: the `CHAT_EVIDENCE_ROUNDS` cap
+    (`LOCUS_CHAT_EVIDENCE_ROUNDS`, default 2), the no-progress break when a round returns zero new
+    chunks (re-verifying the same facts just burns calls), and the `seen_evidence_keys` set that
+    stops a round from re-returning chunks already in evidence. Deep Summary is excluded via
+    `coverage_manifest is None` — it inspected every chunk already and its manifest owns coverage.
+    Light mode never enters the block at all (`use_quality_layer=False`). `llm_hits` counts the
+    verify/repair calls actually made rather than assuming one of each.
+
+16. **Answer shape is opt-in per call site, never global** — `ANSWER_SHAPE_INSTRUCTION` (llm.py)
+    is what makes answers open with a short summary then bullets then a table only if needed. It is
+    deliberately *not* added inside `_answer_request()`, because that function is shared by
+    `summarize_document()` and `extract_shared_evidence()`, whose intermediate chunk summaries must
+    stay plain — adding it there reshapes internal map/reduce steps and corrupts the evidence fed to
+    composition. It reaches the model through `guidance`, which `answer_planned_question()` passes
+    only to the final compose call. `repair_response()` takes it as `shape_guidance` for the same
+    reason: without it, a repair pass rewrites the layout back into prose. `_answer_shape_guidance()`
+    returns "" for `deep_summary` and `unrestricted`, which own their own output contracts.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -223,7 +246,8 @@ that will bite you again if forgotten.
 | `SplashScreen.jsx` | Boot screen with real load progress |
 | `ModelControl.jsx` | Provider + model picker |
 | `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
-| `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering |
+| `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering. All react-markdown `components` overrides live in one `useMemo` — a new identity remounts the code renderer and restarts in-flight Mermaid renders. Overrides must drop the `node` prop instead of spreading it onto the DOM |
+| `AnswerSection.jsx` | One collapsible answer section (h2 + its content). Starts expanded; collapsing sets `data-collapsed` and CSS hides the body, so children are never restructured |
 | `CollapsibleSources.jsx` | Source/evidence display |
 | `CreateStoreModal.jsx` / `ConfirmModal.jsx` | Modals |
 | `CommandPalette.jsx` | Global Cmd+K search: pages, stores, files, chats |
@@ -237,6 +261,7 @@ that will bite you again if forgotten.
 | `lib/appState.js` | Storage keys, page ids, provider defaults, cached app data |
 | `lib/pipelineNotes.js` | Turns pipeline events into human-readable working notes |
 | `lib/mermaid.js` / `lib/highlight.js` | Lazy-loaded diagram and syntax-highlighting integration |
+| `lib/rehypeAnswerSections.js` | Wraps each `h2` and the siblings after it in a `<section>`. react-markdown emits headings and content as flat siblings, so without this there is no element to collapse or animate. Applied only once streaming ends |
 | `lib/ask.js` | Slash commands and auto web-search heuristics |
 | `hooks/useChatViewport.js` | Mobile keyboard / viewport locking for chat surfaces |
 | `hooks/useClickOutside.js` | Shared popover dismissal (outside click + Escape) |
@@ -354,8 +379,8 @@ guest-eligible on its next share link but a returning host does not lose their r
 | `backend/tests/test_llm_context.py` | The one home for `_trim_history` / `_summarize_history` / `_pack_sources` / `_context_budget` unit tests |
 | `backend/tests/test_groq.py` | Groq auth, timeout clamp, rate-limit, retry, model listing |
 | `backend/tests/test_intent_deep.py` | `intent.py` keyword fallback across every domain, context persistence, output validation |
-| `backend/tests/test_agentic_pipeline.py` | Planner routing, dynamic source_limit, evidence validation |
-| `backend/tests/test_comprehensive_chat.py` | Light mode, web search routing, output formats, streaming, edge cases |
+| `backend/tests/test_agentic_pipeline.py` | Planner routing, dynamic source_limit, evidence validation, broad-retry before the no-evidence dead end |
+| `backend/tests/test_comprehensive_chat.py` | Light mode, web search routing, output formats, streaming, edge cases, gap-retrieval rounds and answer-shape wiring |
 | `backend/tests/test_100step_conversation.py` | 100-step conversations: persistence, history growth, truncation, cancellation |
 | `backend/tests/test_deep_stress.py` | Mode switching mid-chat, 200-step rapid fire, file ops mid-chat, job lifecycle, concurrency |
 | `backend/tests/test_litellm_gateway.py` | LiteLLM gateway wiring |
