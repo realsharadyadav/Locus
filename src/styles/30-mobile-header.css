@@ -136,10 +136,16 @@
     left: 0;
     right: 0;
     z-index: 30;
-    border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
-    background: color-mix(in srgb, var(--paper) 72%, transparent);
-    backdrop-filter: blur(20px) saturate(160%);
-    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    /* 72% tint read as basically solid in light mode - the page behind it is already close to
+       white, so there was little luminance contrast left for the blur to reveal. Dropping to
+       48% and pushing the blur radius up makes the frosted effect legible regardless of theme,
+       and the border gets a real shadow alongside it so the header still reads as a distinct
+       floating layer even over content with nothing to contrast against. */
+    border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+    background: color-mix(in srgb, var(--paper) 48%, transparent);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    box-shadow: 0 8px 24px -12px color-mix(in srgb, var(--ink) 25%, transparent);
   }
 
   .chat-page > .chat-thread {
