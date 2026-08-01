@@ -30,7 +30,7 @@ npm run build
 
 Run the whole suite. It is hermetic and order-independent — no network, no local `.env` — so
 any failure is yours. `conftest.py` owns `LOCUS_DATABASE_URL` and hands each module an empty
-schema: never set that variable in a test module and never delete the database file (note 16
+schema: never set that variable in a test module and never delete the database file (note 9
 explains what that used to break).
 
 Re-run all of the above after merging or rebasing someone else's work in: a textual merge can
@@ -50,39 +50,27 @@ produce a file that still parses but behaves wrongly.
 
 ## Lessons Learned (Session History)
 
-Keep these notes so future sessions don't repeat mistakes:
+Keep these notes so future sessions don't repeat mistakes. Routine "added X to file Y" notes
+get folded into the file tables below instead of living here — this list is only for things
+that will bite you again if forgotten.
 
-1. **Ollama model list** — `main.py:llm_config()` used to have a hardcoded list. Now queries `OLLAMA_URL/api/tags` at runtime. Frontend `fallbackModels.ollama` is empty `[]`. Only pulled models appear.
+1. **Jailbreak pipeline** — `_run_jailbreak_pipeline()` in `llm.py` tries 5 escalating strategies (direct → academic → roleplay → hypothetical → DAN). If all refuse, rephrases question via `_rephrase_question()` and retries with DAN prompt. Falls back to longest non-refusal attempt. Both paths (direct-stream + job) use the same pipeline via `generate_unrestricted_answer()`. `is_refusal()` (public) detects refusals via `_REFUSAL_PATTERNS` regex.
 
-2. **`/unrestricted` mode** — Added to `MODE_CONFIG` in `modes.py`, added to `ChatRequest.reasoning_mode` Literal in `schemas.py`. Pipeline in `main.py` calls `generate_unrestricted_answer()` instead of going through standard pipeline.
+2. **LLM-decided `source_limit`** — LLM planner dynamically decides how many web sources to collect per query. Simple lookups → 3-10, comparisons → 10-25, deep research → 25-50+, up to 200 max. Stored in `AgentPlan.source_limit`. User's `web_source_limit` is only a max cap. The `_execute_plan` clamps `min(plan.source_limit, user_source_limit)`. Fallback in `_build_plan` sets 5-20 based on route. Keys: `agentic_pipeline.py:AgentPlan.source_limit`, `_plan_from_json` (extract from LLM), `run_agentic_pipeline` (compute `effective_limit` early, pass to both `_execute_plan` and exception handler fallback).
 
-3. **Jailbreak pipeline** — `_run_jailbreak_pipeline()` in `llm.py` tries 5 escalating strategies (direct → academic → roleplay → hypothetical → DAN). If all refuse, rephrases question via `_rephrase_question()` and retries with DAN prompt. Falls back to longest non-refusal attempt. Both paths (direct-stream + job) use the same pipeline via `generate_unrestricted_answer()`. `is_refusal()` (public) detects refusals via `_REFUSAL_PATTERNS` regex.
+3. **force_web route override fix** — `force_web=True` no longer blindly overrides all routes to `web_research`. Only overrides non-search-capable routes (`small_talk`, `direct_llm`, `complex_plan`). Routes like `product_recommendation`, `web_research`, `news`, `sports` are left intact so LLM's planned search_queries get used in `_planned_web_answer`. Critical: `_plan_from_json` line ~209.
 
-4. ~~**Auto-select dolphin-llama3** — Removed. `/unrestricted` no longer auto-selects model. User picks manually.~~
+4. **tenacity dependency** — Added to `backend/requirements.txt`. LiteLLM needs it for retries. Without it, evidence validation in `_validate_evidence_with_llm` silently falls back to `_fallback_evidence_filter` which caps at 15 sources.
 
-5. **Mode persistence** — `newChat()` no longer resets `reasoningMode`. Mode stays until user explicitly changes it.
+5. **Sign-in gate (Phase 1)** — One shared password, not user accounts. `LOCUS_AUTH_PASSWORD` unset = gate absent, which is why no existing test needed changing. `auth.py` signs a stateless `{"exp"}` token with an HMAC derived from the password; the frontend sends it as a Bearer header (not a cookie — frontend and backend are separate origins on Render). The auth middleware is registered **before** `CORSMiddleware` in `main.py` on purpose: register it after and CORS is no longer the outer layer, so a 401 comes back without CORS headers and the browser reports a network error instead. Public paths: `/api/health`, `/api/auth/status`, `/api/auth/login`, plus the guest Private-chat routes in note 7. Dark theme paints every `<p>` muted with `!important`, so `.login-error` needs `!important` to show red.
 
-6. **Frontend unrestricted** — Added `Zap` icon to lucide imports, `/unrestricted` to `SLASH_COMMANDS`, mode label mapping, pipeline stage handling (treated as direct chat), CSS class `.mode-unrestricted` (red tint).
+6. **Private chats are multi-room** — `PrivateChatsPage` reuses Ask's `.chat-rail` classes so the two lists stay in visual sync. Rooms are created from the page, not by clicking the nav item (that used to leave an empty room behind on every click). Deleting a room is the revoke mechanism: the backend cascades the messages away and pushes a `REVOKED` sentinel into every live SSE queue, which the stream turns into an `event: revoked` frame before closing. Both the host view and the guest standalone listen for it, plus a 404 backstop in the 8s poll for a deletion that lands while the stream is down — without that the client reconnect-loops forever against a dead room.
 
-7. **Provider stored in ChatMessage** — `ChatMessage` model now has a `provider` column (VARCHAR(20)). `ChatJob` also has `provider`. Displayed in frontend as `Provider / model` in every message head and pipeline console. Auto-migration via `_ensure_schema_columns()` on startup.
+7. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact five method+path pairs a link guest needs (room, read messages, post message, stream, presence). Listing, creating, changing options, participant details, the copilot, clearing and deleting are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not. The other half of this is client-side: `src/secret-chat/api.js` has its own request helper, and while it did not send `authHeaders()` every host action answered "Sign in to continue" on a gated deployment — guests kept working, which is what made it look like a Private-chat bug rather than an auth one.
 
-8. **PROVIDER_LABELS constant** — Shared at top of `main.jsx` (not inside `ModelControl`), used by message head and pipeline activity. Map: `{ ollama: 'Ollama', groq: 'Groq', openai: 'OpenAI', gemini: 'Gemini' }`.
+8. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
 
-9. **LLM-decided `source_limit`** — LLM planner dynamically decides how many web sources to collect per query. Simple lookups → 3-10, comparisons → 10-25, deep research → 25-50+, up to 200 max. Stored in `AgentPlan.source_limit`. User's `web_source_limit` is only a max cap. The `_execute_plan` clamps `min(plan.source_limit, user_source_limit)`. Fallback in `_build_plan` sets 5-20 based on route. Keys: `agentic_pipeline.py:AgentPlan.source_limit`, `_plan_from_json` (extract from LLM), `run_agentic_pipeline` (compute `effective_limit` early, pass to both `_execute_plan` and exception handler fallback).
-
-10. **force_web route override fix** — `force_web=True` no longer blindly overrides all routes to `web_research`. Only overrides non-search-capable routes (`small_talk`, `direct_llm`, `complex_plan`). Routes like `product_recommendation`, `web_research`, `news`, `sports` are left intact so LLM's planned search_queries get used in `_planned_web_answer`. Critical: `_plan_from_json` line ~209.
-
-11. **tenacity dependency** — Added to `backend/requirements.txt`. LiteLLM needs it for retries. Without it, evidence validation in `_validate_evidence_with_llm` silently falls back to `_fallback_evidence_filter` which caps at 15 sources.
-
-12. **Sign-in gate (Phase 1)** — One shared password, not user accounts. `LOCUS_AUTH_PASSWORD` unset = gate absent, which is why no existing test needed changing. `auth.py` signs a stateless `{"exp"}` token with an HMAC derived from the password; the frontend sends it as a Bearer header (not a cookie — frontend and backend are separate origins on Render). The auth middleware is registered **before** `CORSMiddleware` in `main.py` on purpose: register it after and CORS is no longer the outer layer, so a 401 comes back without CORS headers and the browser reports a network error instead. Public paths: `/api/health`, `/api/auth/status`, `/api/auth/login`, plus the guest Private-chat routes in note 14. Dark theme paints every `<p>` muted with `!important`, so `.login-error` needs `!important` to show red.
-
-13. **Private chats are multi-room** — `PrivateChatsPage` reuses Ask's `.chat-rail` classes so the two lists stay in visual sync. Rooms are created from the page, not by clicking the nav item (that used to leave an empty room behind on every click). Deleting a room is the revoke mechanism: the backend cascades the messages away and pushes a `REVOKED` sentinel into every live SSE queue, which the stream turns into an `event: revoked` frame before closing. Both the host view and the guest standalone listen for it, plus a 404 backstop in the 8s poll for a deletion that lands while the stream is down — without that the client reconnect-loops forever against a dead room.
-
-14. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact five method+path pairs a link guest needs (room, read messages, post message, stream, presence). Listing, creating, changing options, participant details, the copilot, clearing and deleting are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not. The other half of this is client-side: `src/secret-chat/api.js` has its own request helper, and while it did not send `authHeaders()` every host action answered "Sign in to continue" on a gated deployment — guests kept working, which is what made it look like a Private-chat bug rather than an auth one.
-
-15. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
-
-16. **Tests share one database, and conftest.py owns it** — Pytest imports every test
+9. **Tests share one database, and conftest.py owns it** — Pytest imports every test
     module before running any test, and `backend.app.database` builds its engine once at
     import time. A per-module `os.environ["LOCUS_DATABASE_URL"] = ...` therefore only ever
     applied to whichever module was imported first; the rest silently shared that database
@@ -91,7 +79,7 @@ Keep these notes so future sessions don't repeat mistakes:
     modules by dropping/creating tables (the `reset_database` fixture), never by using
     separate files or `os.remove`.
 
-17. **Never set/reset a ContextVar across a `yield` in a StreamingResponse generator** —
+10. **Never set/reset a ContextVar across a `yield` in a StreamingResponse generator** —
     Starlette pumps a sync generator by calling `next()` in the threadpool, and each call
     gets a fresh copy of the context, so `__enter__` in one `next()` and `__exit__` in a
     later one raises "was created in a different Context". This silently broke
@@ -100,7 +88,7 @@ Keep these notes so future sessions don't repeat mistakes:
     assistant message or emitting the `result` frame. Both streaming endpoints now run the
     pipeline on one thread and push events through a `Queue`; keep new ones on that pattern.
 
-18. **`intent._fallback_classify` matches on longest keyword, plus plurals** — First-match-wins
+11. **`intent._fallback_classify` matches on longest keyword, plus plurals** — First-match-wins
     let a short generic keyword from an earlier domain beat a longer specific one from a
     later domain ("formula 1 standings" classified as `math`, because `_math_kw` has
     "formula" and math is checked before sports). Keywords are also stored in the singular
@@ -108,7 +96,7 @@ Keep these notes so future sessions don't repeat mistakes:
     without it `\bflight\b` missed "mumbai to delhi flights" outright. Keep new keywords
     singular.
 
-19. **Startup ALTERs must speak the deployed dialect** — `_ensure_schema_columns()` is a no-op
+12. **Startup ALTERs must speak the deployed dialect** — `_ensure_schema_columns()` is a no-op
     on a fresh database (`create_all` already made every column), so its statements only ever
     run against a database that predates a column: in practice the deployed Postgres. Writing
     them SQLite-style (`DATETIME`, `BOOLEAN NOT NULL DEFAULT 0`) passed every local test and
@@ -117,7 +105,7 @@ Keep these notes so future sessions don't repeat mistakes:
     `backend/tests/test_schema_migration.py` builds a legacy schema on its own engine to cover
     this, because the shared test database always has the columns already.
 
-20. **Boot must not do catch-up work** — Re-extracting tabular profiles and re-indexing
+13. **Boot must not do catch-up work** — Re-extracting tabular profiles and re-indexing
     embeddings for every stored file used to run inline in the lifespan handler, so a cold
     start walked the whole upload set before `/api/health` answered. That is what timed out the
     Render health check and tripped the instance's memory limit. It now runs on a daemon thread
@@ -125,7 +113,7 @@ Keep these notes so future sessions don't repeat mistakes:
     skip it entirely. Anything added to lifespan should be a precondition for serving, not
     housekeeping.
 
-21. **The Telegram bridge is an account, not a bot** — "give me a number and I'll talk to
+14. **The Telegram bridge is an account, not a bot** — "give me a number and I'll talk to
     them from Locus" is only possible over MTProto with the host's own Telegram account
     (`telegram_bridge.py`, Telethon): the Bot API cannot open a conversation by phone number,
     the person has to press start on the bot first. Consequences to keep in mind when
@@ -357,7 +345,7 @@ guest-eligible on its next share link but a returning host does not lose their r
 
 | File | Covers |
 |---|---|
-| `backend/tests/conftest.py` | Owns `LOCUS_DATABASE_URL` and the per-module schema reset. See note 16 |
+| `backend/tests/conftest.py` | Owns `LOCUS_DATABASE_URL` and the per-module schema reset. See note 9 |
 | `backend/tests/test_api.py` | API endpoints, chat CRUD, file upload, job lifecycle, retry, mode routing, deep summary, web research, prompt helpers |
 | `backend/tests/test_diagnostics.py` | Secret redaction, job log cleanup |
 | `backend/tests/test_auth.py` | Sign-in gate: absent without a password, token issue/verify/expiry, wrong-password throttle, public paths |
