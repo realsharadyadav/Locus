@@ -5,7 +5,21 @@ import { CodeBlock } from './CodeBlock';
 import ReactMarkdown from 'react-markdown';
 import rehypeSlug from 'rehype-slug';
 import remarkGfm from 'remark-gfm';
+import { useScrollEdgeShadows } from '../hooks/useScrollEdgeShadows';
 import { rehypeAnswerSections } from '../lib/rehypeAnswerSections';
+
+// A named component (rather than the inline arrow function this replaced) so it can hold its
+// own ref for the scroll-edge-shadow hook - a wide table needs to say which side still has more
+// to scroll to, not just that it scrolls at all.
+function TableScrollWrap(props) {
+  const wrapRef = useRef(null);
+  useScrollEdgeShadows(wrapRef);
+  return (
+    <div className="answer-table-wrap" ref={wrapRef}>
+      <table {...props} />
+    </div>
+  );
+}
 
 export function AssistantMarkdown({ text, streaming, messageKey }) {
   const containerRef = useRef(null);
@@ -20,7 +34,7 @@ export function AssistantMarkdown({ text, streaming, messageKey }) {
       section: props => <AnswerSection {...props} />,
       // Wide tables must scroll inside their own box rather than stretching the chat bubble.
       // `node` is react-markdown's hast node and must not reach the DOM.
-      table: ({ node, ...props }) => <div className="answer-table-wrap"><table {...props} /></div>,
+      table: ({ node, ...props }) => <TableScrollWrap {...props} />,
     }),
     [streaming],
   );

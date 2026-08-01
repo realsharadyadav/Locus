@@ -7,17 +7,72 @@ import { createPortal } from 'react-dom';
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 6;
 const DOUBLE_TAP_SCALE = 2.2;
+// Per-millisecond velocity decay applied during a fling; ~0.05 px/ms is where it's no longer
+// perceptible as motion, so that's the animation's stopping point.
+const MOMENTUM_DECAY_PER_MS = 0.998;
+const MOMENTUM_STOP_SPEED = 0.05;
+// Room to keep panning past the point where the diagram's far edge reaches the canvas edge -
+// without it, a pan or fling that overshoots loses the diagram off-screen with only the Reset
+// button to recover it, which is not how a native photo viewer behaves.
+const PAN_SLACK_PX = 80;
 
 const clampScale = value => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 
 export function DiagramLightbox({ svg, title, onClose }) {
   const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
   const canvasRef = useRef(null);
+  const contentRef = useRef(null);
   // Every pointer currently down, keyed by pointerId — one entry is a drag, two is a pinch.
   const pointersRef = useRef(new Map());
   const dragRef = useRef(null);
   const pinchRef = useRef(null);
   const lastTapRef = useRef(0);
+  const momentumRef = useRef(null);
+
+  const cancelMomentum = useCallback(() => {
+    if (momentumRef.current) {
+      window.cancelAnimationFrame(momentumRef.current);
+      momentumRef.current = null;
+    }
+  }, []);
+
+  // getBoundingClientRect on the transformed content would report its already-scaled box: this
+  // reads offsetWidth/Height instead, which CSS transforms never affect, then applies `scale`
+  // itself to get the diagram's actual on-screen size at any zoom level.
+  const clampPan = useCallback((x, y, scale) => {
+    const canvas = canvasRef.current;
+    const content = contentRef.current;
+    if (!canvas || !content) return { x, y };
+    const canvasRect = canvas.getBoundingClientRect();
+    const contentW = content.offsetWidth * scale;
+    const contentH = content.offsetHeight * scale;
+    const maxX = Math.max(0, (contentW - canvasRect.width) / 2) + PAN_SLACK_PX;
+    const maxY = Math.max(0, (contentH - canvasRect.height) / 2) + PAN_SLACK_PX;
+    return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) };
+  }, []);
+
+  // A flick of the finger keeps drifting and decelerating after release, like scrolling anywhere
+  // else in the app - the plain drag this replaced stopped dead the instant a finger lifted,
+  // which is the single biggest tell that a surface is hand-rolled rather than native.
+  const startMomentum = useCallback((vx, vy) => {
+    cancelMomentum();
+    if (Math.hypot(vx, vy) < MOMENTUM_STOP_SPEED) return;
+    let velocity = { x: vx, y: vy };
+    let lastTime = performance.now();
+    const step = now => {
+      const dt = Math.min(48, now - lastTime);
+      lastTime = now;
+      const decay = MOMENTUM_DECAY_PER_MS ** dt;
+      velocity = { x: velocity.x * decay, y: velocity.y * decay };
+      setTransform(current => ({ ...current, ...clampPan(current.x + velocity.x * dt, current.y + velocity.y * dt, current.scale) }));
+      momentumRef.current = Math.hypot(velocity.x, velocity.y) > MOMENTUM_STOP_SPEED
+        ? window.requestAnimationFrame(step)
+        : null;
+    };
+    momentumRef.current = window.requestAnimationFrame(step);
+  }, [cancelMomentum, clampPan]);
+
+  useEffect(() => cancelMomentum, [cancelMomentum]);
 
   useEffect(() => {
     const handleKey = event => {
@@ -52,6 +107,7 @@ export function DiagramLightbox({ svg, title, onClose }) {
 
   /** Scale about a fixed screen point so the content under the fingers stays under the fingers. */
   const zoomAround = useCallback((nextScale, clientX, clientY) => {
+    cancelMomentum();
     const bounds = canvasRef.current?.getBoundingClientRect();
     setTransform(current => {
       const scale = clampScale(nextScale);
@@ -63,11 +119,10 @@ export function DiagramLightbox({ svg, title, onClose }) {
       const ratio = scale / current.scale;
       return {
         scale,
-        x: focusX - (focusX - current.x) * ratio,
-        y: focusY - (focusY - current.y) * ratio,
+        ...clampPan(focusX - (focusX - current.x) * ratio, focusY - (focusY - current.y) * ratio, scale),
       };
     });
-  }, []);
+  }, [cancelMomentum, clampPan]);
 
   // The +/- buttons zoom about the middle of the viewport, so whatever the user panned to
   // stays in view instead of drifting back toward the diagram's centre.
@@ -80,11 +135,15 @@ export function DiagramLightbox({ svg, title, onClose }) {
     zoomAround(transform.scale * factor, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
   }, [transform.scale, zoomAround]);
 
-  const reset = useCallback(() => setTransform({ scale: 1, x: 0, y: 0 }), []);
+  const reset = useCallback(() => {
+    cancelMomentum();
+    setTransform({ scale: 1, x: 0, y: 0 });
+  }, [cancelMomentum]);
 
   // Wheel and trackpad pinch (which arrives as ctrlKey + wheel) both zoom about the cursor.
   const handleWheel = event => {
     event.preventDefault();
+    cancelMomentum();
     const intensity = event.ctrlKey ? 0.01 : 0.0022;
     setTransform(current => {
       const next = clampScale(current.scale * Math.exp(-event.deltaY * intensity));
@@ -93,7 +152,7 @@ export function DiagramLightbox({ svg, title, onClose }) {
       const focusX = event.clientX - bounds.left - bounds.width / 2;
       const focusY = event.clientY - bounds.top - bounds.height / 2;
       const ratio = next / current.scale;
-      return { scale: next, x: focusX - (focusX - current.x) * ratio, y: focusY - (focusY - current.y) * ratio };
+      return { scale: next, ...clampPan(focusX - (focusX - current.x) * ratio, focusY - (focusY - current.y) * ratio, next) };
     });
   };
 
@@ -103,7 +162,15 @@ export function DiagramLightbox({ svg, title, onClose }) {
     return { distance, centerX: (first.x + second.x) / 2, centerY: (first.y + second.y) / 2 };
   };
 
+  // A drag also carries a smoothed instantaneous velocity in px/ms (lastX/Y/T, vx/vy), read on
+  // release to decide whether to fling. Exponential smoothing keeps one jittery sample right
+  // before lift-off from dictating the whole fling's speed and direction.
+  const startDrag = (x, y) => ({
+    startX: x, startY: y, originX: transform.x, originY: transform.y, lastX: x, lastY: y, lastT: performance.now(), vx: 0, vy: 0,
+  });
+
   const handlePointerDown = event => {
+    cancelMomentum();
     event.currentTarget.setPointerCapture(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
@@ -116,7 +183,7 @@ export function DiagramLightbox({ svg, title, onClose }) {
     }
 
     if (pointersRef.current.size === 1) {
-      dragRef.current = { startX: event.clientX, startY: event.clientY, originX: transform.x, originY: transform.y };
+      dragRef.current = startDrag(event.clientX, event.clientY);
 
       // Double-tap zooms in on the tapped point, and zooms back out if already magnified. Touch has
       // no dblclick contract worth relying on, so the interval is measured here.
@@ -144,18 +211,33 @@ export function DiagramLightbox({ svg, title, onClose }) {
     }
 
     if (!dragRef.current) return;
-    const { startX, startY, originX, originY } = dragRef.current;
-    setTransform(current => ({ ...current, x: originX + (event.clientX - startX), y: originY + (event.clientY - startY) }));
+    const drag = dragRef.current;
+    const dt = performance.now() - drag.lastT;
+    if (dt > 4) {
+      const instVx = (event.clientX - drag.lastX) / dt;
+      const instVy = (event.clientY - drag.lastY) / dt;
+      drag.vx = drag.vx * 0.7 + instVx * 0.3;
+      drag.vy = drag.vy * 0.7 + instVy * 0.3;
+      drag.lastX = event.clientX;
+      drag.lastY = event.clientY;
+      drag.lastT = performance.now();
+    }
+    setTransform(current => ({ ...current, ...clampPan(drag.originX + (event.clientX - drag.startX), drag.originY + (event.clientY - drag.startY), current.scale) }));
   };
 
   const releasePointer = event => {
+    // Only the very last finger lifting off a plain drag should fling - not a pinch ending, and
+    // not one finger of a two-finger pinch letting go (handled in the branch below instead).
+    const endedDrag = pointersRef.current.size === 1 ? dragRef.current : null;
     pointersRef.current.delete(event.pointerId);
     if (pointersRef.current.size < 2) pinchRef.current = null;
-    if (pointersRef.current.size === 0) dragRef.current = null;
-    else if (pointersRef.current.size === 1) {
+    if (pointersRef.current.size === 0) {
+      dragRef.current = null;
+      if (endedDrag) startMomentum(endedDrag.vx, endedDrag.vy);
+    } else if (pointersRef.current.size === 1) {
       // Lifting one finger of a pinch resumes a drag from wherever the remaining one is.
       const [remaining] = Array.from(pointersRef.current.values());
-      dragRef.current = { startX: remaining.x, startY: remaining.y, originX: transform.x, originY: transform.y };
+      dragRef.current = startDrag(remaining.x, remaining.y);
     }
   };
 
@@ -191,6 +273,7 @@ export function DiagramLightbox({ svg, title, onClose }) {
         onPointerLeave={releasePointer}
       >
         <div
+          ref={contentRef}
           className="diagram-lightbox-content"
           style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }}
           dangerouslySetInnerHTML={{ __html: svg }}

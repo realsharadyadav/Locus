@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Check, Code2, Copy, Maximize2,
 } from 'lucide-react';
+import { useScrollEdgeShadows } from '../hooks/useScrollEdgeShadows';
 import { naturalDiagramWidth, useMermaidRender } from '../lib/mermaid';
 import { readMermaidMeta } from '../lib/mermaidMeta';
 import { DiagramLightbox } from './DiagramLightbox';
@@ -18,6 +19,7 @@ export function MermaidBlock({ code }) {
   const { svg, error } = useMermaidRender(code);
   const { title, legend } = useMemo(() => readMermaidMeta(code), [code]);
   const canvasRef = useRef(null);
+  useScrollEdgeShadows(canvasRef);
 
   // Mermaid draws a frontmatter title into the SVG itself. The figure caption already shows it —
   // pinned, styled, and outside the scroll area, which a centred in-SVG title is not on a wide

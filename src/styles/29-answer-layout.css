@@ -143,11 +143,16 @@
 /* --- Tables --------------------------------------------------------------------------------- */
 /* Wide comparison tables scroll inside their own box instead of stretching the chat bubble. */
 .answer-table-wrap {
+  position: relative;
   overflow-x: auto;
   margin: 0 0 14px;
   border: 1px solid var(--line);
   border-radius: 10px;
   -webkit-overflow-scrolling: touch;
+  /* Horizontal panning belongs to this box; a swipe that starts on it must not also drag the
+     vertically-scrolling thread behind it, which is what made it feel unpredictable on a phone. */
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 
 /* A table shrink-to-fits its container, so on a phone the browser would rather crush a column
@@ -182,6 +187,41 @@
 .markdown-answer .answer-table-wrap code {
   overflow-wrap: break-word;
   white-space: normal;
+}
+
+/* A phone doesn't have 7.5rem times three columns to give a table, and the floor exists to stop
+   letter-stacking, not to guarantee a specific width - 5.5rem still fits a couple of words before
+   wrapping. This is what actually gets more of a table to fit without scrolling on a narrow screen. */
+@media (max-width: 640px) {
+  .markdown-answer .answer-table-wrap th,
+  .markdown-answer .answer-table-wrap td {
+    min-width: 5.5rem;
+    padding: 8px 10px;
+    font-size: 12.5px;
+  }
+}
+
+/* --- Horizontal scroll affordance ------------------------------------------------------------ */
+/* Nothing about `overflow-x: auto` tells a touch user there is more content off to one side - no
+   scrollbar to notice, no cursor to hint at it. useScrollEdgeShadows toggles these classes based
+   on actual scroll position, so the shadow only ever appears on the edge that still has content
+   past it, and disappears once that edge is reached. Semi-transparent so it needs no exact match
+   to the container's background across every theme variant. */
+.answer-table-wrap.can-scroll-start,
+.markdown-answer .mermaid-canvas.can-scroll-start {
+  box-shadow: inset 10px 0 12px -10px color-mix(in srgb, var(--ink) 38%, transparent);
+}
+
+.answer-table-wrap.can-scroll-end,
+.markdown-answer .mermaid-canvas.can-scroll-end {
+  box-shadow: inset -10px 0 12px -10px color-mix(in srgb, var(--ink) 38%, transparent);
+}
+
+.answer-table-wrap.can-scroll-start.can-scroll-end,
+.markdown-answer .mermaid-canvas.can-scroll-start.can-scroll-end {
+  box-shadow:
+    inset 10px 0 12px -10px color-mix(in srgb, var(--ink) 38%, transparent),
+    inset -10px 0 12px -10px color-mix(in srgb, var(--ink) 38%, transparent);
 }
 
 /* --- Diagrams ------------------------------------------------------------------------------- */
