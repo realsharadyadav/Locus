@@ -108,7 +108,3 @@ runtime; the frontend's Ollama fallback list must stay empty so only actually-pu
 
 Other sessions push here, so start every change from the latest `origin/main`
 (`git fetch origin main`, then `git checkout main && git pull --ff-only`).
-
-- **Commit straight to `main` and push.** No feature branch, no pull request, don't ask.
-  If a session prompt names a branch, use that branch instead.
-- Never force-push. If a push is rejected, fetch, integrate, re-verify, push.
