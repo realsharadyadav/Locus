@@ -1366,3 +1366,17 @@ class TestFollowUpSuggestions:
             response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
         assert response.status_code == 200
         assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]
+
+    def test_clean_bare_array_response_yields_suggestions(self, monkeypatch):
+        # A *clean* bare array with no surrounding text or code fence is the trap the previous
+        # fix missed: json.loads succeeds on the very first try and hands back a list, so there
+        # is no exception for a "catch RuntimeError and fall back" path to catch. Calling .get()
+        # on that list threw an uncaught AttributeError, which looked identical to "no suggestions".
+        monkeypatch.setattr(
+            "backend.app.llm._chat",
+            lambda *a, **k: '["What about latency?", "How does it scale?"]',
+        )
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]

@@ -724,6 +724,34 @@ def enhance_question(question: str, history: list[tuple[str, str]], model: str) 
     }
 
 
+def _extract_suggestion_list(raw: str) -> list:
+    # Smaller/local models routinely ignore the "object with a suggestions key" instruction and
+    # return a bare JSON array instead, sometimes cleanly, sometimes wrapped in a code fence or
+    # surrounded by chatty prose. A *clean* bare array is the trap: json.loads succeeds on the
+    # first try and hands back a list, not a dict, so a naive `_json_object(raw)["suggestions"]`
+    # never raises at all - it just throws AttributeError trying to .get() off a list, which
+    # looked identical to "no suggestions" from the caller's point of view. Try every shape
+    # in one pass instead of assuming the response is always an object.
+    cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    candidates = [cleaned]
+    obj_start, obj_end = cleaned.find("{"), cleaned.rfind("}")
+    if obj_start >= 0 and obj_end > obj_start:
+        candidates.append(cleaned[obj_start:obj_end + 1])
+    arr_start, arr_end = cleaned.find("["), cleaned.rfind("]")
+    if arr_start >= 0 and arr_end > arr_start:
+        candidates.append(cleaned[arr_start:arr_end + 1])
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and isinstance(parsed.get("suggestions"), list):
+            return parsed["suggestions"]
+        if isinstance(parsed, list):
+            return parsed
+    return []
+
+
 def generate_followup_questions(question: str, answer: str, model: str) -> list[str]:
     answer_excerpt = answer if len(answer) <= 4000 else f"{answer[:4000]}…"
     raw = _chat(
@@ -735,18 +763,7 @@ def generate_followup_questions(question: str, answer: str, model: str) -> list[
         0.4,
         300,
     )
-    # Smaller/local models routinely ignore the "object with a suggestions key" instruction and
-    # return a bare JSON array instead — _json_object only looks for {...}, so that response used
-    # to raise and the chips silently never appeared. Fall back to array parsing before giving up.
-    try:
-        items = _json_object(raw).get("suggestions", [])
-    except RuntimeError:
-        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        start, end = cleaned.find("["), cleaned.rfind("]")
-        try:
-            items = json.loads(cleaned[start:end + 1]) if start >= 0 and end > start else []
-        except json.JSONDecodeError:
-            items = []
+    items = _extract_suggestion_list(raw)
     suggestions = [str(item).strip() for item in items if str(item).strip()]
     return suggestions[:4]
 
