@@ -1,0 +1,165 @@
+.model-table-wrap { margin-top: 4px; }
+.model-table-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.model-table-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+.model-table-search-icon { color: var(--muted); flex-shrink: 0; }
+.model-table-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.model-table-search input::placeholder { color: var(--muted); }
+
+.model-table-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.model-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.model-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  background: var(--paper);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.model-table thead th.mt-col-show { cursor: default; width: 44px; }
+.model-table thead th:hover { color: var(--ink); }
+.model-table tbody tr { border-bottom: 1px solid var(--line); transition: background .12s; }
+.model-table tbody tr:last-child { border-bottom: none; }
+.model-table tbody tr:hover { background: rgba(116,92,255,.05); }
+.model-table tbody tr.active { background: rgba(116,92,255,.08); }
+.model-table tbody tr.disabled { opacity: .5; }
+.model-table td { padding: 8px 12px; vertical-align: middle; }
+.model-table .mt-col-show { text-align: center; }
+.model-table .mt-col-show input { margin: 0; accent-color: var(--violet); }
+.model-table .mt-col-params,
+.model-table .mt-col-context,
+.model-table .mt-col-price {
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.mt-name-select {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  max-width: 360px;
+  width: 100%;
+}
+.mt-name-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+.mt-name-main {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-weight: 500;
+}
+.mt-name-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--muted);
+}
+.mt-name-check { color: var(--violet); flex-shrink: 0; }
+
+html[data-theme='dark'] .model-table-search,
+html[data-theme='dark'] .model-table-scroll {
+  background: rgba(16,22,30,.92);
+  border-color: #30363d;
+}
+html[data-theme='dark'] .model-table thead th { background: rgba(16,22,30,.98); border-color: #30363d; }
+html[data-theme='dark'] .model-table tbody tr { border-color: #262c34; }
+html[data-theme='dark'] .model-table tbody tr:hover { background: rgba(139,123,255,.08); }
+html[data-theme='dark'] .model-table tbody tr.active { background: rgba(139,123,255,.14); }
+
+/* Mobile: the table degrades into stacked cards — each row becomes a block with its cells
+   laid out as label/value pairs (data-label supplies the label via ::before), which is the
+   standard responsive-table technique and needs no separate mobile-only render branch. */
+@media (max-width: 680px) {
+  .model-table-scroll { max-height: none; overflow-y: visible; }
+  .model-table thead { display: none; }
+  .model-table, .model-table tbody, .model-table tr, .model-table td { display: block; width: 100%; }
+  .model-table tbody tr {
+    padding: 10px 12px;
+    position: relative;
+  }
+  .model-table td {
+    padding: 4px 0 4px 96px;
+    border: none;
+    position: relative;
+    min-height: 20px;
+  }
+  .model-table td[data-label]::before {
+    content: attr(data-label);
+    position: absolute;
+    left: 0;
+    top: 4px;
+    width: 84px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+  }
+  .model-table td.mt-col-show {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    padding: 0;
+    width: auto;
+  }
+  .model-table td.mt-col-show::before { content: none; }
+  .model-table td.mt-col-name { padding-left: 0; margin-bottom: 4px; }
+  .model-table td.mt-col-name::before { content: none; }
+  .mt-name-select { max-width: calc(100% - 40px); }
+}

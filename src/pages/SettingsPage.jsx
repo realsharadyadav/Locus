@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 import { BRAND, writeStorage } from '../brand';
+import { ModelTable } from '../components/ModelTable';
 import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, PROVIDER_META, PROVIDER_ORDER, readSavedAiPreference } from '../lib/appState';
-import { formatContextLength, formatPrice } from '../lib/format';
 
 export const REASONING_MODE_META = [
   { id: 'light', label: 'Light', icon: Radio, desc: 'Fast direct chat — default mode' },
@@ -31,12 +31,13 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState(null);
   const [customModel, setCustomModel] = useState('');
-  const [freeOnly, setFreeOnly] = useState(false);
   const [limits, setLimits] = useState(null);
   const [limitInput, setLimitInput] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
   const [enabledProviders, setEnabledProviders] = useState(null);
   const [savingProviders, setSavingProviders] = useState(false);
+  const [enabledModels, setEnabledModels] = useState(null);
+  const [savingModels, setSavingModels] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,8 +46,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       api.preference('explore_ai').catch(() => ({ value: {} })),
       api.systemLimits().catch(() => null),
       api.preference('enabled_providers').catch(() => ({ value: {} })),
+      api.preference('enabled_models').catch(() => ({ value: {} })),
     ])
-      .then(([llmConfig, preference, systemLimits, enabledProvidersPref]) => {
+      .then(([llmConfig, preference, systemLimits, enabledProvidersPref, enabledModelsPref]) => {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
@@ -68,6 +70,14 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
             ? savedEnabled.filter(id => knownProviders.includes(id))
             : knownProviders
         ));
+        // Only providers the user has actually customized get an entry here — a provider with
+        // no entry means "every one of its models is enabled" (same default-on semantics as
+        // enabledProviders above), so most providers never need a stored list at all.
+        const initialEnabledModels = {};
+        for (const [provider, ids] of Object.entries(enabledModelsPref.value || {})) {
+          if (Array.isArray(ids)) initialEnabledModels[provider] = new Set(ids);
+        }
+        setEnabledModels(initialEnabledModels);
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -94,6 +104,33 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
+  const toggleModelEnabled = (provider, modelId) => {
+    setEnabledModels(current => {
+      // First customization for this provider: materialize the full "all enabled" list so
+      // unchecking one model doesn't implicitly disable every model that isn't yet known.
+      const baseSet = current[provider] ? new Set(current[provider]) : new Set(config?.providers?.[provider] || []);
+      if (baseSet.has(modelId)) baseSet.delete(modelId);
+      else baseSet.add(modelId);
+      return { ...current, [provider]: baseSet };
+    });
+  };
+
+  const saveEnabledModels = async () => {
+    setSavingModels(true);
+    try {
+      const payload = {};
+      for (const [provider, set] of Object.entries(enabledModels)) {
+        payload[provider] = Array.from(set);
+      }
+      await api.updatePreference('enabled_models', payload);
+      toast('Enabled models saved', 'success');
+    } catch (error) {
+      toast(error.message || 'Could not save enabled models', 'error');
+    } finally {
+      setSavingModels(false);
+    }
+  };
+
   const saveUploadLimit = async () => {
     if (!limits) return;
     const requested = Math.max(1, Math.min(Math.round(Number(limitInput) || 0), limits.upload_ceiling_mb));
@@ -111,7 +148,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
-  if (loading || !draft || !enabledProviders) {
+  if (loading || !draft || !enabledProviders || !enabledModels) {
     return (
       <div className="page settings-page">
         <div className="loading-grid">
@@ -127,11 +164,6 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const providerModels = provider => config?.providers?.[provider] || [];
   const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
   const modelMeta = config?.model_meta || {};
-  const isFreeModel = item => !!modelMeta[item]?.free;
-  const contextOf = item => modelMeta[item]?.context_length || 0;
-  const visibleModels = (freeOnly ? providerModels(draft.provider).filter(isFreeModel) : providerModels(draft.provider))
-    .slice()
-    .sort((a, b) => contextOf(b) - contextOf(a));
 
   const selectProvider = (provider) => {
     const options = providerModels(provider);
@@ -229,42 +261,26 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
 
         <div className="settings-model-header">
           <h3>Default model</h3>
-          <button
-            type="button"
-            className={`settings-free-toggle ${freeOnly ? 'active' : ''}`}
-            onClick={() => setFreeOnly(current => !current)}
-            aria-pressed={freeOnly}
-          >
-            Free models only
-          </button>
         </div>
-        <div className="settings-model-list">
-          {providerModels(draft.provider).length === 0 && (
-            <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
-          )}
-          {providerModels(draft.provider).length > 0 && visibleModels.length === 0 && (
-            <p className="settings-empty-note">No free models available for {PROVIDER_LABELS[draft.provider]}.</p>
-          )}
-          {visibleModels.map(item => {
-            const contextLabel = formatContextLength(contextOf(item));
-            const priceLabel = formatPrice(modelMeta[item]?.pricing);
-            return (
-              <button
-                key={item}
-                type="button"
-                className={`settings-model-chip ${draft.model === item ? 'active' : ''}`}
-                onClick={() => selectModel(item)}
-                title={item}
-              >
-                <span className="settings-model-chip-name">{item}</span>
-                {contextLabel && <small className="settings-model-chip-ctx">{contextLabel}</small>}
-                {priceLabel && <small className="settings-model-chip-price">{priceLabel}</small>}
-                {isFreeModel(item) && <span className="settings-model-chip-free">Free</span>}
-                {draft.model === item && <Check size={12} />}
+        {providerModels(draft.provider).length === 0 ? (
+          <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
+        ) : (
+          <>
+            <ModelTable
+              models={providerModels(draft.provider)}
+              modelMeta={modelMeta}
+              selectedModel={draft.model}
+              onSelect={selectModel}
+              enabledModelIds={enabledModels[draft.provider] || null}
+              onToggleEnabled={id => toggleModelEnabled(draft.provider, id)}
+            />
+            <div className="settings-save-bar settings-save-bar-inline">
+              <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>
+                {savingModels ? 'Saving...' : 'Save enabled models'}
               </button>
-            );
-          })}
-        </div>
+            </div>
+          </>
+        )}
         <div className="settings-custom-model">
           <input
             type="text"

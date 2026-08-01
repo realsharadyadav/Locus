@@ -550,9 +550,9 @@ def llm_config():
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     if openai_key:
         try:
-            models, _pricing = list_openai_compatible_models(PROVIDERS["openai"].base_url, openai_key, timeout=5)
+            listing = list_openai_compatible_models(PROVIDERS["openai"].base_url, openai_key, timeout=5)
             openai_models = sorted(
-                model_id for model_id in models
+                model_id for model_id in listing
                 if model_id.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-"))
                 and not any(
                     excluded in model_id.lower()
@@ -584,7 +584,7 @@ def llm_config():
     # the registry) is listed the same generic way — a registry entry is all that's needed to
     # add another one, no new branch here.
     gateway_models: dict[str, list[str]] = {}
-    gateway_pricing: dict[str, dict] = {}
+    gateway_metadata: dict[str, dict] = {}
     for provider_id, spec in PROVIDERS.items():
         if spec.kind != "gateway":
             continue
@@ -593,9 +593,9 @@ def llm_config():
             gateway_models[provider_id] = []
             continue
         try:
-            models, pricing = list_openai_compatible_models(spec.base_url, api_key, timeout=5)
-            gateway_models[provider_id] = models
-            gateway_pricing[provider_id] = pricing
+            listing = list_openai_compatible_models(spec.base_url, api_key, timeout=5)
+            gateway_models[provider_id] = sorted(listing)
+            gateway_metadata[provider_id] = listing
         except Exception:
             gateway_models[provider_id] = []
 
@@ -626,7 +626,7 @@ def llm_config():
         "presets": GROQ_MODEL_PRESETS if provider == "groq" else provider_models.get(provider, []),
         "fallback_presets": {"openai": OPENAI_MODEL_FALLBACKS, "gemini": GEMINI_MODEL_FALLBACKS},
         "using_fallback_models": using_fallback,
-        "model_meta": build_model_meta(provider_models, gateway_pricing),
+        "model_meta": build_model_meta(provider_models, gateway_metadata),
     }
 
 

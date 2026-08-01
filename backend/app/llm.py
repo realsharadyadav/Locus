@@ -452,24 +452,25 @@ def get_llm_client(model: str | None = None, provider: str | None = None) -> LLM
     raise RuntimeError(f"Unsupported LLM provider '{selected_provider}'. Use one of: {known}.")
 
 
-def list_openai_compatible_models(base_url: str, api_key: str, timeout: float = 15) -> tuple[list[str], dict[str, dict]]:
-    """List models from any endpoint that implements OpenAI's `GET /models` shape.
+def list_openai_compatible_models(base_url: str, api_key: str, timeout: float = 15) -> dict[str, dict]:
+    """List models (with metadata) from any endpoint that implements OpenAI's `GET /models` shape.
 
-    Returns (model ids, pricing by model id) — pricing is only populated for models whose
-    entry in the response includes a `pricing` object (OpenRouter and TokenRouter both do
-    this; plain OpenAI does not, so its pricing dict will just come back empty).
+    Returns {model_id: {"name": str|None, "context_length": int|None, "pricing": dict|None}}.
+    OpenRouter and TokenRouter report all three fields on every model; plain OpenAI's /v1/models
+    only reports the id, so those fields just come back None for it.
     """
     with httpx.Client(timeout=timeout) as client:
         response = client.get(f"{base_url.rstrip('/')}/models", headers={"Authorization": f"Bearer {api_key}"})
         response.raise_for_status()
     entries = [item for item in response.json().get("data", []) if isinstance(item, dict) and item.get("id")]
-    models = sorted({item["id"] for item in entries})
-    pricing = {
-        item["id"]: item["pricing"]
+    return {
+        item["id"]: {
+            "name": item["name"] if isinstance(item.get("name"), str) else None,
+            "context_length": item["context_length"] if isinstance(item.get("context_length"), int) else None,
+            "pricing": item["pricing"] if isinstance(item.get("pricing"), dict) else None,
+        }
         for item in entries
-        if isinstance(item.get("pricing"), dict)
     }
-    return models, pricing
 
 
 def list_groq_models() -> tuple[list[str], bool]:
@@ -477,7 +478,7 @@ def list_groq_models() -> tuple[list[str], bool]:
     if not settings.api_key:
         return list(GROQ_MODEL_PRESETS), True
     try:
-        models, _pricing = list_openai_compatible_models(settings.base_url, settings.api_key, timeout=min(settings.timeout_seconds, 15))
+        models = sorted(list_openai_compatible_models(settings.base_url, settings.api_key, timeout=min(settings.timeout_seconds, 15)))
         return (models or list(GROQ_MODEL_PRESETS)), not bool(models)
     except (httpx.HTTPError, ValueError, TypeError, AttributeError):
         return list(GROQ_MODEL_PRESETS), True
@@ -510,18 +511,38 @@ def _model_context_length(provider: str, model: str) -> int | None:
     return entry.get("max_input_tokens") or entry.get("max_tokens")
 
 
-def build_model_meta(provider_models: dict[str, list[str]], provider_pricing: dict[str, dict[str, dict]] | None = None) -> dict[str, dict]:
-    provider_pricing = provider_pricing or {}
+# Matches parameter-count labels open-weight model ids commonly embed (e.g. "llama-3.3-70b" ->
+# "70B", "gpt-oss-20b" -> "20B"). Proprietary models (GPT, Gemini, Grok, Claude...) never publish
+# a parameter count at all, so this intentionally returns None for anything that doesn't match —
+# it's a best-effort label pulled from the id, not a claim every model has one.
+_PARAM_SIZE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)b(?![a-zA-Z])", re.IGNORECASE)
+
+
+def extract_param_size(model_id: str) -> str | None:
+    match = _PARAM_SIZE_PATTERN.search(model_id)
+    return f"{match.group(1)}B" if match else None
+
+
+def build_model_meta(provider_models: dict[str, list[str]], provider_metadata: dict[str, dict[str, dict]] | None = None) -> dict[str, dict]:
+    """provider_metadata[provider][model_id] is whatever list_openai_compatible_models returned
+    for that provider (name/context_length/pricing straight from the live response), when the
+    provider was listed that way. Providers without live metadata (ollama, gemini) fall back to
+    the litellm-based lookups below.
+    """
+    provider_metadata = provider_metadata or {}
     meta: dict[str, dict] = {}
     for provider, models in provider_models.items():
-        pricing = provider_pricing.get(provider, {})
+        live = provider_metadata.get(provider, {})
         for model in models:
             if model in meta:
                 continue
+            live_entry = live.get(model) or {}
             meta[model] = {
-                "context_length": _model_context_length(provider, model),
+                "name": live_entry.get("name"),
+                "context_length": live_entry.get("context_length") or _model_context_length(provider, model),
                 "free": _model_is_free(provider, model),
-                "pricing": pricing.get(model),
+                "pricing": live_entry.get("pricing"),
+                "param_size": extract_param_size(model),
             }
     return meta
 

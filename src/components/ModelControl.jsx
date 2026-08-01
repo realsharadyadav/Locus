@@ -6,7 +6,7 @@ import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, PROVIDER_META } from '../lib/
 import { formatContextLength, formatPrice } from '../lib/format';
 import { useClickOutside } from '../hooks/useClickOutside';
 
-export function ModelControl({ config, provider, setProvider, model, setModel, enabledProviders }) {
+export function ModelControl({ config, provider, setProvider, model, setModel, enabledProviders, enabledModels }) {
   const [openMenu, setOpenMenu] = useState(null);
   const [modelQuery, setModelQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
@@ -28,7 +28,14 @@ export function ModelControl({ config, provider, setProvider, model, setModel, e
   const modelMeta = config?.model_meta || {};
   const isFreeModel = item => !!modelMeta[item]?.free;
   const contextOf = item => modelMeta[item]?.context_length || 0;
+  // Same "no explicit list = everything enabled" convention as enabledProviders. The current
+  // selection always stays visible even if since disabled, so the trigger label never goes stale.
+  const isModelEnabled = item => {
+    const set = enabledModels?.[provider];
+    return !set || item === model || (set.has ? set.has(item) : set.includes(item));
+  };
   const visibleModelOptions = modelOptions
+    .filter(isModelEnabled)
     .filter(item => (freeOnly ? isFreeModel(item) : true))
     .filter(item => (modelQuery.trim() ? item.toLowerCase().includes(modelQuery.trim().toLowerCase()) : true))
     .sort((a, b) => contextOf(b) - contextOf(a));
