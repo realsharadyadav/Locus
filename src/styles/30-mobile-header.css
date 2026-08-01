@@ -59,6 +59,23 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Session usage lives here on a phone: the header itself has no room for it (see the file
+   banner above), so it moves into the overflow menu instead of disappearing outright. Not a
+   menuitem — nothing happens on tap — so it gets its own row instead of the button treatment. */
+.chat-more-usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 9px 10px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-more-usage svg { flex: none; opacity: .75; }
+
 /* The conversation's identity. Hidden on desktop, where the rail already shows which chat is
    open and the header has room for the full control set. */
 .chat-top-heading {
@@ -133,9 +150,10 @@
     display: block;
   }
 
-  /* Identity and navigation stay; labels, counters and stat pills go. Everything dropped here
-     is either duplicated elsewhere (per-message token counts, the rail's own chat list) or
-     was pure decoration. */
+  /* Identity and navigation stay; labels, counters and stat pills go from the header row itself.
+     Per-message token counts and the rail's own chat list already duplicate most of it; the
+     session total (tokens + LLM hits) does not, so it resurfaces as a row in the overflow menu
+     (.chat-more-usage) instead of disappearing outright. */
   /* .workspace-label carries `display: inline-flex !important`, and .chat-top-info is matched by
      a higher-specificity rule in 15-chat-rail.css, so both need the weight to stay hidden. */
   .chat-page > .chat-top .workspace-label,

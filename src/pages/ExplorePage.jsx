@@ -879,6 +879,12 @@ export function ExplorePage({
                       {copiedConvId ? <Check size={14} /> : <Copy size={14} />} Copy conversation
                     </button>
                   )}
+                  {sessionTokens > 0 && (
+                    <div className="chat-more-usage" role="note">
+                      <Cpu size={14} />
+                      <span>{sessionTokens.toLocaleString()} tokens · {sessionLlmHits} LLM {sessionLlmHits === 1 ? 'hit' : 'hits'}</span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
