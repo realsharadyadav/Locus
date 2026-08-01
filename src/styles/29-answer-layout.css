@@ -149,9 +149,12 @@
   border: 1px solid var(--line);
   border-radius: 10px;
   -webkit-overflow-scrolling: touch;
-  /* Horizontal panning belongs to this box; a swipe that starts on it must not also drag the
-     vertically-scrolling thread behind it, which is what made it feel unpredictable on a phone. */
-  touch-action: pan-x;
+  /* Both axes stay live here (pan-x for the table itself, pan-y so a vertical swipe still
+     scrolls the thread behind it) - `pan-x` alone tells the browser this element never handles
+     vertical drags at all, which silently ate the thread's scroll for any touch starting on a
+     table instead of just isolating the table's own horizontal one. overscroll-behavior-x still
+     stops horizontal overscroll here from chaining into anything outside the table. */
+  touch-action: pan-x pan-y;
   overscroll-behavior-x: contain;
 }
 
