@@ -229,10 +229,6 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
         <button className="secret-chat-back-btn" onClick={onBack}>← Back</button>
         <div className="secret-chat-meta">
           <div className="secret-chat-title-row">
-            <span className="live-badge" title={`${room.onlineCount} online right now`}>
-              <span className="live-dot" aria-hidden="true" />
-              {room.onlineCount}
-            </span>
             {ttl > 0 && (
               <span className="ttl-badge" title="Messages delete themselves">
                 <Flame size={11} /> {ttlLabel(ttl)}
@@ -248,12 +244,16 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
         <div className="secret-chat-actions">
           <button
             type="button"
-            className={`secret-chat-icon-btn${showGuests ? ' active' : ''}`}
+            className={`secret-chat-icon-btn people-btn${showGuests ? ' active' : ''}`}
             onClick={() => setShowGuests(value => !value)}
             aria-pressed={showGuests}
-            title="Who is in this chat"
+            title={`${room.onlineCount} online now · ${room.participants.length} in this chat`}
           >
-            <Users size={14} /> {room.participants.length}
+            <span className="people-btn-icon">
+              <Users size={14} />
+              {room.onlineCount > 0 && <span className="live-dot" aria-hidden="true" />}
+            </span>
+            {room.participants.length}
           </button>
           <div className="room-options-wrap" ref={optionsRef}>
             <button

@@ -103,7 +103,6 @@
   font-size: 14px;
 }
 
-.secret-chat-title-row .live-badge,
 .secret-chat-title-row .ttl-badge {
   flex-shrink: 0;
   height: 32px;
@@ -976,6 +975,19 @@ html[data-theme='dark'] .scs-day span {
 
 .secret-chat-icon-btn:hover,
 .secret-chat-icon-btn.active { border-color: var(--violet); color: var(--violet); }
+
+.people-btn-icon {
+  position: relative;
+  display: inline-flex;
+}
+
+.people-btn-icon .live-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 5px;
+  height: 5px;
+}
 
 .secret-chat-icon-btn.icon-only {
   justify-content: center;
