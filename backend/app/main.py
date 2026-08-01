@@ -1850,7 +1850,11 @@ def chat_suggestions(payload: SuggestionsRequest):
     with llm_provider_context(payload.provider):
         try:
             suggestions = generate_followup_questions(payload.question, payload.answer, payload.model)
-        except (LLMProviderError, RuntimeError):
+        except Exception as exception:  # noqa: BLE001 - follow-up chips are a nicety, never an error
+            # Anything raised here used to surface as a 500, and the frontend's catch turned that
+            # into "no suggestions" with no way to tell a broken call from a model with nothing
+            # to suggest. Degrade quietly, but leave a diagnostic behind.
+            diagnostic_event("chat.suggestions_failed", provider=payload.provider, model=payload.model, error=str(exception)[:500])
             suggestions = []
     return SuggestionsResponse(suggestions=suggestions)
 

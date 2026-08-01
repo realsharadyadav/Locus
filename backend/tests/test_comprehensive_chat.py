@@ -1316,3 +1316,40 @@ class TestAnswerShapeGuidance:
         assert main_module._answer_shape_guidance("unrestricted") == ""
         assert main_module._answer_shape_guidance("thinking") != ""
         assert main_module._answer_shape_guidance("light") != ""
+
+
+class TestFollowUpSuggestions:
+    """Follow-up chips are a nicety — a bad model response must not turn them into a 500."""
+
+    def test_malformed_json_yields_empty_suggestions_not_an_error(self, monkeypatch):
+        # Braces present so the salvage path in _json_object engages, but the content between
+        # them is not valid JSON — this used to escape as JSONDecodeError and 500 the request.
+        monkeypatch.setattr("backend.app.llm._chat", lambda *a, **k: 'here you go: {suggestions: [oops,,]}')
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "What is this?", "answer": "A thing."})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == []
+
+    def test_provider_failure_yields_empty_suggestions(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("provider exploded")
+        monkeypatch.setattr("backend.app.main.generate_followup_questions", boom)
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == []
+
+    def test_valid_response_returns_suggestions(self, monkeypatch):
+        monkeypatch.setattr(
+            "backend.app.llm._chat",
+            lambda *a, **k: '{"suggestions": ["What about latency?", "How does it scale?"]}',
+        )
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]
+
+    def test_json_object_raises_runtime_error_on_unsalvageable_braces(self):
+        from backend.app.llm import _json_object
+        with pytest.raises(RuntimeError):
+            _json_object("prefix {not: valid, json,,} suffix")

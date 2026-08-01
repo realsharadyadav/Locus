@@ -7,6 +7,7 @@ import {
   FileText,
   Folder,
   History,
+  MoreHorizontal,
   Menu,
   PenLine,
   Plus,
@@ -91,12 +92,19 @@ export function ExplorePage({
   const stopRequestedRef = useRef(false);
   const modePickerRef = useClickOutside(modePickerOpen, () => setModePickerOpen(false));
   const optionsPopoverRef = useClickOutside(optionsOpen, () => setOptionsOpen(false));
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const moreMenuRef = useClickOutside(moreMenuOpen, () => setMoreMenuOpen(false));
   const slashScopeRef = useClickOutside(slashOpen, () => { setSlashOpen(false); setSlashIndex(-1); });
 
   const toggleSources = (messageIndex) => {
     setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
   };
   const selectedCount = selectedFileIds === null ? files.length : selectedFileIds.length;
+  // Header identity: the conversation's own title, with the model and mode as the second line.
+  // On a phone this replaces the row of labels and stat pills that used to wrap over the thread.
+  const activeChatTitle = chats.find(item => item.id === activeChat)?.title || 'New chat';
+  const modeLabel = SLASH_COMMANDS.find(command => command.id === reasoningMode)?.label.slice(1) || reasoningMode;
+  const headerSubtitle = [model, modeLabel].filter(Boolean).join(' · ');
   const activeJob = jobs.find(job => job.conversation_id === activeChat && ['queued', 'running'].includes(job.status));
   const thinking = Boolean(activeJob) || directStreaming;
   const readyCount = jobs.filter(job => job.status === 'completed' && !job.seen).length;
@@ -807,6 +815,10 @@ export function ExplorePage({
               {chats.length > 0 && <span className="rail-toggle-count">{chats.length}</span>}
             </button>
             <span className="workspace-label"><i /> ASK</span>
+            <div className="chat-top-heading">
+              <strong>{activeChatTitle}</strong>
+              <small>{headerSubtitle}</small>
+            </div>
             <div className="chat-top-info">
               {activeChat && (
                 <button
@@ -838,6 +850,38 @@ export function ExplorePage({
             >
               <Plus size={20} />
             </button>
+            {/* Phone-only overflow. Three separate controls in the header is what pushed the
+                stat pills onto a second row and over the thread; behind one button they fit. */}
+            <div className="chat-more-wrap" ref={moreMenuRef}>
+              <button
+                type="button"
+                className="chat-more-toggle icon-button"
+                onClick={() => setMoreMenuOpen(value => !value)}
+                aria-label="More actions"
+                aria-expanded={moreMenuOpen}
+              >
+                <MoreHorizontal size={19} />
+              </button>
+              {moreMenuOpen && (
+                <div className="chat-more-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); newChat(); }}>
+                    <Plus size={14} /> New chat
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); setRailOpen(true); }}>
+                    <History size={14} /> Chat history
+                    {chats.length > 0 && <span className="chat-more-count">{chats.length}</span>}
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); setOptionsOpen(true); }}>
+                    <SlidersHorizontal size={14} /> Model options
+                  </button>
+                  {activeChat && (
+                    <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); copyConversationId(); }}>
+                      {copiedConvId ? <Check size={14} /> : <Copy size={14} />} Copy conversation
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="desktop-controls">
               <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} />
             </div>

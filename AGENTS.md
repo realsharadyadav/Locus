@@ -174,6 +174,15 @@ that will bite you again if forgotten.
     should not — that is an accessibility regression. Double-tap is timed manually (300ms) rather
     than using `dblclick`, and zooms in from 1x or resets when already magnified.
 
+19. **Later style layers must out-specify, not just come after** — `20-layout.css` pins `.chat-top`
+    with `display: flex !important` and `.workspace-label` with `display: inline-flex !important`,
+    and `15-chat-rail.css` targets `.app-shell.explore-active .chat-top-left > div` (three classes
+    plus an element). A new highest-numbered file being last in the cascade is not enough on its
+    own: `30-mobile-header.css` restructures the mobile header only because it matches that weight
+    (`!important` where the earlier rule used it, four-class selectors where the earlier rule was
+    three-plus-an-element). Symptom of getting this wrong is a rule that appears to do nothing —
+    check the computed value before assuming the selector is unmatched.
+
 ---
 
 ## Backend Files — `backend/app/`

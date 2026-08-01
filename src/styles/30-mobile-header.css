@@ -1,0 +1,210 @@
+/* Mobile Ask header.
+
+   The desktop header packs seven controls plus two stat pills into one row. On a phone that
+   wrapped onto a second line and the pills floated over the top of the thread. This layer
+   restructures it below 820px into three columns — one circular control, the conversation's
+   identity, one circular control — drops the chrome that is not identity or navigation, and
+   gives the header no background of its own so the thread reads as the whole screen. */
+
+.chat-more-wrap {
+  position: relative;
+  display: none;
+}
+
+.chat-more-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  min-width: 200px;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 14px 34px rgba(18, 22, 30, .18);
+}
+
+.chat-more-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-more-menu button:hover,
+.chat-more-menu button:focus-visible {
+  background: color-mix(in srgb, var(--violet) 10%, transparent);
+  color: var(--violet);
+}
+
+.chat-more-menu svg { flex: none; opacity: .75; }
+
+.chat-more-count {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--violet) 14%, transparent);
+  color: var(--violet);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The conversation's identity. Hidden on desktop, where the rail already shows which chat is
+   open and the header has room for the full control set. */
+.chat-top-heading {
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  text-align: center;
+}
+
+/* Same four-class depth as the mobile rule below, because `.chat-top-left > div` in
+   15-chat-rail.css would otherwise make this visible on desktop, where the rail already
+   shows which conversation is open and the header keeps its full label set. */
+.chat-page > .chat-top > .chat-top-left > .chat-top-heading {
+  display: none;
+}
+
+.chat-top-heading strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-top-heading small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 820px) {
+  /* Transparent and borderless: on a phone the header is the top of the thread, not a bar
+     sitting on top of it. */
+  /* 20-layout.css pins .chat-top to `display: flex` with !important, along with its padding,
+     gap and min-height, so this layer has to match that weight to restructure the row at all. */
+  .chat-page > .chat-top {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px !important;
+    min-height: 0 !important;
+    padding: 2px 0 8px !important;
+    border-bottom: 0;
+    background: transparent;
+  }
+
+  .chat-page > .chat-top > .chat-top-left {
+    display: contents !important;
+  }
+
+  /* Four classes deep so it outranks `.app-shell.explore-active .chat-top-left > div`, which
+     otherwise left-aligns every direct child of the left group at this breakpoint. */
+  .chat-page > .chat-top > .chat-top-left > .chat-top-heading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    /* Second grid column, between the two controls, regardless of DOM order. */
+    grid-column: 2;
+    gap: 1px;
+    text-align: center;
+  }
+
+  .chat-more-wrap {
+    display: block;
+  }
+
+  /* Identity and navigation stay; labels, counters and stat pills go. Everything dropped here
+     is either duplicated elsewhere (per-message token counts, the rail's own chat list) or
+     was pure decoration. */
+  /* .workspace-label carries `display: inline-flex !important`, and .chat-top-info is matched by
+     a higher-specificity rule in 15-chat-rail.css, so both need the weight to stay hidden. */
+  .chat-page > .chat-top .workspace-label,
+  .chat-page > .chat-top .chat-top-info,
+  .chat-page > .chat-top .rail-toggle,
+  .chat-page > .chat-top .options-toggle,
+  .chat-page > .chat-top .mobile-only-new-chat {
+    display: none !important;
+  }
+
+  .chat-page > .chat-top .chat-top-right {
+    display: flex;
+    grid-column: 3;
+    gap: 4px;
+  }
+
+  .chat-page > .chat-top .menu-button {
+    grid-column: 1;
+  }
+
+  /* Circular ghost controls, sized for a fingertip. */
+  .chat-page > .chat-top .menu-button,
+  .chat-page > .chat-top .chat-more-toggle {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--ink) 6%, transparent);
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .chat-page > .chat-top .menu-button:active,
+  .chat-page > .chat-top .chat-more-toggle:active {
+    background: color-mix(in srgb, var(--ink) 12%, transparent);
+  }
+
+  /* Reclaimed vertical space goes to the thread. */
+  .chat-page {
+    padding-top: 4px;
+  }
+}
+
+html[data-theme='dark'] .chat-more-menu {
+  border-color: var(--dark-border, #30363d);
+  background: var(--dark-surface-raised, #1c2128);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5);
+}
+
+html[data-theme='dark'] .chat-more-menu button {
+  color: var(--dark-text, #c9d1d9);
+}
+
+html[data-theme='dark'] .chat-top-heading strong {
+  color: var(--dark-heading, #dce4ee) !important;
+}
+
+html[data-theme='dark'] .chat-top-heading small {
+  color: var(--dark-muted, #8b949e) !important;
+}
+
+@media (max-width: 820px) {
+  html[data-theme='dark'] .chat-page > .chat-top .menu-button,
+  html[data-theme='dark'] .chat-page > .chat-top .chat-more-toggle {
+    background: rgba(255, 255, 255, .07);
+    color: var(--dark-heading, #dce4ee);
+  }
+}

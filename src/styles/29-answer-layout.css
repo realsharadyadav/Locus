@@ -150,10 +150,38 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* A table shrink-to-fits its container, so on a phone the browser would rather crush a column
+   to one character per line than let the table exceed the width — which is exactly what it did.
+   `width: max-content` makes the table size to its content and overflow into the scroll wrapper,
+   `min-width: 100%` keeps a small table filling the bubble, and the per-cell floor stops any one
+   column being squeezed into a vertical letter stack. */
 .answer-table-wrap > table {
+  width: max-content;
+  min-width: 100%;
   margin: 0;
   border: 0;
   border-radius: 0;
+}
+
+.markdown-answer .answer-table-wrap th,
+.markdown-answer .answer-table-wrap td {
+  min-width: 7.5rem;
+  max-width: 22rem;
+  overflow-wrap: break-word;
+  word-break: normal;
+  hyphens: none;
+}
+
+/* A leading index or status column is narrow on purpose — it should not claim the same floor. */
+.markdown-answer .answer-table-wrap th:first-child,
+.markdown-answer .answer-table-wrap td:first-child {
+  min-width: 3rem;
+}
+
+/* Inline code in a cell must not force the column wider than the floor allows. */
+.markdown-answer .answer-table-wrap code {
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 /* --- Diagrams ------------------------------------------------------------------------------- */

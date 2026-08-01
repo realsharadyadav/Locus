@@ -649,7 +649,12 @@ def _json_object(content: str) -> dict:
     except json.JSONDecodeError:
         start, end = cleaned.find("{"), cleaned.rfind("}")
         if start >= 0 and end > start:
-            return json.loads(cleaned[start:end + 1])
+            # The salvage path used to let JSONDecodeError escape, so callers that guard against
+            # RuntimeError still saw a ValueError and turned a sloppy model response into a 500.
+            try:
+                return json.loads(cleaned[start:end + 1])
+            except json.JSONDecodeError:
+                pass
         raise RuntimeError("The model returned an invalid planning response.")
 
 
