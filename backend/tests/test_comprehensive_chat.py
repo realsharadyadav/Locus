@@ -1353,3 +1353,16 @@ class TestFollowUpSuggestions:
         from backend.app.llm import _json_object
         with pytest.raises(RuntimeError):
             _json_object("prefix {not: valid, json,,} suffix")
+
+    def test_bare_array_response_still_yields_suggestions(self, monkeypatch):
+        # Smaller/local models often ignore the "object with a suggestions key" instruction and
+        # return a plain JSON array — this used to raise inside _json_object (no {...} present)
+        # and get swallowed into an empty list, so the chips never rendered.
+        monkeypatch.setattr(
+            "backend.app.llm._chat",
+            lambda *a, **k: 'Sure, here you go:\n```json\n["What about latency?", "How does it scale?"]\n```',
+        )
+        with TestClient(app) as client:
+            response = client.post("/api/chat/suggestions", json={"question": "Q", "answer": "A"})
+        assert response.status_code == 200
+        assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]

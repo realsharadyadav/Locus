@@ -155,6 +155,28 @@ def test_groq_non_success_errors_are_safe(monkeypatch, status, message):
     assert len(FakeClient.calls) == 1
 
 
+@pytest.mark.parametrize(("reasoning_mode", "expected_fraction"), [("light", 1.0), ("thinking", 0.75), ("deep_summary", 0.75)])
+def test_answer_request_scales_max_tokens_off_configured_groq_budget(monkeypatch, reasoning_mode, expected_fraction):
+    # This used to hard-cap Groq answers at 1536/2048 tokens regardless of GROQ_MAX_TOKENS,
+    # silently truncating long thinking/deep_summary answers with no way for the user to raise
+    # the ceiling. The cap must now scale off the configured budget instead of a fixed number.
+    from backend.app.llm import _answer_request, llm_provider_context
+
+    monkeypatch.setattr("backend.app.llm.groq_settings", lambda require_key=True: settings(max_tokens=8000))
+    with llm_provider_context("groq"):
+        _, _, _, max_tokens, _ = _answer_request("Question?", [], reasoning_mode=reasoning_mode)
+    assert max_tokens == int(8000 * expected_fraction)
+
+
+def test_answer_request_leaves_max_tokens_unset_for_non_groq_providers(monkeypatch):
+    from backend.app.llm import _answer_request, llm_provider_context
+
+    monkeypatch.setattr("backend.app.llm.groq_settings", lambda require_key=True: settings(max_tokens=8000))
+    with llm_provider_context("ollama"):
+        _, _, _, max_tokens, _ = _answer_request("Question?", [], reasoning_mode="thinking")
+    assert max_tokens is None
+
+
 def test_groq_proactively_waits_when_next_call_exceeds_remaining_tokens(monkeypatch):
     sleeps = []
     FakeClient.responses = [

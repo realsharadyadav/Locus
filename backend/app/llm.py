@@ -726,7 +726,7 @@ def enhance_question(question: str, history: list[tuple[str, str]], model: str) 
 
 def generate_followup_questions(question: str, answer: str, model: str) -> list[str]:
     answer_excerpt = answer if len(answer) <= 4000 else f"{answer[:4000]}…"
-    result = _json_object(_chat(
+    raw = _chat(
         "You suggest short follow-up questions a user is likely to ask next, based on a finished Q&A exchange. "
         "Return JSON only with: suggestions (array of up to 4 short natural follow-up questions in English, "
         "each under 12 words, no numbering, no quotes).",
@@ -734,8 +734,20 @@ def generate_followup_questions(question: str, answer: str, model: str) -> list[
         model,
         0.4,
         300,
-    ))
-    suggestions = [str(item).strip() for item in result.get("suggestions", []) if str(item).strip()]
+    )
+    # Smaller/local models routinely ignore the "object with a suggestions key" instruction and
+    # return a bare JSON array instead — _json_object only looks for {...}, so that response used
+    # to raise and the chips silently never appeared. Fall back to array parsing before giving up.
+    try:
+        items = _json_object(raw).get("suggestions", [])
+    except RuntimeError:
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        start, end = cleaned.find("["), cleaned.rfind("]")
+        try:
+            items = json.loads(cleaned[start:end + 1]) if start >= 0 and end > start else []
+        except json.JSONDecodeError:
+            items = []
+    suggestions = [str(item).strip() for item in items if str(item).strip()]
     return suggestions[:4]
 
 
@@ -837,7 +849,16 @@ def _answer_request(
         )
     prompt = f"CONVERSATION SO FAR:\n{history_text or '(none)'}\n\nCURRENT QUESTION:\n{question}\n\nRELEVANT FILE EXCERPTS:\n{context or '(none)'}"
     temperature = 0.35 if reasoning_mode == "unrestricted" else DEEP_SUMMARY_TEMPERATURE if reasoning_mode in {"thinking", "deep_summary"} else 0.2
-    max_tokens = 1536 if _ACTIVE_PROVIDER.get() == "groq" and reasoning_mode in {"thinking", "deep_summary"} else 2048 if _ACTIVE_PROVIDER.get() == "groq" else None
+    # Groq answers used to be hard-capped at 1536/2048 tokens no matter what GROQ_MAX_TOKENS
+    # was set to, which silently truncated long thinking/deep_summary answers with no way for
+    # the user to raise the ceiling. Scale off the configured budget instead: still trim a bit
+    # for the loop-heavy modes (they also spend tokens on verify/repair passes against the same
+    # rate limit) but let GROQ_MAX_TOKENS actually control the cap.
+    if _ACTIVE_PROVIDER.get() == "groq":
+        configured_max_tokens = groq_settings().max_tokens
+        max_tokens = int(configured_max_tokens * 0.75) if reasoning_mode in {"thinking", "deep_summary"} else configured_max_tokens
+    else:
+        max_tokens = None
     return system, prompt, temperature, max_tokens, selected_model
 
 
