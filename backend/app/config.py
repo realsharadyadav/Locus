@@ -39,6 +39,11 @@ WEB_RESEARCH_MAX_SOURCES = max(5, int(os.getenv("WEB_RESEARCH_MAX_SOURCES", "50"
 WEB_RESEARCH_RESULTS_PER_QUERY = max(3, min(50, int(os.getenv("WEB_RESEARCH_RESULTS_PER_QUERY", "10"))))
 WEB_RESEARCH_INITIAL_QUERIES = max(2, min(10, int(os.getenv("WEB_RESEARCH_INITIAL_QUERIES", "5"))))
 OPENSERP_BASE_URL = os.getenv("OPENSERP_BASE_URL", "").strip() or None
+# Exa (https://exa.ai) is a purpose-built search API for LLM-grounding/RAG use cases and
+# returns cleaner, more relevant snippets than a generic search engine. Used as the primary
+# web engine in web_research.py when set; falls back to ddgs automatically when unset or a
+# call fails, so it is never a hard dependency.
+EXA_API_KEY = os.getenv("EXA_API_KEY", "").strip() or None
 
 GROQ_MODEL_PRESETS = [
     "openai/gpt-oss-20b",

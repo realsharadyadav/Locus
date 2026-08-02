@@ -620,6 +620,91 @@ def test_web_search_caps_merged_engine_results(monkeypatch):
     assert len(results) == 5
 
 
+def test_search_exa_disabled_without_api_key(monkeypatch):
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", None)
+
+    assert web_research_module._search_exa("query", 5) == []
+
+
+def test_search_exa_parses_results_when_configured(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": [{"title": "Exa result", "url": "https://exa.example/a", "text": "Exa snippet"}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        return FakeResponse()
+
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", "test-exa-key")
+    monkeypatch.setattr(web_research_module.httpx, "post", fake_post)
+
+    results = web_research_module._search_exa("best phones", 5)
+
+    assert results == [{"title": "Exa result", "url": "https://exa.example/a", "snippet": "Exa snippet", "engine": "exa"}]
+    assert captured["url"] == web_research_module.EXA_SEARCH_URL
+    assert captured["headers"]["x-api-key"] == "test-exa-key"
+    assert captured["json"]["numResults"] == 5
+
+
+def test_search_exa_returns_empty_on_failure(monkeypatch):
+    def fake_post(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", "test-exa-key")
+    monkeypatch.setattr(web_research_module.httpx, "post", fake_post)
+
+    assert web_research_module._search_exa("best phones", 5) == []
+
+
+def test_search_primary_web_prefers_exa_when_configured(monkeypatch):
+    ddg_calls = []
+
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", "test-exa-key")
+    monkeypatch.setattr(web_research_module, "_search_exa", lambda query, max_results: [
+        {"title": "Exa result", "url": "https://exa.example/a", "snippet": "Exa snippet", "engine": "exa"}
+    ])
+    monkeypatch.setattr(web_research_module, "_search_ddg", lambda query, max_results: ddg_calls.append(query) or [])
+
+    results = web_research_module._search_primary_web("query", 5)
+
+    assert results == [{"title": "Exa result", "url": "https://exa.example/a", "snippet": "Exa snippet", "engine": "exa"}]
+    assert ddg_calls == []
+
+
+def test_search_primary_web_falls_back_to_ddg_when_exa_unauthorized(monkeypatch):
+    # Simulates a configured-but-invalid EXA_API_KEY: _search_exa swallows the error
+    # internally and returns [], same as any other Exa failure.
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", "bad-key")
+    monkeypatch.setattr(web_research_module, "_search_exa", lambda query, max_results: [])
+    monkeypatch.setattr(web_research_module, "_search_ddg", lambda query, max_results: [
+        {"title": "Ddg result", "url": "https://ddg.example/a", "snippet": "Ddg snippet", "engine": "ddg"}
+    ])
+
+    results = web_research_module._search_primary_web("query", 5)
+
+    assert results == [{"title": "Ddg result", "url": "https://ddg.example/a", "snippet": "Ddg snippet", "engine": "ddg"}]
+
+
+def test_search_web_falls_back_to_ddg_when_exa_fails(monkeypatch):
+    monkeypatch.setattr(web_research_module, "EXA_API_KEY", "bad-key")
+    monkeypatch.setattr(web_research_module, "_search_exa", lambda query, max_results: [])
+    monkeypatch.setattr(web_research_module, "_search_openserp", lambda query, max_results: [])
+    monkeypatch.setattr(web_research_module, "_search_ddg", lambda query, max_results: [
+        {"title": "Ddg result", "url": "https://ddg.example/a", "snippet": "Ddg snippet", "engine": "ddg"}
+    ])
+
+    results = web_research_module._search_web("query", max_results=5, include_youtube=False)
+
+    assert any(r["url"] == "https://ddg.example/a" for r in results)
+
+
 def test_web_search_includes_default_youtube_query(monkeypatch):
     searched_queries = []
 

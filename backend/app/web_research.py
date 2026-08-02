@@ -10,7 +10,7 @@ import httpx
 from ddgs import DDGS
 
 from .brand import USER_AGENT
-from .config import OPENSERP_BASE_URL, WEB_RESEARCH_INITIAL_QUERIES, WEB_RESEARCH_RESULTS_PER_QUERY
+from .config import EXA_API_KEY, OPENSERP_BASE_URL, WEB_RESEARCH_INITIAL_QUERIES, WEB_RESEARCH_RESULTS_PER_QUERY
 from .diagnostics import diagnostic_event
 from .intent import classify_and_enhance, validate_search_output, QueryIntent
 from .llm import ANSWER_LANGUAGE_INSTRUCTION, ANSWER_SHAPE_INSTRUCTION, LLMProviderError, _chat, _context_budget, ensure_english_answer
@@ -42,6 +42,7 @@ WEBPAGE_ENRICHMENT_CHARS = 2600
 YOUTUBE_SEARCH_PREFIX = "site:youtube.com/watch"
 WEB_RESEARCH_MAX_ROUNDS = 5
 WEB_RESEARCH_STALL_LIMIT = 2
+EXA_SEARCH_URL = "https://api.exa.ai/search"
 
 
 @dataclass
@@ -449,6 +450,43 @@ def _search_ddg(query: str, max_results: int) -> list[dict]:
     ]
 
 
+def _search_exa(query: str, max_results: int) -> list[dict]:
+    if not EXA_API_KEY:
+        return []
+    try:
+        resp = httpx.post(
+            EXA_SEARCH_URL,
+            headers={"x-api-key": EXA_API_KEY},
+            json={
+                "query": query,
+                "numResults": max_results,
+                "type": "auto",
+                "contents": {"text": {"maxCharacters": SYNTHESIS_SNIPPET_CHARS}},
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return [
+            {"title": r.get("title", ""), "url": r.get("url", ""), "snippet": (r.get("text") or "").strip(), "engine": "exa"}
+            for r in data.get("results", [])
+        ]
+    except Exception:
+        diagnostic_event("web_research.exa_failed", query=query)
+        return []
+
+
+def _search_primary_web(query: str, max_results: int) -> list[dict]:
+    """Exa is preferred (cleaner, LLM-grounding-oriented snippets) when configured;
+    ddgs is the automatic, always-available fallback — used directly when Exa isn't
+    configured, and whenever a configured Exa call returns nothing."""
+    if EXA_API_KEY:
+        exa_results = _search_exa(query, max_results)
+        if exa_results:
+            return exa_results
+    return _search_ddg(query, max_results)
+
+
 def _search_openserp(query: str, max_results: int) -> list[dict]:
     if not OPENSERP_BASE_URL:
         return []
@@ -493,7 +531,7 @@ def _search_web(query: str, max_results: int = 50, include_youtube: bool = True)
     seen_urls = set()
     all_results = []
 
-    web_results = _search_ddg(query, max_results) + _search_openserp(query, max_results)
+    web_results = _search_primary_web(query, max_results) + _search_openserp(query, max_results)
     youtube_results = _search_youtube(query, max_results) if include_youtube else []
 
     def add_result(r: dict) -> bool:
@@ -522,7 +560,8 @@ def _search_web(query: str, max_results: int = 50, include_youtube: bool = True)
         query=query,
         result_count=len(all_results),
         elapsed_ms=elapsed,
-        engines=("youtube+" if include_youtube else "") + ("ddg+openserp" if OPENSERP_BASE_URL else "ddg"),
+        engines=("youtube+" if include_youtube else "")
+        + (f"{'exa' if EXA_API_KEY else 'ddg'}+openserp" if OPENSERP_BASE_URL else ("exa" if EXA_API_KEY else "ddg")),
     )
 
     all_results = all_results[:max_results]
