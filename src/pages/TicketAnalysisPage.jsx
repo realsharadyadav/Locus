@@ -5,6 +5,7 @@ import {
   Menu, Network, Play, RefreshCw, Trash2,
 } from 'lucide-react';
 import { api } from '../api';
+import { DEFAULT_PROVIDER_MODELS, PROVIDER_ORDER } from '../lib/appState';
 import './TicketAnalysisPage.css';
 
 const TICKET_EXTENSIONS = ['.csv', '.tsv', '.xlsx', '.xlsm', '.json', '.txt', '.md'];
@@ -50,8 +51,6 @@ const DEFAULT_CONFIG = {
   includeTelemetry: true,
   includeDebugSamples: true,
 };
-
-const DEFAULT_PROVIDER_MODELS = { ollama: '', groq: '', openai: '', gemini: '' };
 
 const PIPELINE_SKELETON = [
   ['select_file', 'Select File', 'The selected export becomes the only input for this run.'],
@@ -579,7 +578,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                     </div>
                     {(config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules) && (
                       <div className="ti-select-row">
-                        <div className="ti-select-fake" style={{ cursor: 'pointer' }} onClick={() => { const ps = ['groq', 'openai', 'gemini', 'ollama']; const idx = ps.indexOf(config.llmProvider); changeLlmProvider(ps[(idx + 1) % ps.length]); }}>
+                        <div className="ti-select-fake" style={{ cursor: 'pointer' }} onClick={() => { const ps = llmConfig?.provider_order?.length ? llmConfig.provider_order : PROVIDER_ORDER; const idx = ps.indexOf(config.llmProvider); changeLlmProvider(ps[(idx + 1) % ps.length]); }}>
                           <div><span className="l">Provider</span>{config.llmProvider}</div>
                           <ChevronDown size={14} />
                         </div>

@@ -2,6 +2,7 @@
 .model-table-controls {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
 }
@@ -9,7 +10,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
   padding: 0 10px;
   height: 34px;

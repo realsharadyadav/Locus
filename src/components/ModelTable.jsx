@@ -9,7 +9,7 @@ const SORT_ACCESSORS = {
   price: item => item.priceValue ?? -1,
 };
 
-export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabledModelIds, onToggleEnabled }) {
+export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabledModelIds, onToggleEnabled, onSetEnabled }) {
   const [query, setQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
   const [sortKey, setSortKey] = useState('context');
@@ -55,6 +55,9 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
 
   const sortIndicator = key => (sortKey === key ? (sortDir === 'desc' ? '↓' : '↑') : '');
   const isEnabled = id => !enabledModelIds || enabledModelIds.has(id);
+  // Select/deselect act on whatever the search + free-only filters currently leave visible, so
+  // typing "grok" then clicking Deselect all only hides the Grok rows, not the whole provider.
+  const visibleIds = sorted.map(row => row.id);
 
   return (
     <div className="model-table-wrap">
@@ -75,6 +78,22 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
           aria-pressed={freeOnly}
         >
           Free only
+        </button>
+        <button
+          type="button"
+          className="settings-free-toggle"
+          onClick={() => onSetEnabled(visibleIds, true)}
+          disabled={visibleIds.length === 0}
+        >
+          Select all
+        </button>
+        <button
+          type="button"
+          className="settings-free-toggle"
+          onClick={() => onSetEnabled(visibleIds, false)}
+          disabled={visibleIds.length === 0}
+        >
+          Deselect all
         </button>
       </div>
 

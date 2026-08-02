@@ -115,6 +115,19 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     });
   };
 
+  // Bulk version of the same logic, used by ModelTable's Select all / Deselect all — those act
+  // on whatever the search/free-only filters currently leave visible, not the whole provider.
+  const setModelsEnabled = (provider, modelIds, enabled) => {
+    setEnabledModels(current => {
+      const baseSet = current[provider] ? new Set(current[provider]) : new Set(config?.providers?.[provider] || []);
+      for (const modelId of modelIds) {
+        if (enabled) baseSet.add(modelId);
+        else baseSet.delete(modelId);
+      }
+      return { ...current, [provider]: baseSet };
+    });
+  };
+
   const saveEnabledModels = async () => {
     setSavingModels(true);
     try {
@@ -273,6 +286,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
               onSelect={selectModel}
               enabledModelIds={enabledModels[draft.provider] || null}
               onToggleEnabled={id => toggleModelEnabled(draft.provider, id)}
+              onSetEnabled={(ids, enabled) => setModelsEnabled(draft.provider, ids, enabled)}
             />
             <div className="settings-save-bar settings-save-bar-inline">
               <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>

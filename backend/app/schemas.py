@@ -1,12 +1,24 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import configured_model, llm_provider
+from .providers import PROVIDER_ORDER, PROVIDERS
 
 
 Color = Literal["violet", "peach", "green"]
+
+
+def _require_known_provider(value: str | None) -> str | None:
+    """Shared validator for every `provider`/`llmProvider` field below — keeps request
+    validation in sync with the PROVIDERS registry instead of a hardcoded provider list that
+    silently falls out of date whenever a provider is added there (see backend/app/providers.py).
+    """
+    if value is not None and value not in PROVIDERS:
+        known = ", ".join(f"'{name}'" for name in PROVIDER_ORDER)
+        raise ValueError(f"Input should be one of: {known}")
+    return value
 
 
 class CollectionCreate(BaseModel):
@@ -43,12 +55,14 @@ class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=8000)
     conversation_id: int | None = None
     model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
-    provider: Literal["ollama", "groq", "openai", "gemini"] = Field(default_factory=llm_provider)
+    provider: str = Field(default_factory=llm_provider)
     allow_general_knowledge: bool = True
     reasoning_mode: Literal["light", "thinking", "deep_summary", "ticket_analysis", "web_research", "unrestricted"] = "light"
     web_search: bool = False
     web_source_limit: int = Field(default=200, ge=3, le=200)
     file_ids: list[int] | None = None
+
+    _check_provider = field_validator("provider")(_require_known_provider)
 
 
 class TicketAnalysisRequest(BaseModel):
@@ -67,9 +81,11 @@ class TicketAnalysisRequest(BaseModel):
     includeTelemetry: bool = True
     includeDebugSamples: bool = True
     useLlmLabels: bool = False
-    llmProvider: Literal["ollama", "groq", "openai", "gemini"] | None = None
+    llmProvider: str | None = None
     pauseOkfTaxonomy: bool = False
     taxonomyRules: list[dict[str, Any]] | None = None
+
+    _check_provider = field_validator("llmProvider")(_require_known_provider)
 
 
 class TicketAnalysisHistoryCreate(BaseModel):
@@ -133,7 +149,9 @@ class SuggestionsRequest(BaseModel):
     # suggestions" either way.
     answer: str = Field(min_length=1, max_length=200_000)
     model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
-    provider: Literal["ollama", "groq", "openai", "gemini"] = Field(default_factory=llm_provider)
+    provider: str = Field(default_factory=llm_provider)
+
+    _check_provider = field_validator("provider")(_require_known_provider)
 
 
 class SuggestionsResponse(BaseModel):
