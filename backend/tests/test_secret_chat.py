@@ -294,6 +294,41 @@ def test_ai_messages_are_flagged_and_never_used_as_style_samples(client, monkeyp
     assert "drafted by the copilot" not in captured["system"]
 
 
+def test_assist_retries_with_more_tokens_when_completion_is_truncated(client, monkeypatch):
+    """A free-tier model that cuts the JSON off mid-string should get one retry with more
+    budget, rather than the raw unterminated fragment being shown to the host."""
+    token = create_room(client)
+    calls = []
+
+    def fake_chat(system, prompt, model, temperature=0.2, max_tokens=None, **kwargs):
+        calls.append(max_tokens)
+        if len(calls) == 1:
+            return '{"replies": ["you there?",'
+        return '{"replies": ["you there?", "still around?", "lmk when free"]}'
+
+    monkeypatch.setattr(secret_chat, "_chat", fake_chat)
+    response = client.post(f"/api/secret-chat/{token}/assist", json={**HOST, "client_id": "host-1"})
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == ["you there?", "still around?", "lmk when free"]
+    # Retried once, with a bigger budget than the first attempt.
+    assert len(calls) == 2
+    assert calls[1] > calls[0]
+
+
+def test_assist_salvages_replies_when_retry_is_also_truncated(client, monkeypatch):
+    """Even if the retry is truncated too, whatever complete reply strings made it out should
+    be shown — never a raw '{"replies": [...' fragment."""
+    token = create_room(client)
+
+    def fake_chat(system, prompt, model, temperature=0.2, max_tokens=None, **kwargs):
+        return '{"replies": ["you there?", "still aro'
+
+    monkeypatch.setattr(secret_chat, "_chat", fake_chat)
+    response = client.post(f"/api/secret-chat/{token}/assist", json={**HOST, "client_id": "host-1"})
+    assert response.status_code == 200
+    assert response.json()["suggestions"] == ["you there?"]
+
+
 def test_copilot_settings_persist_on_the_room(client):
     token = create_room(client)
     updated = client.patch(f"/api/secret-chat/{token}", json={

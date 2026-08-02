@@ -68,6 +68,11 @@ ONLINE_WINDOW_SECONDS = 25
 TYPING_WINDOW_SECONDS = 6
 ASSIST_HISTORY_MESSAGES = 24
 ASSIST_STYLE_SAMPLES = 12
+# 400 was too tight: three distinct replies as a JSON array routinely got cut off mid-string
+# on free-tier gateway models (e.g. TokenRouter's moonshotai/kimi-k3-free), surfacing a raw
+# unterminated JSON fragment as the "suggestion". Retry once with more headroom if that happens.
+ASSIST_MAX_TOKENS = 700
+ASSIST_RETRY_MAX_TOKENS = 1400
 
 _SECRET_CHAT_EVENTS: dict[str, list[asyncio.Queue]] = {}
 _SECRET_CHAT_EVENTS_LOCK = Lock()
@@ -924,6 +929,39 @@ def _assist_prompt(
     return "\n\n".join(system_parts), "\n\n".join(prompt_parts)
 
 
+def _looks_truncated(content: str) -> bool:
+    """True when the model clearly started a JSON reply but the completion was cut off mid-object.
+
+    Free-tier gateway models sometimes run out of budget before the JSON closes; this
+    distinguishes that case from a model that never intended to return JSON at all (which
+    `_parse_replies` already handles fine via its line-based fallback).
+    """
+    text = (content or "").strip()
+    if not text.startswith("{"):
+        return False
+    try:
+        json.loads(text)
+        return False
+    except json.JSONDecodeError:
+        return True
+
+
+def _salvage_partial_replies(text: str) -> list[str]:
+    """Pull out whichever complete reply strings made it out of a JSON completion that got cut
+    off before the array or object closed, instead of surfacing the raw fragment to the user."""
+    match = re.search(r'"replies"\s*:\s*\[', text) or re.search(r'"suggestions"\s*:\s*\[', text)
+    if not match:
+        return []
+    body = text[match.end():]
+    items = []
+    for literal in re.finditer(r'"(?:[^"\\]|\\.)*"', body):
+        try:
+            items.append(json.loads(literal.group(0)))
+        except json.JSONDecodeError:
+            continue
+    return [item.strip() for item in items if isinstance(item, str) and item.strip()]
+
+
 def _parse_replies(content: str) -> list[str]:
     text = (content or "").strip()
     match = re.search(r"\{.*\}", text, re.DOTALL)
@@ -936,6 +974,9 @@ def _parse_replies(content: str) -> list[str]:
                 return cleaned[:3]
         except json.JSONDecodeError:
             pass
+    salvaged = _salvage_partial_replies(text)
+    if salvaged:
+        return salvaged[:3]
     # A model that ignored the JSON contract still gives usable lines.
     lines = [re.sub(r"^\s*(?:[-*\d.]+\s*)", "", line).strip().strip('"') for line in text.splitlines()]
     return [line for line in lines if line][:3]
@@ -984,7 +1025,9 @@ def _draft_reply(
 
     system, prompt = _assist_prompt(transcript, style_samples, payload)
     with llm_provider_context(provider) if provider else _no_provider_override():
-        content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=400)
+        content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=ASSIST_MAX_TOKENS)
+        if _looks_truncated(content):
+            content = _chat(system, prompt, model=model, temperature=0.8, max_tokens=ASSIST_RETRY_MAX_TOKENS)
     return _parse_replies(content), len(style_samples)
 
 
