@@ -378,6 +378,10 @@ html[data-theme='dark'] .answer-table-wrap {
   .markdown-answer .answer-section-toggle {
     transition: none;
   }
+
+  .diagram-lightbox-canvas {
+    transition: none;
+  }
 }
 
 /* --- Diagram sizing --------------------------------------------------------------------------- */

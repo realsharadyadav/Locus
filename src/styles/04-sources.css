@@ -438,15 +438,20 @@ html[data-theme='dark'] .markdown-answer .mermaid-error pre { background: #0d121
   cursor: pointer;
 }
 .diagram-lightbox-action:hover { background: rgba(255,255,255,.16); }
+/* Centering is react-zoom-pan-pinch's job now (centerOnInit) - flexbox alignment here would fight
+   the library's own translate math, which assumes the content sits at the wrapper's top-left. */
 .diagram-lightbox-canvas {
   flex: 1;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: grab;
   touch-action: none;
+  /* Hidden until centerOnInit has positioned it (DiagramLightbox flips .is-ready once react-zoom-
+     pan-pinch's onInit fires) - staying invisible for that one frame is what skips the "pinned to
+     the top-left corner, then jumps to centre" blink a plain opacity:1 default would show. */
+  opacity: 0;
+  transition: opacity 160ms ease;
 }
+.diagram-lightbox-canvas.is-ready { opacity: 1; }
 .diagram-lightbox-canvas:active { cursor: grabbing; }
 .diagram-lightbox-content {
   transition: transform .04s linear;

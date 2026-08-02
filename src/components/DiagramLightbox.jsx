@@ -1,83 +1,68 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Minus, Plus, RotateCcw, X,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import {
+  TransformWrapper, TransformComponent, useControls, useTransformEffect,
+} from 'react-zoom-pan-pinch';
 
+// Same range the hand-rolled version used: past 6x a Mermaid label is just blurry pixels, and
+// there's nothing below half size worth seeing that fitDiagram() didn't already show inline.
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 6;
-const DOUBLE_TAP_SCALE = 2.2;
-// Per-millisecond velocity decay applied during a fling; ~0.05 px/ms is where it's no longer
-// perceptible as motion, so that's the animation's stopping point.
-const MOMENTUM_DECAY_PER_MS = 0.998;
-const MOMENTUM_STOP_SPEED = 0.05;
-// Room to keep panning past the point where the diagram's far edge reaches the canvas edge -
-// without it, a pan or fling that overshoots loses the diagram off-screen with only the Reset
-// button to recover it, which is not how a native photo viewer behaves.
-const PAN_SLACK_PX = 80;
 
-const clampScale = value => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
+// The zoom percentage in the toolbar needs the live transform state, which only exists inside
+// TransformWrapper's context - useTransformEffect fires on every frame of an in-progress gesture
+// without going through the rest of the toolbar's render, so the readout tracks a pinch smoothly
+// instead of lagging a state update made elsewhere.
+function ZoomReadout() {
+  const [percent, setPercent] = useState(100);
+  useTransformEffect(({ state }) => setPercent(Math.round(state.scale * 100)));
+  return <span className="diagram-lightbox-zoom">{percent}%</span>;
+}
+
+function LightboxToolbar({ title, onClose }) {
+  const { zoomIn, zoomOut, resetTransform } = useControls();
+  return (
+    <div className="diagram-lightbox-toolbar" onClick={event => event.stopPropagation()}>
+      {title && <span className="diagram-lightbox-title">{title}</span>}
+      <ZoomReadout />
+      <button type="button" className="diagram-lightbox-action" onClick={() => zoomOut()} title="Zoom out" aria-label="Zoom out">
+        <Minus size={16} />
+      </button>
+      <button type="button" className="diagram-lightbox-action" onClick={() => zoomIn()} title="Zoom in" aria-label="Zoom in">
+        <Plus size={16} />
+      </button>
+      <button type="button" className="diagram-lightbox-action" onClick={() => resetTransform()} title="Reset zoom" aria-label="Reset zoom">
+        <RotateCcw size={15} />
+      </button>
+      <button type="button" className="diagram-lightbox-action" onClick={onClose} title="Close" aria-label="Close">
+        <X size={17} />
+      </button>
+    </div>
+  );
+}
 
 export function DiagramLightbox({ svg, title, onClose }) {
-  const [transform, setTransform] = useState({ scale: 1, x: 0, y: 0 });
-  const canvasRef = useRef(null);
-  const contentRef = useRef(null);
-  // Every pointer currently down, keyed by pointerId — one entry is a drag, two is a pinch.
-  const pointersRef = useRef(new Map());
-  const dragRef = useRef(null);
-  const pinchRef = useRef(null);
-  const lastTapRef = useRef(0);
-  const momentumRef = useRef(null);
-
-  const cancelMomentum = useCallback(() => {
-    if (momentumRef.current) {
-      window.cancelAnimationFrame(momentumRef.current);
-      momentumRef.current = null;
-    }
-  }, []);
-
-  // getBoundingClientRect on the transformed content would report its already-scaled box: this
-  // reads offsetWidth/Height instead, which CSS transforms never affect, then applies `scale`
-  // itself to get the diagram's actual on-screen size at any zoom level.
-  const clampPan = useCallback((x, y, scale) => {
-    const canvas = canvasRef.current;
-    const content = contentRef.current;
-    if (!canvas || !content) return { x, y };
-    const canvasRect = canvas.getBoundingClientRect();
-    const contentW = content.offsetWidth * scale;
-    const contentH = content.offsetHeight * scale;
-    const maxX = Math.max(0, (contentW - canvasRect.width) / 2) + PAN_SLACK_PX;
-    const maxY = Math.max(0, (contentH - canvasRect.height) / 2) + PAN_SLACK_PX;
-    return { x: Math.min(maxX, Math.max(-maxX, x)), y: Math.min(maxY, Math.max(-maxY, y)) };
-  }, []);
-
-  // A flick of the finger keeps drifting and decelerating after release, like scrolling anywhere
-  // else in the app - the plain drag this replaced stopped dead the instant a finger lifted,
-  // which is the single biggest tell that a surface is hand-rolled rather than native.
-  const startMomentum = useCallback((vx, vy) => {
-    cancelMomentum();
-    if (Math.hypot(vx, vy) < MOMENTUM_STOP_SPEED) return;
-    let velocity = { x: vx, y: vy };
-    let lastTime = performance.now();
-    const step = now => {
-      const dt = Math.min(48, now - lastTime);
-      lastTime = now;
-      const decay = MOMENTUM_DECAY_PER_MS ** dt;
-      velocity = { x: velocity.x * decay, y: velocity.y * decay };
-      setTransform(current => ({ ...current, ...clampPan(current.x + velocity.x * dt, current.y + velocity.y * dt, current.scale) }));
-      momentumRef.current = Math.hypot(velocity.x, velocity.y) > MOMENTUM_STOP_SPEED
-        ? window.requestAnimationFrame(step)
-        : null;
-    };
-    momentumRef.current = window.requestAnimationFrame(step);
-  }, [cancelMomentum, clampPan]);
-
-  useEffect(() => cancelMomentum, [cancelMomentum]);
+  // react-zoom-pan-pinch exposes zoomIn/zoomOut/resetTransform on this ref, which is how the
+  // "0 to reset" shortcut reaches it from outside the toolbar's own component tree.
+  const transformRef = useRef(null);
+  // centerOnInit repositions the content a moment after its first paint (it needs a measured
+  // size first), which without this would show one frame pinned to the top-left corner before
+  // jumping to centre - exactly the "blink" a hand-rolled version wouldn't have had either.
+  // Staying invisible until onInit fires (which runs after that repositioning) skips straight to
+  // the centred frame instead of ever painting the wrong one.
+  const [ready, setReady] = useState(false);
+  // A drag that starts on the empty margin is a legitimate pan, not a request to close - the
+  // pointer's own down-vs-click distance is what decides that, independent of the library's pan
+  // gesture recognition (which has its own threshold/timing and isn't meant for this).
+  const pointerDownRef = useRef(null);
 
   useEffect(() => {
     const handleKey = event => {
       if (event.key === 'Escape') onClose();
-      if (event.key === '0') setTransform({ scale: 1, x: 0, y: 0 });
+      if (event.key === '0') transformRef.current?.resetTransform();
     };
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
@@ -91,194 +76,41 @@ export function DiagramLightbox({ svg, title, onClose }) {
     return () => { body.style.overflow = previous; };
   }, []);
 
-  // The app deliberately leaves browser page-zoom enabled (disabling it globally is an
-  // accessibility regression), so this surface has to claim its own two-finger gesture.
-  // `touch-action: none` on the canvas is what does that, and is verified sufficient in Chromium.
-  // This non-passive touchmove is a belt-and-braces guard for engines where a fixed overlay can
-  // still rubber-band the page underneath; React attaches touch listeners passively, so it has
-  // to be bound directly on the node.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
-    const swallow = event => { if (event.cancelable) event.preventDefault(); };
-    canvas.addEventListener('touchmove', swallow, { passive: false });
-    return () => canvas.removeEventListener('touchmove', swallow);
-  }, []);
-
-  /** Scale about a fixed screen point so the content under the fingers stays under the fingers. */
-  const zoomAround = useCallback((nextScale, clientX, clientY) => {
-    cancelMomentum();
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    setTransform(current => {
-      const scale = clampScale(nextScale);
-      if (!bounds) return { ...current, scale };
-      // Offset of the focal point from the canvas centre, which is where the untransformed
-      // content sits — the translation has to absorb the change in magnification about it.
-      const focusX = clientX - bounds.left - bounds.width / 2;
-      const focusY = clientY - bounds.top - bounds.height / 2;
-      const ratio = scale / current.scale;
-      return {
-        scale,
-        ...clampPan(focusX - (focusX - current.x) * ratio, focusY - (focusY - current.y) * ratio, scale),
-      };
-    });
-  }, [cancelMomentum, clampPan]);
-
-  // The +/- buttons zoom about the middle of the viewport, so whatever the user panned to
-  // stays in view instead of drifting back toward the diagram's centre.
-  const zoomBy = useCallback(factor => {
-    const bounds = canvasRef.current?.getBoundingClientRect();
-    if (!bounds) {
-      setTransform(current => ({ ...current, scale: clampScale(current.scale * factor) }));
-      return;
-    }
-    zoomAround(transform.scale * factor, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
-  }, [transform.scale, zoomAround]);
-
-  const reset = useCallback(() => {
-    cancelMomentum();
-    setTransform({ scale: 1, x: 0, y: 0 });
-  }, [cancelMomentum]);
-
-  // Wheel and trackpad pinch (which arrives as ctrlKey + wheel) both zoom about the cursor.
-  const handleWheel = event => {
-    event.preventDefault();
-    cancelMomentum();
-    const intensity = event.ctrlKey ? 0.01 : 0.0022;
-    setTransform(current => {
-      const next = clampScale(current.scale * Math.exp(-event.deltaY * intensity));
-      const bounds = canvasRef.current?.getBoundingClientRect();
-      if (!bounds) return { ...current, scale: next };
-      const focusX = event.clientX - bounds.left - bounds.width / 2;
-      const focusY = event.clientY - bounds.top - bounds.height / 2;
-      const ratio = next / current.scale;
-      return { scale: next, ...clampPan(focusX - (focusX - current.x) * ratio, focusY - (focusY - current.y) * ratio, next) };
-    });
-  };
-
-  const pinchState = () => {
-    const [first, second] = Array.from(pointersRef.current.values());
-    const distance = Math.hypot(second.x - first.x, second.y - first.y);
-    return { distance, centerX: (first.x + second.x) / 2, centerY: (first.y + second.y) / 2 };
-  };
-
-  // A drag also carries a smoothed instantaneous velocity in px/ms (lastX/Y/T, vx/vy), read on
-  // release to decide whether to fling. Exponential smoothing keeps one jittery sample right
-  // before lift-off from dictating the whole fling's speed and direction.
-  const startDrag = (x, y) => ({
-    startX: x, startY: y, originX: transform.x, originY: transform.y, lastX: x, lastY: y, lastT: performance.now(), vx: 0, vy: 0,
-  });
-
-  const handlePointerDown = event => {
-    cancelMomentum();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-
-    if (pointersRef.current.size === 2) {
-      // A second finger converts an in-progress drag into a pinch.
-      dragRef.current = null;
-      const { distance, centerX, centerY } = pinchState();
-      pinchRef.current = { startDistance: distance, startScale: transform.scale, centerX, centerY };
-      return;
-    }
-
-    if (pointersRef.current.size === 1) {
-      dragRef.current = startDrag(event.clientX, event.clientY);
-
-      // Double-tap zooms in on the tapped point, and zooms back out if already magnified. Touch has
-      // no dblclick contract worth relying on, so the interval is measured here.
-      const now = Date.now();
-      if (now - lastTapRef.current < 300) {
-        lastTapRef.current = 0;
-        dragRef.current = null;
-        if (transform.scale > 1.05) reset();
-        else zoomAround(DOUBLE_TAP_SCALE, event.clientX, event.clientY);
-        return;
-      }
-      lastTapRef.current = now;
-    }
-  };
-
-  const handlePointerMove = event => {
-    if (!pointersRef.current.has(event.pointerId)) return;
-    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-
-    if (pointersRef.current.size >= 2 && pinchRef.current) {
-      const { distance, centerX, centerY } = pinchState();
-      const { startDistance, startScale } = pinchRef.current;
-      if (startDistance > 0) zoomAround(startScale * (distance / startDistance), centerX, centerY);
-      return;
-    }
-
-    if (!dragRef.current) return;
-    const drag = dragRef.current;
-    const dt = performance.now() - drag.lastT;
-    if (dt > 4) {
-      const instVx = (event.clientX - drag.lastX) / dt;
-      const instVy = (event.clientY - drag.lastY) / dt;
-      drag.vx = drag.vx * 0.7 + instVx * 0.3;
-      drag.vy = drag.vy * 0.7 + instVy * 0.3;
-      drag.lastX = event.clientX;
-      drag.lastY = event.clientY;
-      drag.lastT = performance.now();
-    }
-    setTransform(current => ({ ...current, ...clampPan(drag.originX + (event.clientX - drag.startX), drag.originY + (event.clientY - drag.startY), current.scale) }));
-  };
-
-  const releasePointer = event => {
-    // Only the very last finger lifting off a plain drag should fling - not a pinch ending, and
-    // not one finger of a two-finger pinch letting go (handled in the branch below instead).
-    const endedDrag = pointersRef.current.size === 1 ? dragRef.current : null;
-    pointersRef.current.delete(event.pointerId);
-    if (pointersRef.current.size < 2) pinchRef.current = null;
-    if (pointersRef.current.size === 0) {
-      dragRef.current = null;
-      if (endedDrag) startMomentum(endedDrag.vx, endedDrag.vy);
-    } else if (pointersRef.current.size === 1) {
-      // Lifting one finger of a pinch resumes a drag from wherever the remaining one is.
-      const [remaining] = Array.from(pointersRef.current.values());
-      dragRef.current = startDrag(remaining.x, remaining.y);
-    }
-  };
-
   return createPortal(
     <div className="diagram-lightbox" onClick={onClose}>
-      <div className="diagram-lightbox-toolbar" onClick={event => event.stopPropagation()}>
-        {title && <span className="diagram-lightbox-title">{title}</span>}
-        <span className="diagram-lightbox-zoom">{Math.round(transform.scale * 100)}%</span>
-        <button type="button" className="diagram-lightbox-action" onClick={() => zoomBy(1 / 1.3)} title="Zoom out" aria-label="Zoom out">
-          <Minus size={16} />
-        </button>
-        <button type="button" className="diagram-lightbox-action" onClick={() => zoomBy(1.3)} title="Zoom in" aria-label="Zoom in">
-          <Plus size={16} />
-        </button>
-        <button type="button" className="diagram-lightbox-action" onClick={reset} title="Reset zoom" aria-label="Reset zoom">
-          <RotateCcw size={15} />
-        </button>
-        <button type="button" className="diagram-lightbox-action" onClick={onClose} title="Close" aria-label="Close">
-          <X size={17} />
-        </button>
-      </div>
-      <div
-        ref={canvasRef}
-        className="diagram-lightbox-canvas"
-        onClick={event => event.stopPropagation()}
-        onWheel={handleWheel}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={releasePointer}
-        onPointerCancel={releasePointer}
-        // Ends a mouse drag that exits the window. Safe for touch: the leave events fired as the
-        // content transforms under a finger target descendants, which this never sees.
-        onPointerLeave={releasePointer}
+      <TransformWrapper
+        ref={transformRef}
+        initialScale={1}
+        minScale={MIN_SCALE}
+        maxScale={MAX_SCALE}
+        centerOnInit
+        doubleClick={{ mode: 'toggle', step: 1 }}
+        onInit={() => setReady(true)}
       >
-        <div
-          ref={contentRef}
-          className="diagram-lightbox-content"
-          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})` }}
-          dangerouslySetInnerHTML={{ __html: svg }}
-        />
-      </div>
+        <LightboxToolbar title={title} onClose={onClose} />
+        <TransformComponent
+          wrapperClass={`diagram-lightbox-canvas${ready ? ' is-ready' : ''}`}
+          contentClass="diagram-lightbox-content"
+          wrapperStyle={{ width: '100%', height: '100%' }}
+          // Closing on background click is the expected lightbox gesture, but only for the empty
+          // margin around the diagram, and only when the pointer never actually moved between down
+          // and up - a click that landed on the diagram itself (a descendant of the wrapper, not
+          // the wrapper element itself), or that ends a drag which happened to start on the empty
+          // margin, must not also close the box under it.
+          wrapperProps={{
+            onPointerDown: event => {
+              pointerDownRef.current = { x: event.clientX, y: event.clientY };
+            },
+            onClick: event => {
+              const down = pointerDownRef.current;
+              const dragged = down && Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5;
+              if (dragged || event.target !== event.currentTarget) event.stopPropagation();
+            },
+          }}
+        >
+          <div dangerouslySetInnerHTML={{ __html: svg }} />
+        </TransformComponent>
+      </TransformWrapper>
     </div>,
     document.body,
   );
