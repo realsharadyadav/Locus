@@ -26,6 +26,9 @@ class ProviderSpec:
     default_model: str | None
     docs_url: str | None
     env_hint: str
+    # Gateway-only escape hatch: when set, this env var overrides `base_url` at runtime, so a
+    # provider that moves or renames its endpoint can be corrected from .env without a release.
+    base_url_env: str | None = None
 
 
 PROVIDERS: dict[str, ProviderSpec] = {
@@ -107,9 +110,23 @@ PROVIDERS: dict[str, ProviderSpec] = {
         docs_url="https://tokenrouter.com/docs",
         env_hint="Set TOKENROUTER_API_KEY in your .env file.",
     ),
+    "opencode": ProviderSpec(
+        id="opencode",
+        label="OpenCode Go",
+        icon="🐹",
+        blurb="Curated coding models on one key",
+        kind="gateway",
+        api_key_env="OPENCODE_API_KEY",
+        base_url="https://opencode.ai/zen/go/v1",
+        model_env="OPENCODE_MODEL",
+        default_model=None,
+        docs_url="https://opencode.ai/docs/zen/",
+        env_hint="Set OPENCODE_API_KEY in your .env file.",
+        base_url_env="OPENCODE_BASE_URL",
+    ),
 }
 
-PROVIDER_ORDER = ["ollama", "groq", "openai", "gemini", "openrouter", "tokenrouter"]
+PROVIDER_ORDER = ["ollama", "groq", "openai", "gemini", "openrouter", "tokenrouter", "opencode"]
 
 
 def provider_spec(provider_id: str) -> ProviderSpec:

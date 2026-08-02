@@ -3,11 +3,11 @@ import { readStorage, storageKey } from '../brand';
 
 export const DEFAULT_UPLOAD_LIMIT_MB = 25;
 
-export const PROVIDER_LABELS = { ollama: 'Ollama', groq: 'Groq', openai: 'OpenAI', gemini: 'Gemini', openrouter: 'OpenRouter', tokenrouter: 'TokenRouter' };
-export const DEFAULT_PROVIDER_MODELS = { ollama: 'llama3.2:latest', groq: 'openai/gpt-oss-20b', openai: 'gpt-5.4-mini', gemini: 'gemini-2.5-flash', openrouter: 'openrouter/auto', tokenrouter: '' };
+export const PROVIDER_LABELS = { ollama: 'Ollama', groq: 'Groq', openai: 'OpenAI', gemini: 'Gemini', openrouter: 'OpenRouter', tokenrouter: 'TokenRouter', opencode: 'OpenCode Go' };
+export const DEFAULT_PROVIDER_MODELS = { ollama: 'llama3.2:latest', groq: 'openai/gpt-oss-20b', openai: 'gpt-5.4-mini', gemini: 'gemini-2.5-flash', openrouter: 'openrouter/auto', tokenrouter: '', opencode: '' };
 // Fallback ordering before /api/llm/config responds (which also sends provider_order, the
 // backend's own PROVIDERS registry order — the two are kept in sync by hand).
-export const PROVIDER_ORDER = ['ollama', 'groq', 'openai', 'gemini', 'openrouter', 'tokenrouter'];
+export const PROVIDER_ORDER = ['ollama', 'groq', 'openai', 'gemini', 'openrouter', 'tokenrouter', 'opencode'];
 // Single source of truth for provider icon/blurb/env-hint copy, shared by ModelControl and
 // SettingsPage so the two don't drift out of sync with each other.
 export const PROVIDER_META = {
@@ -17,6 +17,7 @@ export const PROVIDER_META = {
   gemini: { icon: '✨', blurb: 'Google Gemini models', envHint: 'Set GEMINI_API_KEY in your .env file.' },
   openrouter: { icon: '🌐', blurb: 'One API for many model providers', envHint: 'Set OPENROUTER_API_KEY in your .env file.' },
   tokenrouter: { icon: '🔀', blurb: 'Unified gateway across many models', envHint: 'Set TOKENROUTER_API_KEY in your .env file.' },
+  opencode: { icon: '🐹', blurb: 'Curated coding models on one key', envHint: 'Set OPENCODE_API_KEY in your .env file.' },
 };
 export const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
 export const ACTIVE_CHAT_STORAGE_KEY = storageKey('explore-active-chat');

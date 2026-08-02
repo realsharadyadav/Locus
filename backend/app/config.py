@@ -112,7 +112,8 @@ def gateway_settings(provider: str, require_key: bool = True) -> GatewaySettings
         raise RuntimeError(f"'{provider}' is not a gateway-kind provider.")
     api_key = require_environment_variable(spec.api_key_env) if require_key else os.getenv(spec.api_key_env, "").strip()
     model = os.getenv(spec.model_env, spec.default_model or "").strip() or (spec.default_model or "")
-    return GatewaySettings(provider=provider, api_key=api_key, base_url=spec.base_url, model=model)
+    base_url = (os.getenv(spec.base_url_env, "").strip() if spec.base_url_env else "") or spec.base_url
+    return GatewaySettings(provider=provider, api_key=api_key, base_url=base_url, model=model)
 
 
 def configured_model() -> str:

@@ -29,7 +29,7 @@ from .config import (
     EMBEDDING_BATCH_SIZE, GROQ_MODEL_PRESETS, TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
     MAX_UPLOAD_FILE_MB, SEMANTIC_MIN_SCORE, TICKET_ANALYSIS_ENABLED, TICKET_ANALYSIS_MAX_GROUPS,
     TICKET_ANALYSIS_MIN_GROUP_SIZE, TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
-    configured_model, llm_provider,
+    configured_model, gateway_settings, llm_provider,
 )
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
@@ -593,7 +593,10 @@ def llm_config():
             gateway_models[provider_id] = []
             continue
         try:
-            listing = list_openai_compatible_models(spec.base_url, api_key, timeout=5)
+            # Read the base URL through gateway_settings so a *_BASE_URL override in .env applies
+            # to model discovery too, not just to the chat calls in llm.py.
+            base_url = gateway_settings(provider_id, require_key=False).base_url
+            listing = list_openai_compatible_models(base_url, api_key, timeout=5)
             gateway_models[provider_id] = sorted(listing)
             gateway_metadata[provider_id] = listing
         except Exception:
