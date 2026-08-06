@@ -119,6 +119,8 @@ def _litellm_model(provider: str, model: str) -> str:
         return model if model.startswith("gemini/") else f"gemini/{model}"
     if provider == "ollama":
         return model if model.startswith(("ollama/", "ollama_chat/")) else f"ollama_chat/{model}"
+    if provider == "cerebras":
+        return model if model.startswith("openai/") else f"openai/{model}"
     if provider_spec(provider).kind == "gateway":
         # Any OpenAI-compatible gateway (OpenRouter, TokenRouter, ...) is reached through
         # LiteLLM's generic "openai/<model>" routing combined with a custom api_base below —
@@ -148,6 +150,13 @@ def _litellm_kwargs(provider: str, model: str, max_retry_after_seconds: float | 
     if provider == "gemini":
         validate_model_environment(model)
         return {"api_key": os.environ["GEMINI_API_KEY"].strip(), "timeout": LLM_REQUEST_TIMEOUT_SECONDS}
+    if provider == "cerebras":
+        validate_model_environment(model)
+        return {
+            "api_key": os.environ.get("CEREBRAS_API_KEY", "").strip(),
+            "api_base": os.environ.get("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1").rstrip("/"),
+            "timeout": LLM_REQUEST_TIMEOUT_SECONDS,
+        }
     if provider_spec(provider).kind == "gateway":
         settings = gateway_settings(provider)
         return {"api_key": settings.api_key, "api_base": settings.base_url, "timeout": LLM_REQUEST_TIMEOUT_SECONDS}

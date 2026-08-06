@@ -124,9 +124,22 @@ PROVIDERS: dict[str, ProviderSpec] = {
         env_hint="Set OPENCODE_API_KEY in your .env file.",
         base_url_env="OPENCODE_BASE_URL",
     ),
+    "cerebras": ProviderSpec(
+        id="cerebras",
+        label="Cerebras",
+        icon="🧠",
+        blurb="Cerebras inference API",
+        kind="cerebras",
+        api_key_env="CEREBRAS_API_KEY",
+        base_url="https://api.cerebras.ai/v1",
+        model_env="CEREBRAS_MODEL",
+        default_model="llama-3.3-70b",
+        docs_url="https://docs.cerebras.ai",
+        env_hint="Set CEREBRAS_API_KEY in your .env file.",
+    ),
 }
 
-PROVIDER_ORDER = ["ollama", "groq", "openai", "gemini", "openrouter", "tokenrouter", "opencode"]
+PROVIDER_ORDER = ["ollama", "groq", "openai", "gemini", "cerebras", "openrouter", "tokenrouter", "opencode"]
 
 
 def provider_spec(provider_id: str) -> ProviderSpec:

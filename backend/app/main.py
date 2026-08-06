@@ -586,6 +586,15 @@ def llm_config():
         except Exception:
             gemini_models = []
 
+    cerebras_models = []
+    if os.getenv("CEREBRAS_API_KEY", "").strip():
+        try:
+            base_url = os.getenv("CEREBRAS_BASE_URL", "https://api.cerebras.ai/v1").rstrip("/")
+            listing = list_openai_compatible_models(base_url, os.environ["CEREBRAS_API_KEY"].strip(), timeout=5)
+            cerebras_models = sorted(listing)
+        except Exception:
+            cerebras_models = []
+
     # Any OpenAI-compatible gateway provider (OpenRouter, TokenRouter, and future entries in
     # the registry) is listed the same generic way — a registry entry is all that's needed to
     # add another one, no new branch here.
@@ -613,6 +622,7 @@ def llm_config():
         "groq": groq_models,
         "openai": openai_models,
         "gemini": gemini_models,
+        "cerebras": cerebras_models,
         **gateway_models,
     }
     return {

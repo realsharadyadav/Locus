@@ -135,3 +135,5 @@ def validate_model_environment(model: str) -> None:
         require_environment_variable("OPENAI_API_KEY")
     elif model.startswith("gemini-"):
         require_environment_variable("GEMINI_API_KEY")
+    elif model.startswith("llama-"):
+        require_environment_variable("CEREBRAS_API_KEY")

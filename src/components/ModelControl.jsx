@@ -17,6 +17,7 @@ export function ModelControl({ config, provider, setProvider, model, setModel, e
     groq: [],
     openai: [],
     gemini: [],
+    cerebras: [],
   };
   useEffect(() => {
     if (openMenu === 'model') modelSearchRef.current?.focus();
