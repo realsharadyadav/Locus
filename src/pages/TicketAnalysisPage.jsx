@@ -142,6 +142,18 @@ function editableTaxonomyFromOkf(okfTaxonomy) {
 
 const STAGE_KEYS = ['intake', 'taxonomy', 'discovery', 'llm', 'consolidation', 'output'];
 
+// The backend emits fine-grained pipeline stages; the rail shows six. Anything
+// unmapped is ignored rather than guessed at, so the rail never lights a stage
+// the run did not actually reach.
+const BACKEND_STAGE_TO_RAIL = {
+  ingest: 'intake', clean: 'intake', embed: 'intake',
+  strategy: 'taxonomy', taxonomy: 'taxonomy',
+  cluster: 'discovery',
+  gathering: 'llm', llm_labels: 'llm', llm_fallback: 'llm', llm_fallback_result: 'llm', llm_labels_result: 'llm', taxonomy_suggestions: 'llm',
+  consolidate: 'consolidation',
+  complete: 'output',
+};
+
 function TicketAnalysisPage({ files, openMenu }) {
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -151,6 +163,9 @@ function TicketAnalysisPage({ files, openMenu }) {
   const [analyzing, setAnalyzing] = useState(false);
   const [runStatus, setRunStatus] = useState({ type: 'idle', message: 'Select a ticket file to start analysis.' });
   const [activeStepKey, setActiveStepKey] = useState('select_file');
+  const [liveStage, setLiveStage] = useState(null);
+  const [doneStages, setDoneStages] = useState(new Set());
+  const [stageDetail, setStageDetail] = useState({});
   const [selectedStepKey, setSelectedStepKey] = useState('select_file');
   const [expandedGroups, setExpandedGroups] = useState(new Set());
   const [expandedStages, setExpandedStages] = useState(new Set());
@@ -196,6 +211,11 @@ function TicketAnalysisPage({ files, openMenu }) {
   const llmStage = stages.find(s => s.key === 'llm');
   const llmHitCount = Number(coverage.llm_assisted || llmStage?.output_count || 0);
   const llmLabelCount = Number(llmStage?.details?.groups_renamed || 0);
+  const llmLabelStatus = llmStage?.details?.naming_status || trace.config?.llmLabelStatus || 'disabled';
+  const llmLabelSummary = String(llmLabelStatus).startsWith('failed')
+    ? `naming call failed (${llmLabelStatus.replace('failed: ', '')}) — deterministic labels kept`
+    : llmLabelStatus === 'disabled' ? 'not run for this analysis'
+    : `${llmLabelCount} of ${groups.length} group labels rewritten by LLM`;
   const llmSuggestionCount = Number(llmStage?.details?.taxonomy_suggestions_generated || trace.taxonomy_suggestions?.length || 0);
   const okfMatchedCount = isClusterOnly ? 0 : Number(coverage.taxonomy_matched || 0);
   const clusterInputCount = isTaxonomyOnly ? 0 : isClusterOnly ? validTickets : Math.max(0, validTickets - okfMatchedCount);
@@ -270,22 +290,8 @@ function TicketAnalysisPage({ files, openMenu }) {
 
   useEffect(() => {
     if (!analyzing) return;
-    let i = 0;
-    runStartRef.current = Date.now();
-    setElapsedMs(0);
-    setConsoleOpen(true);
-    setConsoleLines([{ t: 0, text: `Starting pipeline on ${selectedFile?.name || 'selected file'}` }]);
-    setActiveStepKey(PIPELINE_SKELETON[0][0]);
-    setSelectedStepKey(PIPELINE_SKELETON[0][0]);
-    const stepTimer = setInterval(() => {
-      i = Math.min(i + 1, PIPELINE_SKELETON.length - 1);
-      const [key, label, explanation] = PIPELINE_SKELETON[i];
-      setActiveStepKey(key);
-      setSelectedStepKey(key);
-      setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `${label} — ${explanation}` }]);
-    }, 520);
     const clockTimer = setInterval(() => setElapsedMs(Date.now() - runStartRef.current), 100);
-    return () => { clearInterval(stepTimer); clearInterval(clockTimer); };
+    return () => clearInterval(clockTimer);
   }, [analyzing]);
 
   useEffect(() => {
@@ -303,21 +309,48 @@ function TicketAnalysisPage({ files, openMenu }) {
     if (!selectedFileId) { setRunStatus({ type: 'error', message: 'Select a ticket file.' }); return; }
     if (config.taxonomyMode === 'custom' && customTaxonomy.error) { setRunStatus({ type: 'error', message: customTaxonomy.error }); return; }
     setAnalyzing(true); setResult(null); setSavedRunId(null);
+    runStartRef.current = Date.now();
+    setElapsedMs(0);
+    setConsoleOpen(true);
+    setConsoleLines([{ t: 0, text: `Starting pipeline on ${selectedFile?.name || 'selected file'}` }]);
+    setLiveStage(null); setDoneStages(new Set()); setStageDetail({});
+    setActiveStepKey(PIPELINE_SKELETON[0][0]); setSelectedStepKey(PIPELINE_SKELETON[0][0]);
     setRunStatus({ type: 'running', message: 'Running pipeline. Fresh vectors will be generated.' });
+
+    // Each stage event is the backend telling us what it is doing right now, so
+    // the rail advances on real work rather than on a timer.
+    const onStreamEvent = (event) => {
+      if (event.type !== 'stage') return;
+      const rail = BACKEND_STAGE_TO_RAIL[event.stage];
+      setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `${event.stage} — ${event.detail}` }]);
+      if (!rail) return;
+      setLiveStage(prev => {
+        if (prev && prev !== rail) setDoneStages(done => new Set(done).add(prev));
+        return rail;
+      });
+      setStageDetail(prev => ({ ...prev, [rail]: event.detail }));
+      if (PIPELINE_SKELETON.some(([key]) => key === event.stage)) {
+        setActiveStepKey(event.stage); setSelectedStepKey(event.stage);
+      }
+    };
+
     try {
-      const data = await api.ticketAnalysis(selectedFileId, config.maxGroups || undefined, config.minGroupSize || undefined, config.useLlmFallback, config.model || undefined, {
+      const data = await api.ticketAnalysisStream(selectedFileId, config.maxGroups || undefined, config.minGroupSize || undefined, config.useLlmFallback, config.model || undefined, {
         embeddingMethod: config.embeddingMethod, clusteringMethod: config.clusteringMethod, problemGroupStrategy: config.problemGroupStrategy,
         similarityThreshold: Number(config.similarityThreshold) || undefined, targetClusters: isHdbscan ? undefined : Number(config.targetClusters) || undefined,
         hdbscanMinSamples: Number(config.hdbscanMinSamples) || undefined, representativeCount: Number(config.representativeCount) || undefined,
         includeTelemetry: config.includeTelemetry, includeDebugSamples: config.includeDebugSamples, useLlmLabels: config.useLlmLabels,
+        suggestTaxonomyRules: config.suggestTaxonomyRules,
         llmProvider: config.llmProvider, pauseOkfTaxonomy: config.pauseOkfTaxonomy,
         taxonomyRules: config.taxonomyMode === 'custom' ? customTaxonomy.rules : undefined,
-      });
+      }, onStreamEvent);
+      setLiveStage(null); setDoneStages(new Set(STAGE_KEYS));
       setResult(data); setActiveStepKey('final_groups'); setSelectedStepKey('final_groups');
       setRunStatus({ type: 'success', message: 'Analysis complete. Saving snapshot.' });
       setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `Done — ${data.manifest?.problemGroups ?? (data.groups || []).length} problem group(s) from ${data.manifest?.validTickets ?? '?'} valid tickets.` }]);
       await saveSnapshot(data, 'auto');
     } catch (err) {
+      setLiveStage(null);
       setRunStatus({ type: 'error', message: err.message || 'Analysis failed' });
       setConsoleLines(prev => [...prev, { t: Date.now() - runStartRef.current, text: `Error — ${err.message || 'Analysis failed'}` }]);
     }
@@ -569,7 +602,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                       <div className={`ti-switch${config.useLlmFallback ? ' on' : ''}`} onClick={() => setConfigValue('useLlmFallback', !config.useLlmFallback)} />
                     </div>
                     <div className="ti-toggle-row">
-                      <div><div className="t-label">Use LLM to improve problem group names &amp; descriptions</div><div className="t-sub">{llmLabelCount} of {groups.length} groups named by LLM</div></div>
+                      <div><div className="t-label">Use LLM to improve problem group names &amp; descriptions</div><div className="t-sub">{llmLabelSummary}</div></div>
                       <div className={`ti-switch${config.useLlmLabels ? ' on' : ''}`} onClick={() => setConfigValue('useLlmLabels', !config.useLlmLabels)} />
                     </div>
                     <div className="ti-toggle-row">
@@ -666,14 +699,19 @@ function TicketAnalysisPage({ files, openMenu }) {
                 const Icon = st.icon;
                 const open = expandedStages.has(st.key);
                 const techOpen = expandedTech.has(st.key);
+                const running = liveStage === st.key;
+                const done = doneStages.has(st.key);
                 return (
-                  <div key={st.key} className={`ti-stage ti-acc-parent${open ? ' open' : ''}`} style={{ '--stage-color': st.tone }}>
-                    <div className="ti-stage-node"><Icon size={19} /></div>
+                  <div key={st.key} className={`ti-stage ti-acc-parent${open ? ' open' : ''}${running ? ' running' : ''}${done ? ' done' : ''}`} style={{ '--stage-color': st.tone }}>
+                    <div className="ti-stage-node">{running ? <Loader2 size={19} className="ti-stage-spin" /> : done ? <CheckCircle size={19} /> : <Icon size={19} />}</div>
                     <div className="ti-stage-card">
                       <button className="ti-stage-head" onClick={() => toggleStage(st.key)}>
                         <div className="ti-stage-head-main">
                           <span className="ti-stage-tag">{st.tag}</span>
                           <h3>{st.title}</h3>
+                          {(running || stageDetail[st.key]) && (
+                            <div className="ti-stage-live">{running && <span className="ti-stage-dot" />}{stageDetail[st.key] || 'Working…'}</div>
+                          )}
                         </div>
                         <div className="ti-stage-head-side">
                           {st.chips.map(ch => <span key={ch} className="ti-chip">{ch}</span>)}

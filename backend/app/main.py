@@ -1,4 +1,4 @@
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 from queue import Queue
+from types import SimpleNamespace
 import random
 import re
 from inspect import signature
@@ -235,13 +236,14 @@ def _build_group_explainability(groups: list[dict], total: int, use_llm_labels: 
     enriched = []
     for index, group in enumerate(groups, 1):
         source = _group_source(group)
+        llm_named = bool(use_llm_labels and group.get("llm_named"))
         count = int(group.get("incidentCount") or 0)
         reason = group.get("matched_reason") or "Created by deterministic Patterns grouping."
         enriched.append({
             **group,
             "id": f"group_{index:02d}",
             "rank": index,
-            "source": "LLM naming" if use_llm_labels and source != "LLM fallback" else source,
+            "source": "LLM naming" if llm_named and source != "LLM fallback" else source,
             "taxonomy_parent": group.get("groupName") if source == "taxonomy" else group.get("subcategory"),
             "matched_rule": reason if source == "taxonomy" else None,
             "cluster_id": f"cluster_{index:02d}" if "cluster" in source.lower() else None,
@@ -255,8 +257,9 @@ def _build_group_explainability(groups: list[dict], total: int, use_llm_labels: 
             "original_values": {
                 "subcategory": group.get("subcategory"),
                 "evidence": group.get("evidence") or [],
+                "group_name": group.get("llm_original_name"),
             },
-            "llm_naming_applied": bool(use_llm_labels and source != "LLM fallback"),
+            "llm_naming_applied": llm_named,
         })
     return enriched
 
@@ -337,7 +340,8 @@ def _build_pipeline_trace(
         stage("llm", "LLM Fallback / LLM Naming", clustered, llm_assisted, "LLM assistance was applied only where enabled by run settings.", {
             "fallback_enabled": options.get("useLlmFallback"),
             "naming_enabled": options.get("useLlmLabels"),
-            "groups_renamed": len(groups) if options.get("useLlmLabels") else 0,
+            "naming_status": options.get("llmLabelStatus", "disabled"),
+            "groups_renamed": sum(1 for group in groups if group.get("llm_named")),
             "taxonomy_suggestions_generated": len(taxonomy_suggestions),
         }, status="completed" if options.get("useLlmFallback") or options.get("useLlmLabels") else "skipped"),
         stage("consolidation", "Consolidation", len(groups), len(groups), "Duplicate labels were merged, ranked, capped, and prepared with evidence.", {"final_groups": len(groups), "overflow_groups_capped": any(group.get("groupName") == "Other Service Issues" for group in groups)}),
@@ -799,6 +803,7 @@ def _ticket_analysis_for_file(
     include_telemetry: bool = True,
     include_debug_samples: bool = True,
     use_llm_labels: bool = False,
+    suggest_taxonomy_rules: bool = False,
     llm_provider_name: str | None = None,
     pause_okf_taxonomy: bool = False,
     taxonomy_rules: tuple[TaxonomyRule, ...] | None = None,
@@ -859,19 +864,29 @@ def _ticket_analysis_for_file(
             "similarityThreshold": similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
             "hdbscanMinSamples": hdbscan_min_samples,
         })
-        result = analyze_ticket_file(
-            path,
-            max_groups=max_groups or TICKET_ANALYSIS_MAX_GROUPS,
-            min_group_size=min_group_size or TICKET_ANALYSIS_MIN_GROUP_SIZE,
-            similarity_threshold=similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-            representative_count=representative_count or TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
-            taxonomy=active_taxonomy,
-            pause_okf_taxonomy=pause_okf_taxonomy,
-            strategy=normalized_strategy,
-            llm_fallback=llm_fallback,
-            llm_model=llm_model,
-            progress=lambda stage, detail: event(stage, detail),
-        )
+        # The selected provider has to be active for the whole run: every LLM
+        # step inside the pipeline resolves its provider from this context.
+        provider_scope = llm_provider_context(llm_provider_name) if llm_provider_name else nullcontext()
+        with provider_scope:
+            result = analyze_ticket_file(
+                path,
+                max_groups=max_groups or TICKET_ANALYSIS_MAX_GROUPS,
+                min_group_size=min_group_size or TICKET_ANALYSIS_MIN_GROUP_SIZE,
+                similarity_threshold=similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
+                representative_count=representative_count or TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
+                taxonomy=active_taxonomy,
+                pause_okf_taxonomy=pause_okf_taxonomy,
+                strategy=normalized_strategy,
+                embedding_method=embedding_method,
+                clustering_method=clustering_method,
+                target_clusters=target_clusters,
+                hdbscan_min_samples=hdbscan_min_samples or TICKET_ANALYSIS_MIN_GROUP_SIZE,
+                llm_fallback=llm_fallback,
+                llm_labels=use_llm_labels,
+                llm_model=llm_model,
+                suggest_taxonomy_rules=suggest_taxonomy_rules,
+                progress=lambda stage, detail: event(stage, detail),
+            )
         if llm_fallback:
             event("llm_fallback", "LLM fallback evaluated unknown clusters", {
                 "model": llm_model or configured_model(),
@@ -881,10 +896,11 @@ def _ticket_analysis_for_file(
         else:
             event("fallback", "Deterministic fallback handled unresolved records without LLM")
         if use_llm_labels:
-            event("llm_labels", "LLM group-name editor requested for final labels", {
+            event("llm_labels_result", "LLM group-name editor rewrote final labels", {
                 "provider": llm_provider_name or llm_provider(),
                 "model": llm_model or configured_model(),
-                "status": "requested",
+                "status": result.get("manifest", {}).get("llmLabelStatus"),
+                "groupsRenamed": result.get("manifest", {}).get("llmGroupsRenamed", 0),
             })
         event("consolidate", "Merged duplicate labels, ranked by incident count, and prepared evidence samples", {
             "groups": result.get("manifest", {}).get("problemGroups", 0),
@@ -907,11 +923,14 @@ def _ticket_analysis_for_file(
             "includeDebugSamples": include_debug_samples,
             "useLlmFallback": llm_fallback,
             "useLlmLabels": use_llm_labels,
+            "suggestTaxonomyRules": suggest_taxonomy_rules,
+            "taxonomySuggestionStatus": result.get("manifest", {}).get("taxonomySuggestionStatus", "disabled"),
             "llmProvider": llm_provider_name,
             "pauseOkfTaxonomy": pause_okf_taxonomy,
             "taxonomySource": taxonomy_source,
             "taxonomyRulesConfigured": len(active_taxonomy),
-            "llmLabelStatus": "requested" if use_llm_labels else "disabled",
+            "llmLabelStatus": result.get("manifest", {}).get("llmLabelStatus", "disabled"),
+            "llmGroupsRenamed": result.get("manifest", {}).get("llmGroupsRenamed", 0),
             "freshVectorMessage": "Fresh vectors generated for this run.",
             "detectedFields": field_detection,
             "fileHash": file_hash,
@@ -961,10 +980,88 @@ def ticket_analysis(payload: TicketAnalysisRequest, db: Session = Depends(get_db
         include_telemetry=payload.includeTelemetry,
         include_debug_samples=payload.includeDebugSamples,
         use_llm_labels=payload.useLlmLabels,
+        suggest_taxonomy_rules=payload.suggestTaxonomyRules,
         llm_provider_name=payload.llmProvider,
         pause_okf_taxonomy=payload.pauseOkfTaxonomy,
         taxonomy_rules=taxonomy_rules,
     )
+
+
+@app.post("/api/ticket-analysis/stream")
+def ticket_analysis_stream(payload: TicketAnalysisRequest, db: Session = Depends(get_db)):
+    """Same run as /api/ticket-analysis, streamed stage by stage.
+
+    The pipeline already emits progress events; this endpoint forwards them as
+    they happen so the UI can show which stage is actually running instead of
+    guessing on a timer. The final message carries the identical result payload,
+    so a client that only cares about the answer can ignore the stage events.
+    """
+    stored_file = db.get(StoredFile, payload.fileId)
+    if not stored_file:
+        raise HTTPException(status_code=404, detail="File not found")
+    taxonomy_rules = _parse_ticket_taxonomy_rules(payload.taxonomyRules)
+    detached = SimpleNamespace(
+        id=stored_file.id,
+        name=stored_file.name,
+        stored_name=stored_file.stored_name,
+        size=stored_file.size,
+        embedding_chunks=stored_file.embedding_chunks,
+    )
+
+    def event_stream():
+        events: Queue = Queue()
+
+        def run():
+            try:
+                result = _ticket_analysis_for_file(
+                    detached,
+                    payload.maxGroups,
+                    payload.minGroupSize,
+                    payload.useLlmFallback,
+                    payload.model,
+                    embedding_method=payload.embeddingMethod,
+                    clustering_method=payload.clusteringMethod,
+                    problem_group_strategy=payload.problemGroupStrategy,
+                    similarity_threshold=payload.similarityThreshold,
+                    target_clusters=payload.targetClusters,
+                    hdbscan_min_samples=payload.hdbscanMinSamples,
+                    representative_count=payload.representativeCount,
+                    include_telemetry=payload.includeTelemetry,
+                    include_debug_samples=payload.includeDebugSamples,
+                    use_llm_labels=payload.useLlmLabels,
+                    suggest_taxonomy_rules=payload.suggestTaxonomyRules,
+                    llm_provider_name=payload.llmProvider,
+                    pause_okf_taxonomy=payload.pauseOkfTaxonomy,
+                    taxonomy_rules=taxonomy_rules,
+                    progress=lambda stage, detail: events.put({"type": "stage", "stage": stage, "detail": detail}),
+                )
+                events.put({"type": "result", "data": result})
+            except HTTPException as exception:
+                events.put({"type": "error", "detail": exception.detail})
+            except Exception as exception:  # noqa: BLE001 - surfaced to the client
+                events.put({"type": "error", "detail": str(exception)})
+            finally:
+                events.put(None)
+
+        def run_guarded():
+            # Same invariant as the chat streams: run() only queues its sentinel once it
+            # is inside its try block, so anything failing before that would leave the
+            # consumer below blocked on an empty queue forever.
+            try:
+                run()
+            except BaseException as exception:  # noqa: BLE001 - surfaced to the client
+                events.put({"type": "error", "detail": str(exception)})
+            finally:
+                events.put(None)
+
+        Thread(target=run_guarded, daemon=True).start()
+        while True:
+            event = events.get()
+            if event is None:
+                break
+            yield json.dumps(event) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 def _string_list(value, *, limit: int = 80, max_items: int = 80) -> tuple[str, ...]:

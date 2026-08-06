@@ -64,6 +64,9 @@ def test_grouping_counts_percentages_sorting_and_coverage():
         "duplicatesRemoved": 0, "processedTickets": 3, "problemGroups": 2,
         "coverageStatus": "complete", "taxonomyRules": len(DEFAULT_TAXONOMY),
         "llmFallbackStatus": "disabled",
+        "llmLabelStatus": "disabled", "llmGroupsRenamed": 0,
+        "taxonomySuggestionStatus": "disabled",
+        "embeddingMethod": "tfidf", "clusteringMethod": "taxonomy_semantic",
     }
 
 
@@ -110,6 +113,9 @@ def test_hierarchical_analysis_preserves_all_150_incidents():
         "duplicatesRemoved": 0, "processedTickets": 150, "problemGroups": 11,
         "coverageStatus": "complete", "taxonomyRules": len(DEFAULT_TAXONOMY),
         "llmFallbackStatus": "disabled",
+        "llmLabelStatus": "disabled", "llmGroupsRenamed": 0,
+        "taxonomySuggestionStatus": "disabled",
+        "embeddingMethod": "tfidf", "clusteringMethod": "taxonomy_semantic",
     }
     assert sum(group["incidentCount"] for group in result["groups"]) == 150
     names = {group["groupName"] for group in result["groups"]}
@@ -460,3 +466,255 @@ def test_llm_fallback_failure_keeps_classification_pipeline_alive(monkeypatch):
 
     assert result["manifest"]["llmFallbackStatus"].startswith("failed:")
     assert result["groups"][0]["groupName"] == "Other Service Issues"
+
+
+LOGIN_ROWS = [
+    {"incident_no": f"N{index}", "short_description": text}
+    for index, text in enumerate([
+        "SSO login failure for portal", "MFA prompt not received at login",
+        "SAML assertion rejected on sign in", "Session expires immediately after login",
+    ])
+]
+# Novel domain the default taxonomy does not cover, so grouping produces a
+# generated label — the only kind LLM naming is allowed to rewrite.
+NOVEL_ROWS = [
+    {"incident_no": f"C{index}", "short_description": "Research workspace calibration profile failed"}
+    for index in range(4)
+]
+
+
+def test_llm_naming_rewrites_generated_group_labels_and_reports_real_count(monkeypatch):
+    captured = {}
+
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        captured["payload"] = json.loads(prompt)
+        assert model == "local-test-model"
+        return json.dumps({"groups": [{
+            "index": 0,
+            "name": "Workforce Sign-In Breakdowns",
+            "description": "Staff cannot complete sign-in across SSO, MFA and session handling.",
+        }]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    progress_events = []
+    result = analyze_ticket_rows(
+        NOVEL_ROWS,
+        pause_okf_taxonomy=True,
+        llm_labels=True,
+        llm_model="local-test-model",
+        progress=lambda stage, detail: progress_events.append((stage, detail)),
+    )
+
+    group = result["groups"][0]
+    assert group["groupName"] == "Workforce Sign-In Breakdowns"
+    assert group["description"].startswith("Staff cannot complete sign-in")
+    assert group["llm_named"] is True
+    assert group["llm_original_name"] and group["llm_original_name"] != group["groupName"]
+    assert group["incidentCount"] == 4  # membership untouched by naming
+    assert result["manifest"]["llmLabelStatus"] == "used"
+    assert result["manifest"]["llmGroupsRenamed"] == 1
+    assert captured["payload"]["problemGroups"][0]["exampleTickets"]
+    assert progress_events[-1] == ("llm_labels", "local-test-model rewrote 1 of 1 problem group label(s)")
+
+
+def test_llm_naming_leaves_curated_taxonomy_labels_alone(monkeypatch):
+    def unexpected_chat(*args, **kwargs):
+        raise AssertionError("curated taxonomy labels must not be sent for renaming")
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", unexpected_chat)
+    result = analyze_ticket_rows(LOGIN_ROWS, llm_labels=True, llm_model="local-test-model")
+
+    assert result["groups"][0]["groupName"] == "Login, SSO & Session Authentication Failures"
+    assert result["manifest"]["llmLabelStatus"] == "not_needed"
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+
+
+def test_llm_naming_disabled_by_default_never_calls_the_model(monkeypatch):
+    def unexpected_chat(*args, **kwargs):
+        raise AssertionError("naming must not call the LLM when the toggle is off")
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", unexpected_chat)
+    result = analyze_ticket_rows(LOGIN_ROWS)
+
+    assert result["manifest"]["llmLabelStatus"] == "disabled"
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+    assert all("llm_named" not in group for group in result["groups"])
+
+
+def test_llm_naming_rejects_empty_and_colliding_labels(monkeypatch):
+    rows = NOVEL_ROWS + [
+        {"incident_no": f"D{index}", "short_description": text}
+        for index, text in enumerate([
+            "Telescope array alignment drift detected", "Telescope array alignment drift detected",
+            "Telescope array alignment drift detected", "Telescope array alignment drift detected",
+        ])
+    ]
+
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        payload = json.loads(prompt)
+        names = [entry["currentName"] for entry in payload["problemGroups"]]
+        return json.dumps({"groups": [
+            {"index": 0, "name": "  "},
+            {"index": 1, "name": names[0]},
+            {"index": 99, "name": "Ignored Out Of Range Group"},
+        ]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(rows, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    names = [group["groupName"] for group in result["groups"]]
+    assert len(names) == len(set(names))  # collision rejected, groups stay distinct
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+    assert result["manifest"]["llmLabelStatus"] == "no_changes"
+
+
+def test_llm_naming_failure_keeps_deterministic_labels(monkeypatch):
+    def failing_chat(*args, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", failing_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["manifest"]["llmLabelStatus"].startswith("failed:")
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+    assert result["groups"][0]["groupName"]
+
+
+CLUSTER_ROWS = [
+    {"incident_no": f"K{index}", "short_description": text}
+    for index, text in enumerate([
+        "Payment gateway timeout on checkout", "Payment gateway timeout at checkout page",
+        "Payment gateway declined without reason", "Payment gateway settlement delayed",
+        "Warehouse scanner will not pair", "Warehouse scanner battery drains fast",
+        "Warehouse scanner drops wifi mid shift", "Warehouse scanner firmware update failed",
+        "Kiosk display frozen in lobby", "Kiosk display shows black screen",
+        "Kiosk display touch not responding", "Kiosk display reboots randomly",
+    ])
+]
+
+
+def test_every_clustering_method_produces_groups_and_records_itself():
+    seen = {}
+    for method in ("taxonomy_semantic", "agglomerative", "kmeans", "hdbscan_lite", "google_kwikbucks"):
+        result = analyze_ticket_rows(
+            CLUSTER_ROWS, pause_okf_taxonomy=True, min_group_size=2,
+            clustering_method=method, target_clusters=3,
+        )
+        assert result["manifest"]["clusteringMethod"] == method
+        assert sum(group["incidentCount"] for group in result["groups"]) == len(CLUSTER_ROWS)
+        seen[method] = [group["groupName"] for group in result["groups"]]
+    # The methods are genuinely different engines, not one engine behind five labels.
+    assert len({tuple(names) for names in seen.values()}) > 1
+
+
+def test_kmeans_honours_the_target_cluster_count():
+    result = analyze_ticket_rows(
+        CLUSTER_ROWS, pause_okf_taxonomy=True, min_group_size=1,
+        clustering_method="kmeans", target_clusters=3,
+    )
+    assert len(result["groups"]) == 3
+
+
+def test_hdbscan_min_samples_controls_how_much_becomes_noise():
+    def noise(min_samples):
+        result = analyze_ticket_rows(
+            CLUSTER_ROWS, pause_okf_taxonomy=True, min_group_size=1,
+            clustering_method="hdbscan_lite", hdbscan_min_samples=min_samples,
+        )
+        return sum(g["incidentCount"] for g in result["groups"] if g["groupName"] == "Other Service Issues")
+
+    assert noise(8) > noise(2)
+
+
+def test_every_embedding_method_runs_and_is_recorded():
+    for method in ("tfidf", "neural_hash", "hybrid"):
+        result = analyze_ticket_rows(CLUSTER_ROWS, pause_okf_taxonomy=True, min_group_size=2, embedding_method=method)
+        assert result["manifest"]["embeddingMethod"] == method
+        assert sum(group["incidentCount"] for group in result["groups"]) == len(CLUSTER_ROWS)
+
+
+def test_tfidf_downweights_boilerplate_shared_by_every_ticket():
+    from backend.app.ticket_analysis import _build_vectors
+
+    texts = [
+        "Initial triage captured from self-service channel. Printer jam in finance",
+        "Initial triage captured from self-service channel. Payroll export failed",
+    ]
+    tfidf_vectors, tfidf_similarity = _build_vectors(texts, "tfidf")
+    raw_vectors, raw_similarity = _build_vectors(texts, "none")
+    assert tfidf_similarity(*tfidf_vectors) < raw_similarity(*raw_vectors)
+
+
+def test_taxonomy_suggestions_run_without_llm_fallback(monkeypatch):
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        assert "unmatchedClusters" in json.loads(prompt)
+        return json.dumps({"taxonomySuggestions": [{
+            "name": "Research Workspace Calibration",
+            "description": "Calibration failures in research workspaces.",
+            "patterns": ["workspace calibration", "calibration profile"],
+            "reason": "repeated unmatched pattern",
+        }]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(
+        NOVEL_ROWS, pause_okf_taxonomy=True, min_group_size=99,
+        suggest_taxonomy_rules=True, llm_model="local-test-model",
+    )
+
+    assert result["manifest"]["taxonomySuggestionStatus"] == "used"
+    assert result["taxonomySuggestions"][0]["patterns"] == ["workspace calibration", "calibration profile"]
+    # Suggestions are advisory: they must not invent groups or move tickets.
+    assert [group["groupName"] for group in result["groups"]] == ["Other Service Issues"]
+
+
+def test_taxonomy_suggestions_disabled_by_default_never_calls_the_model(monkeypatch):
+    def unexpected_chat(*args, **kwargs):
+        raise AssertionError("suggestions must not call the LLM when the toggle is off")
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", unexpected_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, min_group_size=99)
+
+    assert result["manifest"]["taxonomySuggestionStatus"] == "disabled"
+    assert result["taxonomySuggestions"] == []
+
+
+def test_ticket_analysis_stream_reports_real_stages_before_the_result():
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    topics = ["Payment gateway timeout on checkout", "Warehouse scanner will not pair"]
+    csv_bytes = b"number,short_description\n" + b"\n".join(
+        f"INC{index},{topics[index % 2]} {index}".encode() for index in range(6)
+    )
+    with TestClient(app) as client:
+        upload = client.post(
+            "/api/files",
+            data={"store_id": 2},
+            files={"file": ("stream-tickets.csv", csv_bytes, "text/csv")},
+        )
+        assert upload.status_code == 201
+        file_id = upload.json()["id"]
+
+        stages, result = [], None
+        with client.stream("POST", "/api/ticket-analysis/stream", json={
+            "fileId": file_id, "clusteringMethod": "kmeans", "targetClusters": 2,
+            "pauseOkfTaxonomy": True, "minGroupSize": 1,
+        }) as response:
+            assert response.status_code == 200
+            for line in response.iter_lines():
+                if not line.strip():
+                    continue
+                event = json.loads(line)
+                if event["type"] == "stage":
+                    stages.append(event["stage"])
+                elif event["type"] == "result":
+                    result = event["data"]
+                else:
+                    raise AssertionError(event)
+
+    # Stage names are the pipeline's own, streamed as the work happens.
+    assert stages[0] == "ingest"
+    assert stages[-1] == "complete"
+    assert "cluster" in stages
+    assert result["manifest"]["clusteringMethod"] == "kmeans"
+    assert len(result["groups"]) == 2

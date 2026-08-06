@@ -36,6 +36,11 @@ STOP_WORDS = {
 }
 LLM_FALLBACK_MAX_ATOMICS = 40
 LLM_FALLBACK_MIN_CONFIDENCE = 0.58
+LLM_NAMING_MAX_GROUPS = 24
+LLM_NAMING_MAX_EXAMPLES = 4
+# Renaming this bucket would break the unresolved-ticket accounting in the
+# pipeline trace and the overflow rules below, which both match it by name.
+LLM_NAMING_PROTECTED_NAMES = {"other service issues"}
 
 
 
@@ -160,9 +165,55 @@ def _cosine(left: Counter[str], right: Counter[str]) -> float:
     return numerator / denominator if denominator else 0.0
 
 
-def _cluster(tickets: list[NormalizedTicket], threshold: float) -> list[list[int]]:
-    vectors = [_tokens(ticket.primary_text) for ticket in tickets]
-    parents = list(range(len(tickets)))
+def _idf(token_sets: list[Counter[str]]) -> dict[str, float]:
+    documents = len(token_sets) or 1
+    frequency = Counter(token for tokens in token_sets for token in tokens)
+    return {token: math.log((documents + 1) / (count + 1)) + 1.0 for token, count in frequency.items()}
+
+
+def _dense_cosine(left: list[float], right: list[float]) -> float:
+    numerator = sum(a * b for a, b in zip(left, right))
+    denominator = math.sqrt(sum(a * a for a in left) * sum(b * b for b in right))
+    return numerator / denominator if denominator else 0.0
+
+
+def _build_vectors(texts: list[str], method: str) -> tuple[list[Any], Callable[[Any, Any], float]]:
+    """Vectorize signature texts with the embedding backend the run selected.
+
+    `tfidf` is genuinely inverse-document-frequency weighted rather than raw term
+    counts, so boilerplate shared by every ticket stops dominating similarity.
+    `neural_hash` reuses the app's embedding stack (fastembed, hash fallback);
+    `hybrid` averages both so lexical overlap and semantic proximity must agree.
+    """
+    token_sets = [_tokens(text) for text in texts]
+    if method == "tfidf":
+        weights = _idf(token_sets)
+        sparse = [Counter({token: count * weights.get(token, 1.0) for token, count in tokens.items()}) for tokens in token_sets]
+        return sparse, _cosine
+    if method == "neural_hash":
+        from .vector_store import embed_passages
+        return embed_passages(texts), _dense_cosine
+    if method == "hybrid":
+        from .vector_store import embed_passages
+        weights = _idf(token_sets)
+        sparse = [Counter({token: count * weights.get(token, 1.0) for token, count in tokens.items()}) for tokens in token_sets]
+        dense = embed_passages(texts)
+        return list(zip(sparse, dense)), lambda left, right: (_cosine(left[0], right[0]) + _dense_cosine(left[1], right[1])) / 2
+    return token_sets, _cosine
+
+
+def _similarity_matrix(vectors: list[Any], similarity: Callable[[Any, Any], float]) -> list[list[float]]:
+    size = len(vectors)
+    matrix = [[1.0] * size for _ in range(size)]
+    for left in range(size):
+        for right in range(left + 1, size):
+            score = similarity(vectors[left], vectors[right])
+            matrix[left][right] = matrix[right][left] = score
+    return matrix
+
+
+def _connected_components(size: int, edges: Iterable[tuple[int, int]]) -> list[list[int]]:
+    parents = list(range(size))
 
     def find(value: int) -> int:
         while parents[value] != value:
@@ -170,19 +221,188 @@ def _cluster(tickets: list[NormalizedTicket], threshold: float) -> list[list[int
             value = parents[value]
         return value
 
-    def union(left: int, right: int) -> None:
+    for left, right in edges:
         left_root, right_root = find(left), find(right)
         if left_root != right_root:
             parents[right_root] = left_root
-
-    for left in range(len(tickets)):
-        for right in range(left + 1, len(tickets)):
-            if _cosine(vectors[left], vectors[right]) >= threshold:
-                union(left, right)
     grouped: dict[int, list[int]] = {}
-    for index in range(len(tickets)):
+    for index in range(size):
         grouped.setdefault(find(index), []).append(index)
     return list(grouped.values())
+
+
+def _agglomerative_clusters(matrix: list[list[float]], threshold: float, target_clusters: int | None) -> list[list[int]]:
+    """Average-link agglomeration: merge the closest pair until the link falls
+    below the threshold, or until the requested cluster count is reached."""
+    clusters = [[index] for index in range(len(matrix))]
+    floor = max(1, target_clusters or 1)
+    while len(clusters) > floor:
+        best = (0.0, -1, -1)
+        for left in range(len(clusters)):
+            for right in range(left + 1, len(clusters)):
+                pairs = [matrix[a][b] for a in clusters[left] for b in clusters[right]]
+                score = sum(pairs) / len(pairs)
+                if score > best[0]:
+                    best = (score, left, right)
+        score, left, right = best
+        if left < 0 or (score < threshold and len(clusters) <= (target_clusters or 0)):
+            break
+        if score < threshold and not target_clusters:
+            break
+        if score <= 0:
+            break
+        clusters[left].extend(clusters.pop(right))
+    return clusters
+
+
+def _kmeans_clusters(vectors: list[Any], similarity: Callable[[Any, Any], float], target_clusters: int | None) -> list[list[int]]:
+    """k-means in similarity space: seeded farthest-first, then assign-to-nearest
+    -medoid rounds. Medoids keep this valid for sparse Counters and dense lists
+    alike, which a mean-based centroid would not be."""
+    size = len(vectors)
+    k = max(1, min(target_clusters or max(1, int(math.sqrt(size))), size))
+    medoids = [0]
+    while len(medoids) < k:
+        farthest, best_distance = None, -1.0
+        for index in range(size):
+            if index in medoids:
+                continue
+            distance = min(1.0 - similarity(vectors[index], vectors[medoid]) for medoid in medoids)
+            if distance > best_distance:
+                farthest, best_distance = index, distance
+        if farthest is None:
+            break
+        medoids.append(farthest)
+    assignments = [0] * size
+    for _ in range(8):
+        clusters: dict[int, list[int]] = {medoid: [] for medoid in medoids}
+        for index in range(size):
+            best_medoid = max(medoids, key=lambda medoid: similarity(vectors[index], vectors[medoid]))
+            clusters[best_medoid].append(index)
+            assignments[index] = best_medoid
+        updated = []
+        for medoid, members in clusters.items():
+            if not members:
+                continue
+            best = max(members, key=lambda candidate: sum(similarity(vectors[candidate], vectors[other]) for other in members))
+            updated.append(best)
+        if sorted(updated) == sorted(medoids):
+            break
+        medoids = updated or medoids
+    grouped: dict[int, list[int]] = {}
+    for index, medoid in enumerate(assignments):
+        grouped.setdefault(medoid, []).append(index)
+    return [members for members in grouped.values() if members]
+
+
+def _hdbscan_lite_clusters(matrix: list[list[float]], threshold: float, min_samples: int) -> tuple[list[list[int]], list[int]]:
+    """Density-based grouping: only points with enough close neighbours are core
+    points and may extend a cluster. Everything else is returned as noise instead
+    of being forced into a group."""
+    size = len(matrix)
+    neighbours = [
+        [other for other in range(size) if other != index and matrix[index][other] >= threshold]
+        for index in range(size)
+    ]
+    core = {index for index in range(size) if len(neighbours[index]) >= max(1, min_samples) - 1}
+    edges = [
+        (index, other)
+        for index in core
+        for other in neighbours[index]
+        if other in core or len(neighbours[other]) >= 1
+    ]
+    components = _connected_components(size, edges)
+    clusters, noise = [], []
+    for component in components:
+        if any(index in core for index in component) and len(component) > 1:
+            clusters.append(component)
+        else:
+            noise.extend(component)
+    return clusters, noise
+
+
+def _kwikbucks_clusters(matrix: list[list[float]], threshold: float, oracle_budget: int) -> list[list[int]]:
+    """KwikBucks-style correlation clustering: the cheap similarity signal ranks
+    candidate pairs, and a limited budget of stricter 'oracle' comparisons (a
+    higher bar on the same matrix) decides which edges are real. Pairs the budget
+    never reaches stay unlinked, so precision beats recall here by design."""
+    size = len(matrix)
+    ranked = sorted(
+        ((matrix[left][right], left, right) for left in range(size) for right in range(left + 1, size)),
+        reverse=True,
+    )
+    oracle_threshold = min(0.95, threshold * 1.25)
+    edges = []
+    for score, left, right in ranked[:max(1, oracle_budget)]:
+        if score >= threshold and score >= oracle_threshold:
+            edges.append((left, right))
+    return _connected_components(size, edges)
+
+
+def _calibrated_threshold(matrix: list[list[float]], threshold: float, base: float, span: float) -> float:
+    """Turn the similarity slider into a percentile of the observed distribution.
+
+    Absolute cosine is not comparable across vector spaces: lexical vectors are
+    sparse and mostly near-orthogonal, while dense embeddings put nearly every
+    pair above 0.7, so a single fixed cut either merges everything or nothing.
+    Reading the slider as "how selective to be" keeps it meaningful in both.
+
+    `base`/`span` set how selective the calling method needs to be. Single-link
+    methods chain — one surviving edge welds two clusters together — so they ask
+    for a far higher percentile than average-link or medoid methods, which are
+    not chaining-prone.
+    """
+    scores = sorted(matrix[left][right] for left in range(len(matrix)) for right in range(left + 1, len(matrix)))
+    if not scores:
+        return threshold
+    percentile = min(0.995, max(0.05, base + span * threshold))
+    return scores[min(len(scores) - 1, int(percentile * len(scores)))]
+
+
+def _discovery_clusters(
+    texts: list[str],
+    *,
+    embedding_method: str,
+    clustering_method: str,
+    threshold: float,
+    target_clusters: int | None,
+    min_samples: int,
+) -> tuple[list[list[int]], list[int]]:
+    """Route signature texts through the selected embedding + clustering pair.
+
+    Returns (clusters, noise). Only hdbscan_lite produces real noise; the other
+    methods place every signature, and small or incoherent clusters are filtered
+    downstream by min_group_size instead.
+    """
+    if not texts:
+        return [], []
+    vectors, similarity = _build_vectors(texts, embedding_method)
+    if clustering_method == "kmeans":
+        return _kmeans_clusters(vectors, similarity, target_clusters), []
+    matrix = _similarity_matrix(vectors, similarity)
+    # Dense spaces, and density clustering in any space, need a distribution-
+    # relative radius; the lexical default keeps its absolute cosine cut.
+    dense = embedding_method in {"neural_hash", "hybrid"}
+    if dense and clustering_method in {"taxonomy_semantic", "google_kwikbucks"}:
+        threshold = _calibrated_threshold(matrix, threshold, 0.90, 0.09)
+    elif clustering_method == "hdbscan_lite":
+        threshold = _calibrated_threshold(matrix, threshold, 0.92, 0.07)
+    elif dense:
+        threshold = _calibrated_threshold(matrix, threshold, 0.40, 0.60)
+    if clustering_method == "agglomerative":
+        return _agglomerative_clusters(matrix, threshold, target_clusters), []
+    if clustering_method == "hdbscan_lite":
+        return _hdbscan_lite_clusters(matrix, threshold, min_samples)
+    if clustering_method == "google_kwikbucks":
+        budget = max(len(texts) * 4, (target_clusters or 12) * 8)
+        return _kwikbucks_clusters(matrix, threshold, budget), []
+    edges = [
+        (left, right)
+        for left in range(len(texts))
+        for right in range(left + 1, len(texts))
+        if matrix[left][right] >= threshold
+    ]
+    return _connected_components(len(texts), edges), []
 
 
 def _group_label(tickets: list[NormalizedTicket]) -> tuple[str, str, float]:
@@ -424,17 +644,25 @@ def _semantic_discovery_groups(
     representative_count: int,
     min_group_size: int,
     taxonomy: tuple[TaxonomyRule, ...],
+    embedding_method: str = "tfidf",
+    clustering_method: str = "taxonomy_semantic",
+    target_clusters: int | None = None,
+    min_samples: int = 3,
 ) -> tuple[list[dict[str, Any]], list[_AtomicGroup]]:
     if not atomics:
         return [], []
-    signatures = [
-        NormalizedTicket(None, None, None, _semantic_core(atomic.tickets[0]))
-        for atomic in atomics
-    ]
+    signatures = [_semantic_core(atomic.tickets[0]) for atomic in atomics]
     effective_threshold = min(0.72, max(0.42, similarity_threshold * 0.75))
-    clusters = _cluster(signatures, effective_threshold)
+    clusters, noise = _discovery_clusters(
+        signatures,
+        embedding_method=embedding_method,
+        clustering_method=clustering_method,
+        threshold=effective_threshold,
+        target_clusters=target_clusters,
+        min_samples=min_samples,
+    )
     groups = []
-    other_atomics: list[_AtomicGroup] = []
+    other_atomics: list[_AtomicGroup] = [atomics[index] for index in noise]
     for indices in clusters:
         members = [atomics[index] for index in indices]
         count = sum(len(atomic.tickets) for atomic in members)
@@ -635,6 +863,187 @@ def _llm_assisted_unknown_groups(
     return groups, unresolved, suggestions, status
 
 
+def _llm_relabel_groups(
+    groups: list[dict[str, Any]],
+    taxonomy: tuple[TaxonomyRule, ...] = (),
+    model: str | None = None,
+    progress: Callable[[str, str], None] | None = None,
+) -> tuple[int, str]:
+    """Rewrite final group names/descriptions with the LLM, in place.
+
+    Naming is strictly 1:1 and cosmetic: the model may reword a label but can
+    never merge, split, reorder, or re-assign groups, so ticket membership stays
+    exactly where the deterministic pipeline put it. A proposal is rejected if it
+    is empty, degenerate, or would collide with another group's key — so the
+    reported rename count is what actually changed, never the group total.
+
+    Groups carrying a curated taxonomy rule name keep it: those labels are the
+    reviewed vocabulary the taxonomy exists to enforce, so only generated and
+    clustered labels are open to rewriting. When the taxonomy is paused there is
+    no curated vocabulary to protect and every group becomes a candidate.
+    """
+    curated = {normalize_signal(rule.name) for rule in taxonomy}
+    candidates = [
+        (index, group) for index, group in enumerate(groups)
+        if _key(group.get("groupName")) not in LLM_NAMING_PROTECTED_NAMES
+        and normalize_signal(str(group.get("groupName") or "")) not in curated
+    ][:LLM_NAMING_MAX_GROUPS]
+    if not candidates:
+        return 0, "not_needed"
+
+    selected_model = model or configured_model()
+    payload = [
+        {
+            "index": position,
+            "currentName": str(group.get("groupName") or ""),
+            "currentDescription": str(group.get("description") or ""),
+            "ticketCount": int(group.get("incidentCount") or 0),
+            "exampleTickets": [
+                str(ticket.get("title"))[:240]
+                for ticket in (group.get("representativeTickets") or [])[:LLM_NAMING_MAX_EXAMPLES]
+                if ticket.get("title")
+            ],
+        }
+        for position, (_, group) in enumerate(candidates)
+    ]
+    prompt = {
+        "problemGroups": payload,
+        "instructions": {
+            "scope": "Improve only the name and description of each group. Never merge, split, drop, or re-order groups.",
+            "indices": "Return one entry per provided index. Use only the given index values.",
+            "naming": "Name the underlying business/IT pain point in 3-8 words, specific enough to distinguish it from the other groups. No ticket ids, no counts, no vendor-neutral filler like 'Various Issues'.",
+            "description": "One sentence describing what the tickets in the group have in common and the impact on users.",
+            "keep": "If the current name is already accurate and specific, return it unchanged.",
+        },
+    }
+    try:
+        diagnostic_event("ticket_analysis.llm_naming.request", groups=len(candidates), model=selected_model)
+        if progress:
+            progress("llm_labels", f"Calling {selected_model} to improve {len(candidates)} problem group name(s)")
+        result = _json_object(_chat(
+            "You are an ITSM reporting analyst writing problem-group labels for an executive summary. "
+            "Return JSON only with key groups: an array of {index, name, description}. "
+            "Keep every group distinct from the others and grounded in its example tickets.",
+            json.dumps(prompt),
+            selected_model,
+            0.0,
+            1800,
+            max_retry_after_seconds=2,
+        ))
+    except Exception as exception:
+        diagnostic_event("ticket_analysis.llm_naming.error", exception_type=type(exception).__name__)
+        if progress:
+            progress("llm_labels", f"{selected_model} group naming skipped: {type(exception).__name__}")
+        return 0, f"failed: {type(exception).__name__}"
+
+    raw_groups = result.get("groups") if isinstance(result, dict) else []
+    if not isinstance(raw_groups, list):
+        raw_groups = []
+    taken = {_normalized_group_key(str(group.get("groupName") or "")) for group in groups}
+    renamed = 0
+    for raw in raw_groups:
+        if not isinstance(raw, dict):
+            continue
+        try:
+            position = int(raw.get("index"))
+        except (TypeError, ValueError):
+            continue
+        if not 0 <= position < len(candidates):
+            continue
+        group = candidates[position][1]
+        current_name = str(group.get("groupName") or "")
+        name = re.sub(r"\s+", " ", str(raw.get("name") or raw.get("groupName") or "")).strip()[:140]
+        description = re.sub(r"\s+", " ", str(raw.get("description") or "")).strip()[:500]
+        current_key = _normalized_group_key(current_name)
+        new_key = _normalized_group_key(name)
+        name_ok = bool(name) and len(name) >= 3 and re.search(r"[a-z]", name, re.I) is not None
+        if name_ok and new_key != current_key and new_key in taken:
+            name_ok = False  # would collide with another group's label
+        changed = False
+        if name_ok and name != current_name:
+            taken.discard(current_key)
+            taken.add(new_key)
+            group["llm_original_name"] = current_name
+            group["groupName"] = name
+            changed = True
+        if description and description != str(group.get("description") or ""):
+            group["description"] = description
+            changed = True
+        if changed:
+            group["llm_named"] = True
+            renamed += 1
+
+    status = "used" if renamed else "no_changes"
+    diagnostic_event("ticket_analysis.llm_naming.response", renamed=renamed, candidates=len(candidates), status=status)
+    if progress:
+        progress("llm_labels", f"{selected_model} rewrote {renamed} of {len(candidates)} problem group label(s)")
+    return renamed, status
+
+
+def _llm_taxonomy_suggestions(
+    atomics: list[_AtomicGroup],
+    taxonomy: tuple[TaxonomyRule, ...],
+    model: str | None = None,
+    progress: Callable[[str, str], None] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Propose durable taxonomy rules for clusters nothing claimed.
+
+    Independent of LLM fallback: this only ever returns suggestions for a human
+    to approve, and never assigns a ticket or creates a group, so it is safe to
+    run on its own. Suggestions without concrete patterns are dropped — a rule
+    with no signals cannot be applied later.
+    """
+    if not atomics:
+        return [], "not_needed"
+    selected = atomics[:LLM_FALLBACK_MAX_ATOMICS]
+    selected_model = model or configured_model()
+    prompt = {
+        "existingTaxonomy": [{"name": rule.name, "signals": list(rule.patterns[:8])} for rule in taxonomy],
+        "unmatchedClusters": [
+            {"index": index, "ticketCount": len(atomic.tickets), "examples": _ticket_examples(atomic)}
+            for index, atomic in enumerate(selected)
+        ],
+        "instructions": {
+            "scope": "Propose new taxonomy rules only for patterns that will recur. Ignore one-off tickets.",
+            "duplicates": "Do not propose a rule that duplicates an existing taxonomy entry.",
+            "patterns": "Every rule needs concrete keyword patterns that would match future tickets.",
+        },
+    }
+    try:
+        diagnostic_event("ticket_analysis.taxonomy_suggestions.request", clusters=len(selected), model=selected_model)
+        if progress:
+            progress("taxonomy_suggestions", f"Calling {selected_model} for taxonomy rule suggestions on {len(selected)} unmatched cluster(s)")
+        result = _json_object(_chat(
+            "You are an ITSM taxonomy curator. Return JSON only with key taxonomySuggestions: "
+            "an array of {name, description, patterns, contexts, reason}. Suggest nothing when no pattern is durable.",
+            json.dumps(prompt),
+            selected_model,
+            0.0,
+            1200,
+            max_retry_after_seconds=2,
+        ))
+    except Exception as exception:
+        diagnostic_event("ticket_analysis.taxonomy_suggestions.error", exception_type=type(exception).__name__)
+        if progress:
+            progress("taxonomy_suggestions", f"{selected_model} taxonomy suggestions skipped: {type(exception).__name__}")
+        return [], f"failed: {type(exception).__name__}"
+
+    raw = result.get("taxonomySuggestions") if isinstance(result, dict) else []
+    suggestions: list[dict[str, Any]] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            suggestion = _clean_suggestion(item)
+            if suggestion and suggestion["patterns"] and suggestion not in suggestions:
+                suggestions.append(suggestion)
+    status = "used" if suggestions else "no_suggestions"
+    diagnostic_event("ticket_analysis.taxonomy_suggestions.response", suggestions=len(suggestions), status=status)
+    if progress:
+        progress("taxonomy_suggestions", f"{selected_model} proposed {len(suggestions)} taxonomy rule(s)")
+    return suggestions, status
+
+
 def _normalized_group_key(name: str) -> str:
     words = normalize_signal(name).split()
     while words and words[-1] in {"issue", "issues"}:
@@ -714,7 +1123,13 @@ def analyze_ticket_rows(
     taxonomy: tuple[TaxonomyRule, ...] = DEFAULT_TAXONOMY,
     pause_okf_taxonomy: bool = False,
     strategy: str = "taxonomy_then_cluster",
+    embedding_method: str = "tfidf",
+    clustering_method: str = "taxonomy_semantic",
+    target_clusters: int | None = None,
+    hdbscan_min_samples: int = 3,
     llm_fallback: bool = False,
+    llm_labels: bool = False,
+    suggest_taxonomy_rules: bool = False,
     llm_model: str | None = None,
     progress: Callable[[str, str], None] | None = None,
 ) -> dict[str, Any]:
@@ -734,10 +1149,18 @@ def analyze_ticket_rows(
         groups, unclassified = _hierarchical_groups(tickets, representative_count, active_taxonomy)
     taxonomy_suggestions: list[dict[str, Any]] = []
     llm_fallback_status = "disabled" if not llm_fallback else "not_needed"
+    suggestion_status = "disabled" if not suggest_taxonomy_rules else "not_needed"
+    held_for_suggestions: list[_AtomicGroup] = []
     if unclassified and taxonomy_only:
         groups.append(_other_service_group(unclassified, representative_count, "taxonomy only: unmatched tickets held for review"))
     elif unclassified:
-        discovered_groups, unresolved = _semantic_discovery_groups(unclassified, similarity_threshold, representative_count, min_group_size, active_taxonomy)
+        discovered_groups, unresolved = _semantic_discovery_groups(
+            unclassified, similarity_threshold, representative_count, min_group_size, active_taxonomy,
+            embedding_method=embedding_method,
+            clustering_method=clustering_method,
+            target_clusters=target_clusters,
+            min_samples=hdbscan_min_samples,
+        )
         groups.extend(discovered_groups)
         if unresolved and llm_fallback:
             llm_groups, unresolved, suggestions, llm_fallback_status = _llm_assisted_unknown_groups(
@@ -750,8 +1173,20 @@ def analyze_ticket_rows(
             )
             groups.extend(llm_groups)
             taxonomy_suggestions.extend(suggestions)
+        held_for_suggestions = list(unresolved)
         if unresolved:
             groups.append(_other_service_group(unresolved, representative_count))
+    elif taxonomy_only:
+        held_for_suggestions = list(unclassified)
+    # Suggestions are advisory only, so they run on whatever stayed unmatched
+    # regardless of whether LLM fallback was allowed to create groups from it.
+    if suggest_taxonomy_rules and held_for_suggestions:
+        suggestions, suggestion_status = _llm_taxonomy_suggestions(
+            held_for_suggestions, active_taxonomy, llm_model, progress,
+        )
+        for suggestion in suggestions:
+            if suggestion not in taxonomy_suggestions:
+                taxonomy_suggestions.append(suggestion)
     groups = _consolidate_groups(groups, active_taxonomy, representative_count)
     groups.sort(key=lambda group: group["incidentCount"], reverse=True)
     if len(groups) > max_groups:
@@ -778,11 +1213,20 @@ def analyze_ticket_rows(
     for group in groups:
         group["percentage"] = round((group["incidentCount"] / total) * 100, 1) if total else 0.0
     groups.sort(key=lambda group: group["incidentCount"], reverse=True)
+    # Naming runs last, on the surviving groups only, so the LLM sees the same
+    # labels the user will and no tokens are spent on groups that get capped.
+    groups_renamed = 0
+    llm_label_status = "disabled"
+    if llm_labels:
+        groups_renamed, llm_label_status = _llm_relabel_groups(groups, active_taxonomy, llm_model, progress)
     manifest = {
             "totalRows": len(rows), "validTickets": total, "emptyTicketsRemoved": empty,
             "duplicatesRemoved": duplicates, "processedTickets": total,
             "problemGroups": len(groups), "coverageStatus": "complete",
             "taxonomyRules": len(active_taxonomy), "llmFallbackStatus": llm_fallback_status,
+            "llmLabelStatus": llm_label_status, "llmGroupsRenamed": groups_renamed,
+            "taxonomySuggestionStatus": suggestion_status,
+            "embeddingMethod": embedding_method, "clusteringMethod": clustering_method,
     }
     if pause_okf_taxonomy:
         manifest["okfTaxonomyPaused"] = True
@@ -807,7 +1251,8 @@ def ticket_analysis_markdown(result: dict[str, Any]) -> str:
         f"- Empty/duplicate tickets removed: {removed}",
         f"- Problem groups found: {manifest['problemGroups']}",
         f"- Taxonomy rules available: {manifest.get('taxonomyRules', len(DEFAULT_TAXONOMY))}",
-        f"- LLM fallback: {manifest.get('llmFallbackStatus', 'disabled')}", "",
+        f"- LLM fallback: {manifest.get('llmFallbackStatus', 'disabled')}",
+        f"- LLM naming: {manifest.get('llmLabelStatus', 'disabled')} ({manifest.get('llmGroupsRenamed', 0)} group(s) relabelled)", "",
         "## Problem Groups", "", "| Rank | Problem Group | Count | % |", "|---:|---|---:|---:|",
     ]
     lines.extend(f"| {rank} | {group['groupName']} | {group['incidentCount']} | {group['percentage']:.1f}% |" for rank, group in enumerate(groups, 1))

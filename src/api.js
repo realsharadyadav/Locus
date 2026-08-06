@@ -69,6 +69,32 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, model, ...options }),
   }),
+  ticketAnalysisStream: async (fileId, maxGroups, minGroupSize, useLlmFallback = false, model, options = {}, onEvent = () => {}) => {
+    const response = checkAuthorized(await fetch(`${API_BASE}/api/ticket-analysis/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, model, ...options }),
+    }));
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Unable to start the analysis pipeline');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = ''; let result = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n'); buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        onEvent(event);
+        if (event.type === 'result') result = event.data;
+        if (event.type === 'error') throw new Error(event.detail);
+      }
+      if (done) break;
+    }
+    if (!result) throw new Error('The analysis pipeline ended without a result');
+    return result;
+  },
   ticketAnalysisOkfTaxonomy: () => request('/ticket-analysis/okf-taxonomy'),
   ticketAnalysisHistory: () => request('/ticket-analysis/history'),
   ticketAnalysisHistoryDetail: (id) => request(`/ticket-analysis/history/${id}`),

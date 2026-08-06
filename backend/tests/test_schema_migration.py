@@ -100,7 +100,11 @@ def test_stream_terminates_when_the_worker_dies_before_its_try_block():
     consumer loop blocks on an empty queue and the request hangs open forever.
     """
     source = inspect_module.getsource(main_module)
-    assert source.count("def run_guarded():") == 2, "a streaming endpoint lost its sentinel guard"
+    # Counted against the streams themselves rather than a fixed number, so adding a
+    # streaming endpoint without a guard fails here instead of silently passing.
+    assert source.count("def run_guarded():") == source.count("def event_stream():"), (
+        "a streaming endpoint lost its sentinel guard"
+    )
     assert "Thread(target=run, daemon=True)" not in source, (
         "a stream still starts run() directly, so a pre-try failure would hang the response"
     )

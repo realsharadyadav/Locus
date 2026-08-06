@@ -220,7 +220,7 @@ that will bite you again if forgotten.
 
 | File | Purpose | Key Functions |
 |---|---|---|
-| `ticket_analysis.py` | Ticket normalization, cleaning, hierarchical grouping, semantic clustering, taxonomy classification, markdown report | `analyze_ticket_file()` — main entry; `normalize_ticket()` — field extraction; `clean_tickets()` — dedup + normalization; `ticket_analysis_markdown()` — report gen |
+| `ticket_analysis.py` | Ticket normalization, cleaning, hierarchical grouping, semantic clustering, taxonomy classification, markdown report | `analyze_ticket_file()` — main entry; `normalize_ticket()` — field extraction; `clean_tickets()` — dedup + normalization; `ticket_analysis_markdown()` — report gen; `_llm_relabel_groups()` — optional LLM rewrite of final group names/descriptions (`llm_labels=True`), strictly 1:1, never re-assigns tickets, skips curated taxonomy names; `_llm_taxonomy_suggestions()` — advisory rule proposals (`suggest_taxonomy_rules=True`), independent of LLM fallback; `_discovery_clusters()` — routes the run's embedding (tfidf/neural_hash/hybrid) and clustering (taxonomy_semantic/agglomerative/kmeans/hdbscan_lite/google_kwikbucks) choice, with `_calibrated_threshold()` making the similarity slider mean the same thing in sparse and dense spaces |
 | `ticket_taxonomy.py` | ITSM taxonomy engine: v2 rule-based scoring with overrides, record type detection, confidence | `classify_ticket_v2()` — main classifier; `find_taxonomy_match()` — rule matching; `normalize_signal()` — text normalization |
 | `ticket_taxonomy_data.py` | All taxonomy rules: 9 legacy + 25 v2 rules covering ITSM domain | `DEFAULT_TAXONOMY_V2` — rule list; `TaxonomyRuleV2` dataclass |
 

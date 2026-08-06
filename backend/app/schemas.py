@@ -81,6 +81,7 @@ class TicketAnalysisRequest(BaseModel):
     includeTelemetry: bool = True
     includeDebugSamples: bool = True
     useLlmLabels: bool = False
+    suggestTaxonomyRules: bool = False
     llmProvider: str | None = None
     pauseOkfTaxonomy: bool = False
     taxonomyRules: list[dict[str, Any]] | None = None
