@@ -10,6 +10,7 @@ dist/
 *.db-journal
 *.sqlite3
 backend/uploads/
+backend/secret_images/
 backend/vector_fallback/
 backend/diagnostics/jobs/
 __pycache__/

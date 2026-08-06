@@ -208,7 +208,7 @@ class SecretImage(Base):
     __tablename__ = "secret_images"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    r2_key: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    file_path: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
     original_filename: Mapped[str] = mapped_column(String(255), default="")
