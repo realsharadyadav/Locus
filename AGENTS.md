@@ -165,6 +165,11 @@ that will bite you again if forgotten.
     back out of the diagram source (`lib/mermaidMeta.js`: frontmatter `title:` and `classDef` names),
     so they cannot drift from the drawing — and `dropDrawnTitle` removes Mermaid's own in-SVG title
     and trims the viewBox band it occupied, or the title renders twice and wastes ~40% of the height.
+    Fitting runs in a **layout** effect (a plain effect paints Mermaid's own full-size layout for one
+    frame first — that jump is what reads as flicker), only re-runs when the available width actually
+    changed (writing the width can add or remove a scrollbar, which wakes the ResizeObserver straight
+    back up), and the canvas holds the SVG at `opacity: 0` until `data-fitted` appears so the first
+    visible frame is the fitted one. A MutationObserver re-fits if anything strips the sized width.
 
 18. **The diagram lightbox owns its touch gestures** — pinch is implemented from pointer events
     (a Map of live pointers; two entries is a pinch), zooming about the focal point so content stays
@@ -182,6 +187,19 @@ that will bite you again if forgotten.
     (`!important` where the earlier rule used it, four-class selectors where the earlier rule was
     three-plus-an-element). Symptom of getting this wrong is a rule that appears to do nothing —
     check the computed value before assuming the selector is unmatched.
+
+20. **Every Mermaid render needs a fresh id** — `mermaid.render(id, code)` scopes the diagram's
+    stylesheet to `id` and looks the element up by it while drawing, and React mounts that same
+    markup. Reusing one id per component means the second render (theme switch, or the narrow-screen
+    re-layout below) collides with the diagram already on screen: the mounted one gets reset to its
+    unfitted state and the new one comes back as an empty, viewBox-less shell. `useMermaidRender`
+    therefore takes a new `mermaid-diagram-N` per render call, not per component.
+
+21. **Narrow screens re-flow `LR` flowcharts to `TD`** — an LLM's default left-to-right flowchart is
+    ~1500px wide, of which a phone shows two nodes even at the legibility floor. `reflowDiagramTopDown`
+    rewrites only the top-level direction (a `direction LR` inside a subgraph keeps its row layout)
+    below the same 640px breakpoint the diagram CSS uses. Only what is *drawn* is re-oriented — copy
+    and "view source" still return the author's original diagram.
 
 ---
 

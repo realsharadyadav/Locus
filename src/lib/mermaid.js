@@ -78,6 +78,20 @@ export function autoFixMermaidSubgraphCycles(code) {
     .join('\n');
 }
 
+// A left-to-right flowchart is the shape LLMs reach for by default, and it is the worst possible
+// shape for a phone: nine nodes in a row means a 1500px-wide drawing, of which a 375px screen shows
+// two. The same graph drawn top-down is narrow and tall — and vertical is the direction a phone has
+// room in. Only the top-level direction is rewritten; a `direction LR` inside a subgraph keeps its
+// row layout, which is what makes those groups readable in the first place.
+export function reflowDiagramTopDown(code) {
+  let done = false;
+  return (code || '').replace(/^(\s*(?:flowchart|graph)[ \t]+)(LR|RL)\b/gim, (match, head) => {
+    if (done) return match;
+    done = true;
+    return `${head}TD`;
+  });
+}
+
 export function repairMermaidCode(code) {
   return autoFixMermaidSubgraphCycles(autoQuoteMermaidLabels(code));
 }
@@ -110,9 +124,7 @@ export function hasRecognizedDiagramType(code) {
 export function useMermaidRender(code) {
   const [result, setResult] = useState({ svg: null, error: null });
   const [themeTick, setThemeTick] = useState(0);
-  const idRef = useRef(null);
   const lastRenderedRef = useRef({ code: null, themeTick: null });
-  if (!idRef.current) idRef.current = `mermaid-diagram-${++mermaidDiagramSeq}`;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setThemeTick(tick => tick + 1));
@@ -132,6 +144,12 @@ export function useMermaidRender(code) {
       return undefined;
     }
     let cancelled = false;
+    // A fresh id per render, never one per component. Mermaid scopes the diagram's stylesheet to
+    // this id and looks the element up by it while drawing — so rendering again under an id whose
+    // markup is already mounted (a theme switch, or a re-layout for a narrower screen) makes it
+    // collide with the diagram already on screen: the previous one gets reset mid-life and the new
+    // one comes back as an empty, viewBox-less shell.
+    const renderId = `mermaid-diagram-${++mermaidDiagramSeq}`;
     loadMermaid()
       .then(async mermaid => {
         if (cancelled) return null;
@@ -152,12 +170,12 @@ export function useMermaidRender(code) {
           suppressErrorRendering: true,
         });
         try {
-          return await mermaid.render(idRef.current, code);
+          return await mermaid.render(renderId, code);
         } catch (firstError) {
           const repaired = repairMermaidCode(code);
           if (repaired === code) throw firstError;
           try {
-            return await mermaid.render(`${idRef.current}-repaired`, repaired);
+            return await mermaid.render(`${renderId}-repaired`, repaired);
           } catch {
             throw firstError;
           }
