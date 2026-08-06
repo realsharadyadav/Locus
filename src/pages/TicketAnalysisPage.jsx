@@ -1,55 +1,72 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Activity, AlertCircle, BarChart3, Brain, CheckCircle, ChevronDown,
+  Activity, AlertCircle, Brain, CheckCircle, ChevronDown,
   Clock, Database, Download, FileText, GitBranch, History, Loader2,
   Menu, Network, Play, RefreshCw, Trash2,
 } from 'lucide-react';
 import { api } from '../api';
-import { DEFAULT_PROVIDER_MODELS, PROVIDER_ORDER } from '../lib/appState';
+import { DEFAULT_PROVIDER_MODELS } from '../lib/appState';
+import TicketAnalysisSettings, { CLUSTERING_OPTIONS, EMBEDDING_OPTIONS, GROUPING_MODES } from './TicketAnalysisSettings';
 import './TicketAnalysisPage.css';
 
 const TICKET_EXTENSIONS = ['.csv', '.tsv', '.xlsx', '.xlsm', '.json', '.txt', '.md'];
 
-const EMBEDDING_OPTIONS = [
-  { value: 'tfidf', label: 'TF-IDF lexical', tech: 'Normalized, stopword-stripped bag-of-words counters from title + description. Pairwise cosine similarity feeds the selected clustering method.' },
-  { value: 'neural_hash', label: 'Neural hash', tech: 'Deterministic fuzzy text signatures for noisy titles and descriptions. Good when exact tokens vary but intent is similar.' },
-  { value: 'hybrid', label: 'Hybrid', tech: 'Blends lexical and fuzzy signatures so exact terms and close wording both contribute to the similarity score.' },
-];
-
-const CLUSTERING_OPTIONS = [
-  { value: 'taxonomy_semantic', label: 'Semantic fallback', tech: 'Clusters unresolved tickets with token similarity after taxonomy, or all tickets when clustering-only strategy is selected.' },
-  { value: 'agglomerative', label: 'Agglomerative', tech: 'Builds groups by joining tickets above the similarity threshold. Single-linkage, cut at the threshold.' },
-  { value: 'kmeans', label: 'K-means', tech: 'Uses a target cluster count for broad exploratory grouping. Best when you already know approximately how many categories exist.' },
-  { value: 'hdbscan_lite', label: 'HDBSCAN lite', tech: 'Density-style discovery. Cluster count is automatic and noise is shown separately. Minimum cluster size = 2.' },
-  { value: 'google_kwikbucks', label: 'Google-style rerank', tech: 'Strict first pass, then broad rerank for long-tail ticket language. Inspired by Google\'s KwikBucks algorithm.' },
-];
-
-const STRATEGY_OPTIONS = [
-  { value: 'taxonomy_then_cluster', label: 'Taxonomy + fallback', detail: 'Taxonomy claims confident tickets first; selected clustering handles unmatched tickets.' },
-  { value: 'cluster_only', label: 'Clustering only', detail: 'Skip taxonomy matching and run the selected clustering method on all tickets.' },
-  { value: 'taxonomy_only', label: 'Taxonomy only', detail: 'Only taxonomy rules create groups; unmatched records stay in review.' },
-];
-
 const DEFAULT_CONFIG = {
-  maxGroups: 20,
-  minGroupSize: 3,
+  groupingMode: 'rules_then_discovery',
+  taxonomySource: 'default',
+  taxonomyRulesText: '',
   embeddingMethod: 'tfidf',
   clusteringMethod: 'taxonomy_semantic',
-  problemGroupStrategy: 'taxonomy_then_cluster',
   similarityThreshold: 0.45,
   targetClusters: 12,
   hdbscanMinSamples: 3,
+  maxGroups: 20,
+  minGroupSize: 3,
   representativeCount: 3,
   useLlmFallback: false,
   useLlmLabels: true,
   suggestTaxonomyRules: false,
-  pauseOkfTaxonomy: false,
-  taxonomyMode: 'default',
-  taxonomyRulesText: '',
   llmProvider: 'groq',
   model: '',
   includeTelemetry: true,
   includeDebugSamples: true,
+};
+
+// Runs saved before the settings rewrite carry the old strategy/taxonomyMode
+// keys. Reopening one has to land on the equivalent new configuration rather
+// than silently resetting the user's run to defaults.
+const LEGACY_STRATEGY_TO_MODE = {
+  taxonomy_then_cluster: 'rules_then_discovery',
+  okf_first: 'rules_then_discovery',
+  taxonomy_semantic: 'rules_then_discovery',
+  taxonomy_only: 'rules_only',
+  okf_only: 'rules_only',
+  cluster_only: 'discovery_only',
+  cluster_first: 'discovery_only',
+};
+
+function normalizeConfig(saved = {}) {
+  const merged = { ...DEFAULT_CONFIG, ...saved };
+  if (!saved.groupingMode) {
+    merged.groupingMode = saved.pauseOkfTaxonomy
+      ? 'discovery_only'
+      : LEGACY_STRATEGY_TO_MODE[saved.problemGroupStrategy] || DEFAULT_CONFIG.groupingMode;
+  }
+  if (!saved.taxonomySource) {
+    merged.taxonomySource = saved.taxonomyMode === 'custom' ? 'custom' : 'default';
+  }
+  delete merged.problemGroupStrategy;
+  delete merged.taxonomyMode;
+  delete merged.pauseOkfTaxonomy;
+  return merged;
+}
+
+const STRATEGY_LABELS = Object.fromEntries(GROUPING_MODES.map(mode => [mode.value, mode.label]));
+
+const BACKEND_STRATEGY = {
+  rules_then_discovery: 'taxonomy_then_cluster',
+  rules_only: 'taxonomy_only',
+  discovery_only: 'cluster_only',
 };
 
 const PIPELINE_SKELETON = [
@@ -171,7 +188,7 @@ function TicketAnalysisPage({ files, openMenu }) {
   const [expandedStages, setExpandedStages] = useState(new Set());
   const [expandedTech, setExpandedTech] = useState(new Set());
   const [expandedTraces, setExpandedTraces] = useState(new Set());
-  const [controlsOpen, setControlsOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(true);
   const [activeTab, setActiveTab] = useState('groups');
   const [savedRunId, setSavedRunId] = useState(null);
   const [compareLeftId, setCompareLeftId] = useState('');
@@ -192,21 +209,16 @@ function TicketAnalysisPage({ files, openMenu }) {
   const selectedFile = ticketFiles.find(f => f.id === selectedFileId);
   const trace = result?.pipeline_trace || buildFallbackTrace(result, config, selectedFile);
   const stages = trace?.stages?.length ? trace.stages : buildFallbackTrace(result, config, selectedFile).stages;
-  const selectedStep = stages.find(s => s.key === selectedStepKey) || stages[0];
   const groups = trace?.problem_groups?.length ? trace.problem_groups : result?.groups || [];
   const manifest = result?.manifest || {};
   const coverage = trace?.coverage || {};
   const detectedFields = trace?.input?.detected_fields || {};
-  const isHdbscan = config.clusteringMethod === 'hdbscan_lite';
-  const isTaxonomyOnly = config.problemGroupStrategy === 'taxonomy_only' && !config.pauseOkfTaxonomy;
-  const isClusterOnly = config.problemGroupStrategy === 'cluster_only' || config.pauseOkfTaxonomy;
-  const llmEnabled = config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules;
+  const isTaxonomyOnly = config.groupingMode === 'rules_only';
+  const isClusterOnly = config.groupingMode === 'discovery_only';
   const compareLeft = history.find(item => String(item.id) === String(compareLeftId));
   const compareRight = history.find(item => String(item.id) === String(compareRightId));
   const validTickets = trace.input?.valid_tickets || manifest.validTickets || 0;
-  const durationMs = trace.duration_ms || result?.analysisOptions?.durationMs || 0;
   const sourceBreakdown = useMemo(() => groups.reduce((acc, g) => { acc[g.source || 'Unknown'] = (acc[g.source || 'Unknown'] || 0) + Number(g.incidentCount || g.count || 0); return acc; }, {}), [groups]);
-  const qualityScore = Math.min(100, Math.round((validTickets ? ((validTickets - Number(coverage.unresolved || 0)) / validTickets) * 70 : 0) + (groups.length ? 20 : 0) + (trace.vectorization?.fresh ? 10 : 6)));
   const providerModelOptions = useMemo(() => { const bm = llmConfig?.providers?.[config.llmProvider] || []; const pm = config.llmProvider === llmConfig?.provider ? (llmConfig?.presets || []) : []; return [...new Set([config.model, ...bm, ...pm].filter(Boolean))]; }, [config.llmProvider, config.model, llmConfig]);
   const llmStage = stages.find(s => s.key === 'llm');
   const llmHitCount = Number(coverage.llm_assisted || llmStage?.output_count || 0);
@@ -218,25 +230,32 @@ function TicketAnalysisPage({ files, openMenu }) {
     : llmLabelStatus === 'no_usable_response' ? `${config.model || 'the selected model'} did not return usable labels — try a stronger model`
     : `${llmLabelCount} of ${groups.length} group labels rewritten by LLM`;
   const llmSuggestionCount = Number(llmStage?.details?.taxonomy_suggestions_generated || trace.taxonomy_suggestions?.length || 0);
+  const llmSummaries = {
+    fallback: `${llmHitCount} leftover cluster(s) grouped this run`,
+    naming: llmLabelSummary,
+    suggestions: `${llmSuggestionCount} rule suggestion(s) this run`,
+  };
   const okfMatchedCount = isClusterOnly ? 0 : Number(coverage.taxonomy_matched || 0);
   const clusterInputCount = isTaxonomyOnly ? 0 : isClusterOnly ? validTickets : Math.max(0, validTickets - okfMatchedCount);
   const clusterOutputCount = Number(coverage.clustered || 0);
   const semanticGroupCount = groups.filter(g => String(g.source || '').toLowerCase().includes('semantic')).length;
   const okfRules = okfTaxonomy?.rules || [];
+  // An empty rule list is a legitimate configuration meaning "no rules at all",
+  // so only malformed JSON or an unusable rule is an error here.
   const customTaxonomy = useMemo(() => {
-    if (config.taxonomyMode !== 'custom') return { rules: null, error: '' };
+    if (config.taxonomySource !== 'custom') return { rules: null, error: '' };
     try {
       const parsed = JSON.parse(config.taxonomyRulesText || '[]');
-      if (!Array.isArray(parsed) || parsed.length === 0) return { rules: null, error: 'Custom taxonomy must be a non-empty JSON array.' };
+      if (!Array.isArray(parsed)) return { rules: null, error: 'Rules must be a JSON array.' };
       const invalid = parsed.findIndex(rule => !rule || !rule.name || !(rule.patterns || rule.includes || rule.signals)?.length);
-      if (invalid >= 0) return { rules: null, error: `Rule #${invalid + 1} needs name and patterns/includes.` };
+      if (invalid >= 0) return { rules: null, error: `Rule #${invalid + 1} needs a name and at least one pattern.` };
       return { rules: parsed, error: '' };
     } catch (err) {
-      return { rules: null, error: 'Custom taxonomy JSON is invalid.' };
+      return { rules: null, error: 'That is not valid JSON.' };
     }
-  }, [config.taxonomyMode, config.taxonomyRulesText]);
+  }, [config.taxonomySource, config.taxonomyRulesText]);
   const selectedOkfRule = okfRules[selectedOkfIndex] || okfRules[0];
-  const rulesCount = config.taxonomyMode === 'custom' ? (customTaxonomy.rules?.length || 0) : (okfTaxonomy?.ruleCount || 0);
+  const rulesCount = isClusterOnly ? 0 : config.taxonomySource === 'custom' ? (customTaxonomy.rules?.length || 0) : (okfTaxonomy?.ruleCount || 0);
 
   const toggleSet = (setState, key) => setState(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const toggleGroup = (index) => toggleSet(setExpandedGroups, index);
@@ -308,7 +327,7 @@ function TicketAnalysisPage({ files, openMenu }) {
 
   const handleAnalyze = async () => {
     if (!selectedFileId) { setRunStatus({ type: 'error', message: 'Select a ticket file.' }); return; }
-    if (config.taxonomyMode === 'custom' && customTaxonomy.error) { setRunStatus({ type: 'error', message: customTaxonomy.error }); return; }
+    if (config.taxonomySource === 'custom' && customTaxonomy.error) { setRunStatus({ type: 'error', message: customTaxonomy.error }); return; }
     setAnalyzing(true); setResult(null); setSavedRunId(null);
     runStartRef.current = Date.now();
     setElapsedMs(0);
@@ -337,13 +356,22 @@ function TicketAnalysisPage({ files, openMenu }) {
 
     try {
       const data = await api.ticketAnalysisStream(selectedFileId, config.maxGroups || undefined, config.minGroupSize || undefined, config.useLlmFallback, config.model || undefined, {
-        embeddingMethod: config.embeddingMethod, clusteringMethod: config.clusteringMethod, problemGroupStrategy: config.problemGroupStrategy,
-        similarityThreshold: Number(config.similarityThreshold) || undefined, targetClusters: isHdbscan ? undefined : Number(config.targetClusters) || undefined,
-        hdbscanMinSamples: Number(config.hdbscanMinSamples) || undefined, representativeCount: Number(config.representativeCount) || undefined,
-        includeTelemetry: config.includeTelemetry, includeDebugSamples: config.includeDebugSamples, useLlmLabels: config.useLlmLabels,
+        embeddingMethod: config.embeddingMethod,
+        clusteringMethod: config.clusteringMethod,
+        problemGroupStrategy: BACKEND_STRATEGY[config.groupingMode],
+        similarityThreshold: Number(config.similarityThreshold) || undefined,
+        targetClusters: Number(config.targetClusters) || undefined,
+        hdbscanMinSamples: Number(config.hdbscanMinSamples) || undefined,
+        representativeCount: Number(config.representativeCount) || undefined,
+        includeTelemetry: config.includeTelemetry,
+        includeDebugSamples: config.includeDebugSamples,
+        useLlmLabels: config.useLlmLabels,
         suggestTaxonomyRules: config.suggestTaxonomyRules,
-        llmProvider: config.llmProvider, pauseOkfTaxonomy: config.pauseOkfTaxonomy,
-        taxonomyRules: config.taxonomyMode === 'custom' ? customTaxonomy.rules : undefined,
+        llmProvider: config.llmProvider,
+        // Discovery-only means "ignore the rule set" — the backend pause flag says
+        // exactly that, and keeps a custom rule set from leaking into the run.
+        pauseOkfTaxonomy: isClusterOnly,
+        taxonomyRules: !isClusterOnly && config.taxonomySource === 'custom' ? customTaxonomy.rules : undefined,
       }, onStreamEvent);
       setLiveStage(null); setDoneStages(new Set(STAGE_KEYS));
       setResult(data); setActiveStepKey('final_groups'); setSelectedStepKey('final_groups');
@@ -378,7 +406,7 @@ function TicketAnalysisPage({ files, openMenu }) {
       const item = await api.ticketAnalysisHistoryDetail(id);
       const sc = item.config || {};
       setResult({ manifest: item.manifest, groups: item.groups || [], taxonomySuggestions: item.taxonomy_suggestions || [], pipeline_trace: sc.pipelineTrace || sc.pipeline_trace, pipeline: sc.pipeline || [], analysisOptions: sc.analysisOptions || sc.runConfig || {}, historyId: item.id });
-      setSelectedFileId(item.file_id); setConfig({ ...DEFAULT_CONFIG, ...(sc.runConfig || {}) }); setSavedRunId(item.id);
+      setSelectedFileId(item.file_id); setConfig(normalizeConfig(sc.runConfig || {})); setSavedRunId(item.id);
       setActiveTab('groups'); setSelectedStepKey('final_groups');
       setRunStatus({ type: 'success', message: `Reopened run #${item.id}.` });
     } catch (err) { setRunStatus({ type: 'error', message: err.message || 'Failed to reopen' }); }
@@ -387,6 +415,8 @@ function TicketAnalysisPage({ files, openMenu }) {
   const deleteHistory = async (id) => { try { await api.deleteTicketAnalysisHistory(id); setRunStatus({ type: 'success', message: `Deleted #${id}.` }); await loadHistory(); } catch (err) { setRunStatus({ type: 'error', message: err.message }); } };
   const exportJson = (item = null) => { const p = item || { manifest, groups, pipeline_trace: trace, config }; const b = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `patterns-run-${item?.id || trace?.run_id || Date.now()}.json`; a.click(); URL.revokeObjectURL(u); };
   const exportMarkdown = () => { if (!result) return; const lines = ['# Patterns Run Report', '', `File: ${trace.input?.file_name || 'Unknown'}`, `Fingerprint: ${trace.fingerprint || 'n/a'}`, '', '## Problem Groups', '']; groups.forEach((g, i) => { lines.push(`### ${i + 1}. ${g.groupName || g.name}`, `- Count: ${g.incidentCount || g.count}`, `- Source: ${g.source || 'not recorded'}`, `- Why: ${g.why || g.matched_reason || 'not recorded'}`, ''); }); const b = new Blob([lines.join('\n')], { type: 'text/markdown' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `patterns-report-${Date.now()}.md`; a.click(); URL.revokeObjectURL(u); };
+  const applyPreset = (preset) => setConfig(prev => ({ ...prev, ...preset.config }));
+  const resetConfig = () => setConfig(prev => ({ ...DEFAULT_CONFIG, taxonomyRulesText: prev.taxonomyRulesText, llmProvider: prev.llmProvider, model: prev.model }));
   const changeLlmProvider = (provider) => { const opts = llmConfig?.providers?.[provider] || []; setConfig(prev => ({ ...prev, llmProvider: provider, model: opts[0] || (provider === llmConfig?.provider ? llmConfig?.model : DEFAULT_PROVIDER_MODELS[provider]) || '' })); };
 
   const pipelineConfig = [
@@ -450,9 +480,8 @@ function TicketAnalysisPage({ files, openMenu }) {
             <div className="ti-file-kpis">
               <span><strong>{validTickets || '-'}</strong> tickets</span>
               <span><strong>{trace.run_id || '-'}</strong> run</span>
-              <span>{optionLabel(STRATEGY_OPTIONS, config.problemGroupStrategy)}</span>
-              <span>{config.taxonomyMode === 'custom' ? 'Custom taxonomy' : 'Default taxonomy'}</span>
-              {config.pauseOkfTaxonomy && <span>OKF paused</span>}
+              <span>{STRATEGY_LABELS[config.groupingMode]}</span>
+              {!isClusterOnly && <span>{config.taxonomySource === 'custom' ? `${rulesCount} custom rule(s)` : 'Built-in rules'}</span>}
             </div>
             <div className="ti-btn-group">
               <button className="ti-btn ti-btn-primary" onClick={handleAnalyze} disabled={!selectedFileId || analyzing || (config.taxonomyMode === 'custom' && Boolean(customTaxonomy.error))}>
@@ -510,175 +539,68 @@ function TicketAnalysisPage({ files, openMenu }) {
             </div>
           )}
 
-          {/* ═══════ CONTROLS ═══════ */}
+          {/* ═══════ SETTINGS ═══════ */}
           <section className="ti-section" id="controls">
             <div className="ti-section-head">
               <div className="htext">
-                <div className="ti-eyebrow">Before you run analysis</div>
-                <h2>Four decisions, not forty toggles</h2>
-                <p>Collapsed by default — expand to change what claims a ticket first, how it’s vectorized, how it clusters, and when the LLM steps in.</p>
+                <div className="ti-eyebrow">Run settings</div>
+                <h2>Set up the run</h2>
+                <p>Six decisions, top to bottom, in the order the pipeline makes them. Settings that cannot affect this configuration are hidden rather than greyed out.</p>
+              </div>
+              <div className="ti-bulk-actions">
+                <button className="ti-bulk-btn" onClick={() => setControlsOpen(open => !open)}>
+                  {controlsOpen ? 'Hide settings' : 'Show settings'}
+                </button>
               </div>
             </div>
 
-            <div className={`ti-controls-shell ti-acc-parent${controlsOpen ? ' open' : ''}`}>
-              <button className="ti-controls-summary" onClick={() => setControlsOpen(!controlsOpen)}>
-                <div className="ti-controls-summary-main">
-                  <div className="t">Current configuration</div>
-                  <div className="ti-summary-chips">
-                    <span className="ti-chip">Strategy: {optionLabel(STRATEGY_OPTIONS, config.problemGroupStrategy)}</span>
-                    <span className="ti-chip">Taxonomy: {config.taxonomyMode === 'custom' ? `${rulesCount} custom` : 'default'}</span>
-                    <span className="ti-chip">{optionLabel(EMBEDDING_OPTIONS, config.embeddingMethod)}</span>
-                    <span className="ti-chip">{optionLabel(STRATEGY_OPTIONS, config.problemGroupStrategy)}</span>
-                    <span className="ti-chip">LLM naming: {config.useLlmLabels ? 'ON' : 'OFF'}</span>
-                  </div>
-                </div>
-                <ChevronDown size={18} className="ti-chevron" />
-              </button>
-              <div className="ti-acc-body"><div className="ti-acc-inner"><div className="ti-controls-inner-pad">
-
-                <div className="ti-controls-grid">
-                  <div className="ti-ctrl-card">
-                    <h4><span className="sw" style={{ background: 'var(--accent)' }} /> Taxonomy Rules</h4>
-                    <div className="desc">Choose default OKF/ITSM rules or paste your own JSON taxonomy.</div>
-                    <div className="ti-toggle-row stack">
-                      <div>
-                        <div className="t-label">Taxonomy source</div>
-                        <div className="t-sub">Use the shipped OKF/ITSM rules or edit your own JSON rule set.</div>
-                      </div>
-                      <div className="ti-pill-group compact">
-                        <span className={`ti-pill${config.taxonomyMode === 'default' ? ' active' : ''}`} onClick={() => setConfigValue('taxonomyMode', 'default')}>Default</span>
-                        <span className={`ti-pill${config.taxonomyMode === 'custom' ? ' active' : ''}`} onClick={() => setConfigValue('taxonomyMode', 'custom')}>Custom</span>
-                      </div>
-                    </div>
-                    {config.taxonomyMode === 'custom' && (
-                      <div className="ti-taxonomy-editor">
-                        <div className="ti-editor-head">
-                          <span>{customTaxonomy.error || `${rulesCount} rule(s) ready`}</span>
-                          <button className="ti-bulk-btn" onClick={() => setConfigValue('taxonomyRulesText', editableTaxonomyFromOkf(okfTaxonomy))}>Reset from default</button>
-                        </div>
-                        <textarea
-                          value={config.taxonomyRulesText}
-                          onChange={e => setConfigValue('taxonomyRulesText', e.target.value)}
-                          spellCheck="false"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="ti-ctrl-card">
-                    <h4><span className="sw" style={{ background: 'var(--teal)' }} /> Embedding / Vectorization</h4>
-                    <div className="desc">Fresh vectors are generated every run from the selected file and this config.</div>
-                    <div className="ti-pill-group">
-                      {EMBEDDING_OPTIONS.map(o => (
-                        <span key={o.value} className={`ti-pill${config.embeddingMethod === o.value ? ' active' : ''}`} onClick={() => setConfigValue('embeddingMethod', o.value)}>{o.label}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="ti-ctrl-card">
-                    <h4><span className="sw" style={{ background: 'var(--teal)' }} /> Clustering Method</h4>
-                    <div className="desc">{isTaxonomyOnly ? 'Disabled in taxonomy-only mode.' : isClusterOnly ? 'Runs on all tickets.' : 'Used as fallback for tickets taxonomy did not claim.'}</div>
-                    <div className="ti-pill-group">
-                      {CLUSTERING_OPTIONS.map(o => (
-                        <span key={o.value} className={`ti-pill${config.clusteringMethod === o.value ? ' active' : ''}${isTaxonomyOnly ? ' disabled' : ''}`} onClick={() => !isTaxonomyOnly && setConfigValue('clusteringMethod', o.value)}>{o.label}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="ti-ctrl-card">
-                    <h4><span className="sw" style={{ background: 'var(--accent)' }} /> Run Strategy</h4>
-                    <div className="desc">Decide whether taxonomy, clustering, or both can create problem groups.</div>
-                    <div className="ti-pill-group">
-                      {STRATEGY_OPTIONS.map(o => (
-                        <span key={o.value} title={o.detail} className={`ti-pill${config.problemGroupStrategy === o.value ? ' active' : ''}`} onClick={() => setConfigValue('problemGroupStrategy', o.value)}>{o.label}</span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="ti-ctrl-card ti-full-span">
-                    <h4><span className="sw" style={{ background: 'var(--violet)' }} /> LLM Assistance</h4>
-                    <div className="desc">Used only after deterministic grouping. Naming never changes ticket grouping on its own.</div>
-                    <div className="ti-toggle-row">
-                      <div><div className="t-label">Enable LLM fallback for unknown patterns</div><div className="t-sub">{llmHitCount} fallback hits this run</div></div>
-                      <div className={`ti-switch${config.useLlmFallback ? ' on' : ''}`} onClick={() => setConfigValue('useLlmFallback', !config.useLlmFallback)} />
-                    </div>
-                    <div className="ti-toggle-row">
-                      <div><div className="t-label">Use LLM to improve problem group names &amp; descriptions</div><div className="t-sub">{llmLabelSummary}</div></div>
-                      <div className={`ti-switch${config.useLlmLabels ? ' on' : ''}`} onClick={() => setConfigValue('useLlmLabels', !config.useLlmLabels)} />
-                    </div>
-                    <div className="ti-toggle-row">
-                      <div><div className="t-label">Suggest taxonomy rules from unmatched clusters</div><div className="t-sub">{llmSuggestionCount} suggestions this run</div></div>
-                      <div className={`ti-switch${config.suggestTaxonomyRules ? ' on' : ''}`} onClick={() => setConfigValue('suggestTaxonomyRules', !config.suggestTaxonomyRules)} />
-                    </div>
-                    {(config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules) && (
-                      <div className="ti-select-row">
-                        <div className="ti-select-fake" style={{ cursor: 'pointer' }} onClick={() => { const ps = llmConfig?.provider_order?.length ? llmConfig.provider_order : PROVIDER_ORDER; const idx = ps.indexOf(config.llmProvider); changeLlmProvider(ps[(idx + 1) % ps.length]); }}>
-                          <div><span className="l">Provider</span>{config.llmProvider}</div>
-                          <ChevronDown size={14} />
-                        </div>
-                        <select className="ti-real-select" value={config.model || ''} onChange={e => setConfigValue('model', e.target.value)}>
-                          <option value="">Backend default</option>
-                          {providerModelOptions.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ─── ADVANCED ─── */}
-                  <div className="ti-ctrl-card ti-full-span">
-                    <details style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--muted)' }}>
-                      <summary style={{ cursor: 'pointer', userSelect: 'none', padding: '4px 0' }}>Advanced controls</summary>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 14, padding: 14, marginTop: 8, border: '1px solid var(--line)', borderRadius: 10, background: 'var(--surface)' }}>
-                        <div>
-                          <label style={{ fontSize: 10.5, color: 'var(--muted-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4, fontFamily: 'var(--mono)' }}>Similarity <span style={{ float: 'right', color: 'var(--amber)' }}>{Number(config.similarityThreshold).toFixed(2)}</span></label>
-                          <input className="ti-real-range" type="range" min="0.1" max="0.9" step="0.01" value={config.similarityThreshold} onChange={e => setConfigValue('similarityThreshold', Number(e.target.value))} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 10.5, color: 'var(--muted-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4, fontFamily: 'var(--mono)' }}>Min group size</label>
-                          <input className="ti-real-input" type="number" min="1" max="1000" value={config.minGroupSize} onChange={e => setConfigValue('minGroupSize', Number(e.target.value))} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 10.5, color: 'var(--muted-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4, fontFamily: 'var(--mono)' }}>Target clusters</label>
-                          <input className="ti-real-input" type="number" min="2" max="200" value={config.targetClusters} disabled={isHdbscan || isTaxonomyOnly} onChange={e => setConfigValue('targetClusters', Number(e.target.value))} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 10.5, color: 'var(--muted-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4, fontFamily: 'var(--mono)' }}>Density samples</label>
-                          <input className="ti-real-input" type="number" min="1" max="200" value={config.hdbscanMinSamples} disabled={!isHdbscan || isTaxonomyOnly} onChange={e => setConfigValue('hdbscanMinSamples', Number(e.target.value))} />
-                        </div>
-                        <div>
-                          <label style={{ fontSize: 10.5, color: 'var(--muted-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', display: 'block', marginBottom: 4, fontFamily: 'var(--mono)' }}>Representatives</label>
-                          <input className="ti-real-input" type="number" min="1" max="25" value={config.representativeCount} onChange={e => setConfigValue('representativeCount', Number(e.target.value))} />
-                        </div>
-                      </div>
-                    </details>
-                  </div>
-
-                  {/* ─── RUN FINGERPRINT ─── */}
-                  {result && (
-                    <div className="ti-ctrl-card ti-full-span">
-                      <h4><span className="sw" style={{ background: 'var(--amber)' }} /> Run Fingerprint</h4>
-                      <div className="ti-detection">
-                        <code>{trace.fingerprint}</code>
-                        <span className={trace.vectorization?.fresh ? 'fresh' : 'cached'}>{trace.vectorization?.message}</span>
-                        <div className="ti-detection-grid">
-                          {['id', 'title', 'description', 'category', 'subcategory'].map(f => (
-                            <span key={f} className="ti-detection-chip"><strong>{f}</strong> {detectedFields[f] || 'not detected'}</span>
-                          ))}
-                          <span className="ti-detection-chip"><strong>metadata</strong> {detectedFields.metadata?.length ? detectedFields.metadata.join(', ') : 'none'}</span>
-                        </div>
-                      </div>
-                      <div className="ti-btn-group">
-                        <button className="ti-btn ti-btn-sm" onClick={() => saveSnapshot(result, 'manual')} disabled={Boolean(savedRunId)}><Download size={12} />{savedRunId ? `Saved #${savedRunId}` : 'Save Snapshot'}</button>
-                        <button className="ti-btn ti-btn-sm" onClick={exportMarkdown}><FileText size={12} />Report</button>
-                        <button className="ti-btn ti-btn-sm" onClick={() => exportJson()}><Download size={12} />JSON</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-              </div></div></div>
+            <div className="ti-summary-chips" style={{ marginBottom: 18 }}>
+              <span className="ti-chip">{STRATEGY_LABELS[config.groupingMode]}</span>
+              {!isClusterOnly && <span className="ti-chip">{rulesCount} rule{rulesCount === 1 ? '' : 's'}</span>}
+              {!isTaxonomyOnly && <span className="ti-chip">{optionLabel(EMBEDDING_OPTIONS, config.embeddingMethod)}</span>}
+              {!isTaxonomyOnly && <span className="ti-chip">{optionLabel(CLUSTERING_OPTIONS, config.clusteringMethod)}</span>}
+              <span className="ti-chip">AI: {[config.useLlmFallback && 'grouping', config.useLlmLabels && 'naming', config.suggestTaxonomyRules && 'suggestions'].filter(Boolean).join(' + ') || 'off'}</span>
+              {(config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules) && <span className="ti-chip">{config.model || 'default model'}</span>}
             </div>
+
+            {controlsOpen && (
+              <TicketAnalysisSettings
+                config={config}
+                setConfigValue={setConfigValue}
+                applyPreset={applyPreset}
+                resetConfig={resetConfig}
+                customTaxonomy={customTaxonomy}
+                taxonomyRuleCount={customTaxonomy.rules?.length || 0}
+                onResetTaxonomyText={() => setConfigValue('taxonomyRulesText', editableTaxonomyFromOkf(okfTaxonomy))}
+                llmConfig={llmConfig}
+                providerModelOptions={providerModelOptions}
+                onProviderChange={changeLlmProvider}
+                llmSummaries={llmSummaries}
+              />
+            )}
+
+            {result && (
+              <div className="ti-ctrl-card ti-full-span" style={{ marginTop: 18 }}>
+                <h4><span className="sw" style={{ background: 'var(--amber)' }} /> This run</h4>
+                <div className="ti-detection">
+                  <code>{trace.fingerprint}</code>
+                  <span className={trace.vectorization?.fresh ? 'fresh' : 'cached'}>{trace.vectorization?.message}</span>
+                  <div className="ti-detection-grid">
+                    {['id', 'title', 'description', 'category', 'subcategory'].map(field => (
+                      <span key={field} className="ti-detection-chip"><strong>{field}</strong> {detectedFields[field] || 'not detected'}</span>
+                    ))}
+                    <span className="ti-detection-chip"><strong>metadata</strong> {detectedFields.metadata?.length ? detectedFields.metadata.join(', ') : 'none'}</span>
+                  </div>
+                </div>
+                <div className="ti-btn-group">
+                  <button className="ti-btn ti-btn-sm" onClick={() => saveSnapshot(result, 'manual')} disabled={Boolean(savedRunId)}><Download size={12} />{savedRunId ? `Saved #${savedRunId}` : 'Save snapshot'}</button>
+                  <button className="ti-btn ti-btn-sm" onClick={exportMarkdown}><FileText size={12} />Report (.md)</button>
+                  <button className="ti-btn ti-btn-sm" onClick={() => exportJson()}><Download size={12} />Data (.json)</button>
+                </div>
+              </div>
+            )}
           </section>
+
 
           {/* ═══════ PIPELINE ═══════ */}
           <section className="ti-section" id="pipeline">

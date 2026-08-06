@@ -817,3 +817,30 @@ def test_llm_naming_reports_no_changes_when_the_model_keeps_every_label(monkeypa
 
     assert result["manifest"]["llmLabelStatus"] == "no_changes"
     assert result["manifest"]["llmGroupsRenamed"] == 0
+
+
+def test_an_empty_custom_taxonomy_means_no_rules_rather_than_an_error():
+    """Clearing the rule set is a real choice — group by discovery alone — and
+    must not fall back to the shipped taxonomy or reject the request."""
+    from fastapi.testclient import TestClient
+    from backend.app.main import app
+
+    topics = ["Payment gateway timeout on checkout", "Warehouse scanner will not pair"]
+    csv_bytes = b"number,short_description\n" + b"\n".join(
+        f"INC{index},{topics[index % 2]} {index}".encode() for index in range(8)
+    )
+    with TestClient(app) as client:
+        upload = client.post(
+            "/api/files",
+            data={"store_id": 2},
+            files={"file": ("empty-taxonomy.csv", csv_bytes, "text/csv")},
+        )
+        response = client.post("/api/ticket-analysis", json={
+            "fileId": upload.json()["id"], "taxonomyRules": [], "minGroupSize": 1,
+        })
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["manifest"]["taxonomyRules"] == 0
+    assert sum(group["incidentCount"] for group in body["groups"]) == 8
+    assert body["analysisOptions"]["taxonomySource"] == "custom"

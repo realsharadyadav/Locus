@@ -1,0 +1,267 @@
+/* Ticket Analysis run settings.
+   Reads top to bottom as a sequence of decisions; controls that cannot affect
+   the current configuration are unmounted rather than disabled. */
+
+.tset { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── presets ─────────────────────────────────────────────────────────── */
+.tset-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+
+.tset-presets-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted-dim);
+  font-family: var(--mono);
+  margin-right: 2px;
+}
+
+.tset-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg, inherit);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.tset-preset:hover { border-color: var(--accent); }
+.tset-preset.ghost { color: var(--muted); border-style: dashed; margin-left: auto; }
+
+/* ── sections ────────────────────────────────────────────────────────── */
+.tset-section {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) 1fr;
+  gap: 28px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+}
+
+.tset-section:last-child { border-bottom: 0; }
+
+.tset-section-head { display: flex; gap: 12px; align-items: flex-start; }
+
+.tset-step {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.tset-section-head h3 { margin: 2px 0 4px; font-size: 15px; line-height: 1.25; }
+.tset-section-head p { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+
+.tset-section-body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* ── choice cards ────────────────────────────────────────────────────── */
+.tset-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 10px;
+}
+
+.tset-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 14px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.tset-choice:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+
+.tset-choice.active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.tset-choice-label { font-size: 13.5px; font-weight: 600; }
+.tset-choice-blurb { font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+.tset-choice-effect {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted-dim);
+  font-family: var(--mono);
+}
+
+.tset-choice.active .tset-choice-effect { color: var(--accent); }
+
+/* ── fields ──────────────────────────────────────────────────────────── */
+.tset-params {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px;
+}
+
+.tset-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tset-field.wide { grid-column: 1 / -1; }
+
+.tset-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg, inherit);
+}
+
+.tset-field-help { font-size: 11.5px; line-height: 1.5; color: var(--muted-dim); }
+.tset-field-help code { font-family: var(--mono); font-size: 11px; }
+
+.tset-input,
+.tset-select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.tset-input:focus,
+.tset-select:focus { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; }
+
+.tset-select-wrap { position: relative; display: flex; align-items: center; }
+.tset-select-wrap select { appearance: none; padding-right: 30px; }
+.tset-select-wrap svg { position: absolute; right: 10px; pointer-events: none; color: var(--muted-dim); }
+
+.tset-range { width: 100%; accent-color: var(--accent); }
+
+.tset-range-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-dim);
+  font-family: var(--mono);
+}
+
+/* ── toggles ─────────────────────────────────────────────────────────── */
+.tset-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.tset-toggle-copy { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tset-toggle-label { font-size: 13px; font-weight: 600; }
+.tset-toggle-help { font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+.tset-toggle-status {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted-dim);
+  font-family: var(--mono);
+  margin-top: 2px;
+}
+
+.tset-switch {
+  flex: none;
+  width: 40px;
+  height: 23px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel, var(--surface));
+  cursor: pointer;
+  position: relative;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.tset-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.tset-switch.on { background: var(--accent); border-color: var(--accent); }
+.tset-switch.on::after { transform: translateX(17px); background: #fff; }
+
+/* ── custom taxonomy editor ──────────────────────────────────────────── */
+.tset-editor { display: flex; flex-direction: column; gap: 8px; }
+
+.tset-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.tset-editor-head .ok { color: var(--teal, var(--muted)); }
+.tset-editor-head .warn { color: var(--amber, var(--muted)); }
+.tset-editor-head .bad { color: var(--rose, crimson); }
+
+.tset-editor-actions { display: flex; gap: 8px; }
+
+.tset-editor-actions button {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.tset-editor-actions button:hover { border-color: var(--accent); color: inherit; }
+
+.tset-editor textarea {
+  width: 100%;
+  min-height: 220px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel, var(--surface));
+  color: inherit;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+@media (max-width: 860px) {
+  .tset-section { grid-template-columns: 1fr; gap: 14px; padding: 20px 0; }
+  .tset-preset.ghost { margin-left: 0; }
+}

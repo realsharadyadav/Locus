@@ -822,7 +822,9 @@ def _ticket_analysis_for_file(
     except (ValueError, json.JSONDecodeError) as exception:
         raise HTTPException(status_code=422, detail=str(exception)) from exception
     pipeline: list[dict] = []
-    active_taxonomy = taxonomy_rules or DEFAULT_TAXONOMY
+    # An explicitly empty rule set is a real choice ("group by clustering alone"),
+    # so only a missing one falls back to the shipped taxonomy.
+    active_taxonomy = DEFAULT_TAXONOMY if taxonomy_rules is None else taxonomy_rules
     taxonomy_source = "custom" if taxonomy_rules is not None else "default_v2"
     normalized_strategy = _normalize_ticket_strategy(problem_group_strategy)
 
@@ -1080,7 +1082,7 @@ def _parse_ticket_taxonomy_rules(raw_rules: list[dict] | None) -> tuple[Taxonomy
     if raw_rules is None:
         return None
     if not raw_rules:
-        raise HTTPException(status_code=422, detail="Custom taxonomy must include at least one rule")
+        return ()
     if len(raw_rules) > 200:
         raise HTTPException(status_code=422, detail="Custom taxonomy supports up to 200 rules")
     rules: list[TaxonomyRule] = []
