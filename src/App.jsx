@@ -17,6 +17,7 @@ import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { clearSecretChatHost, PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
+import { secretImagesApi, SecretImagesPage } from './secret-images';
 
 export function App({ initialSecretChatToken = null }) {
   // 'checking' until the backend says whether a password is configured, then
@@ -49,6 +50,7 @@ export function App({ initialSecretChatToken = null }) {
   const [exploreChatId, setExploreChatId] = useState(null);
   const [newChatSignal, setNewChatSignal] = useState(0);
   const [theme, setTheme] = useState(() => readStorage('theme') || 'dark');
+  const [secretImagesConfigured, setSecretImagesConfigured] = useState(false);
 
   const toast = (message, type = 'success') => {
     const id = crypto.randomUUID();
@@ -146,6 +148,13 @@ export function App({ initialSecretChatToken = null }) {
 
   useEffect(() => {
     if (authState === 'ready') loadData();
+  }, [authState]);
+
+  useEffect(() => {
+    if (authState !== 'ready') return;
+    secretImagesApi.status()
+      .then(status => setSecretImagesConfigured(status.configured))
+      .catch(() => setSecretImagesConfigured(false));
   }, [authState]);
 
   useEffect(() => {
@@ -360,9 +369,10 @@ export function App({ initialSecretChatToken = null }) {
         }}
         theme={theme}
         setTheme={setTheme}
+        secretImagesConfigured={secretImagesConfigured}
       />
       <main>
-        {!['ask', 'ticket-analysis', 'secret-chat'].includes(page) && (
+        {!['ask', 'ticket-analysis', 'secret-chat', 'secret-images'].includes(page) && (
           <Header
             query={query}
             setQuery={setQuery}
@@ -437,6 +447,13 @@ export function App({ initialSecretChatToken = null }) {
             onSelect={selectSecretChat}
             requestConfirm={setConfirm}
             toast={toast}
+            openMenu={() => setMobileOpen(true)}
+          />
+        )}
+        {page === 'secret-images' && (
+          <SecretImagesPage
+            toast={toast}
+            requestConfirm={setConfirm}
             openMenu={() => setMobileOpen(true)}
           />
         )}

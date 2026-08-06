@@ -532,7 +532,9 @@ app.add_middleware(
 )
 
 from .secret_chat import router as secret_chat_router
+from .secret_images import router as secret_images_router
 app.include_router(secret_chat_router)
+app.include_router(secret_images_router)
 app.include_router(auth_router)
 
 

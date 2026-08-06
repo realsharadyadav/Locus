@@ -202,3 +202,14 @@ class SecretChatParticipant(Base):
     screen: Mapped[str] = mapped_column(String(40), default="")
     viewport: Mapped[str] = mapped_column(String(40), default="")
     session: Mapped[SecretChatSession] = relationship(back_populates="participants")
+
+
+class SecretImage(Base):
+    __tablename__ = "secret_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    r2_key: Mapped[str] = mapped_column(String(160), unique=True, index=True)
+    content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    original_filename: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)

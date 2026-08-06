@@ -9,6 +9,7 @@ import {
   MessagesSquare,
   ChartNoAxesCombined,
   Fingerprint,
+  Lock,
   Sun,
   Moon,
 } from 'lucide-react';
@@ -32,6 +33,7 @@ export const NAV_SECTIONS = [
     items: [
       { id: 'ticket-analysis', Icon: ChartNoAxesCombined, label: 'Patterns', accent: '205 92% 62%' },
       { id: 'secret-chat', Icon: Fingerprint, label: 'Private', accent: '341 85% 66%' },
+      { id: 'secret-images', Icon: Lock, label: 'Secret Images', accent: '271 76% 68%' },
     ],
   },
 ];
@@ -39,7 +41,7 @@ export const NAV_SECTIONS = [
 export function Sidebar({
   page, setPage, mobileOpen, close, fileCount, readyCount, compact, toggleCompact, secretUnread = 0,
   files = [], onOpenFile, onOpenSecretChat, onNewChat, historyCollapsed, setHistoryCollapsed,
-  theme, setTheme,
+  theme, setTheme, secretImagesConfigured = true,
 }) {
   const railRef = useRef(null);
   const [marker, setMarker] = useState(null);
@@ -91,7 +93,7 @@ export function Sidebar({
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div className="nav-group" key={section.label}>
               <span className="nav-group-label">{section.label}</span>
-              {section.items.map(({ id, Icon, label, accent }, itemIndex) => (
+              {section.items.filter(({ id }) => id !== 'secret-images' || secretImagesConfigured).map(({ id, Icon, label, accent }, itemIndex) => (
                 <button
                   key={id}
                   className={`nav-item ${page === id ? 'active' : ''}`}

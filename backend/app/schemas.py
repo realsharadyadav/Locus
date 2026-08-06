@@ -425,3 +425,18 @@ class AuthLoginRequest(BaseModel):
 class AuthLoginResponse(BaseModel):
     token: str
     expires_at: datetime
+
+
+class SecretImagesStatus(BaseModel):
+    configured: bool
+
+
+class SecretImageRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    content_type: str
+    size_bytes: int
+    original_filename: str
+    created_at: datetime
+    url: str = ""
