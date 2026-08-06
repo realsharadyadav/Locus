@@ -517,16 +517,25 @@ def test_llm_naming_rewrites_generated_group_labels_and_reports_real_count(monke
     assert progress_events[-1] == ("llm_labels", "local-test-model rewrote 1 of 1 problem group label(s)")
 
 
-def test_llm_naming_leaves_curated_taxonomy_labels_alone(monkeypatch):
-    def unexpected_chat(*args, **kwargs):
-        raise AssertionError("curated taxonomy labels must not be sent for renaming")
+def test_llm_naming_rewrites_curated_taxonomy_labels_but_keeps_the_rule_name(monkeypatch):
+    captured = {}
 
-    monkeypatch.setattr("backend.app.ticket_analysis._chat", unexpected_chat)
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        captured["payload"] = json.loads(prompt)["problemGroups"]
+        current = captured["payload"][0]["currentName"]
+        return json.dumps({"groups": [{"index": 0, "currentName": current, "name": "Workforce Sign-In Breakdowns"}]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
     result = analyze_ticket_rows(LOGIN_ROWS, llm_labels=True, llm_model="local-test-model")
 
-    assert result["groups"][0]["groupName"] == "Login, SSO & Session Authentication Failures"
-    assert result["manifest"]["llmLabelStatus"] == "not_needed"
-    assert result["manifest"]["llmGroupsRenamed"] == 0
+    group = result["groups"][0]
+    assert group["groupName"] == "Workforce Sign-In Breakdowns"
+    # The reviewed vocabulary stays recoverable after the rewrite.
+    assert group["taxonomy_rule_name"] == "Login, SSO & Session Authentication Failures"
+    assert group["llm_original_name"] == "Login, SSO & Session Authentication Failures"
+    # The prompt tells the model which labels are curated so it can be conservative.
+    assert captured["payload"][0]["isCuratedTaxonomyLabel"] is True
+    assert result["manifest"]["llmGroupsRenamed"] == 1
 
 
 def test_llm_naming_disabled_by_default_never_calls_the_model(monkeypatch):
@@ -779,3 +788,32 @@ def test_llm_naming_drops_an_entry_echoing_an_unknown_group(monkeypatch):
 
     assert result["manifest"]["llmGroupsRenamed"] == 0
     assert all(group["groupName"] != "Should Not Apply" for group in result["groups"])
+
+
+def test_llm_naming_flags_an_unusable_model_response_separately(monkeypatch):
+    """A model answering with the wrong shape is a different signal to the user
+    than a model that read the labels and deliberately kept them."""
+    def garbled_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        return json.dumps([{"index": 0, "currentName": "Something The Pipeline Never Sent", "description": "no name field"}])
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", garbled_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["manifest"]["llmLabelStatus"] == "no_usable_response"
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+
+
+def test_llm_naming_reports_no_changes_when_the_model_keeps_every_label(monkeypatch):
+    def keep_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        groups = json.loads(prompt)["problemGroups"]
+        return json.dumps({"groups": [
+            {"index": entry["index"], "currentName": entry["currentName"], "name": entry["currentName"],
+             "description": entry["currentDescription"]}
+            for entry in groups
+        ]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", keep_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["manifest"]["llmLabelStatus"] == "no_changes"
+    assert result["manifest"]["llmGroupsRenamed"] == 0

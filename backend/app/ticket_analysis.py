@@ -895,16 +895,15 @@ def _llm_relabel_groups(
     is empty, degenerate, or would collide with another group's key — so the
     reported rename count is what actually changed, never the group total.
 
-    Groups carrying a curated taxonomy rule name keep it: those labels are the
-    reviewed vocabulary the taxonomy exists to enforce, so only generated and
-    clustered labels are open to rewriting. When the taxonomy is paused there is
-    no curated vocabulary to protect and every group becomes a candidate.
+    Taxonomy-matched groups are rewritten too. Their rule name is recorded in
+    `taxonomy_rule_name` so the reviewed vocabulary stays recoverable, and the
+    prompt is told which groups carry one so it only replaces a curated label
+    when the tickets justify something clearer.
     """
     curated = {normalize_signal(rule.name) for rule in taxonomy}
     candidates = [
         (index, group) for index, group in enumerate(groups)
         if _key(group.get("groupName")) not in LLM_NAMING_PROTECTED_NAMES
-        and normalize_signal(str(group.get("groupName") or "")) not in curated
     ][:LLM_NAMING_MAX_GROUPS]
     if not candidates:
         return 0, "not_needed"
@@ -916,6 +915,7 @@ def _llm_relabel_groups(
             "currentName": str(group.get("groupName") or ""),
             "currentDescription": str(group.get("description") or ""),
             "ticketCount": int(group.get("incidentCount") or 0),
+            "isCuratedTaxonomyLabel": normalize_signal(str(group.get("groupName") or "")) in curated,
             "exampleTickets": [
                 str(ticket.get("title"))[:240]
                 for ticket in (group.get("representativeTickets") or [])[:LLM_NAMING_MAX_EXAMPLES]
@@ -933,6 +933,7 @@ def _llm_relabel_groups(
             "naming": "Name the underlying business/IT pain point in 3-8 words, specific enough to distinguish it from the other groups. No ticket ids, no counts, no vendor-neutral filler like 'Various Issues'.",
             "description": "One sentence describing what the tickets in the group have in common and the impact on users.",
             "keep": "If the current name is already accurate and specific, return it unchanged.",
+            "curated": "A group flagged isCuratedTaxonomyLabel carries a reviewed taxonomy name. Replace it only when the example tickets show it is vague or wrong for them; otherwise keep the name and improve only the description.",
         },
     }
     try:
@@ -995,6 +996,8 @@ def _llm_relabel_groups(
             taken.discard(current_key)
             taken.add(new_key)
             group["llm_original_name"] = current_name
+            if normalize_signal(current_name) in curated:
+                group["taxonomy_rule_name"] = current_name
             group["groupName"] = name
             changed = True
         if description and description != str(group.get("description") or ""):
@@ -1004,7 +1007,14 @@ def _llm_relabel_groups(
             group["llm_named"] = True
             renamed += 1
 
-    status = "used" if renamed else "no_changes"
+    # "no_changes" means the model deliberately kept every label; a model that
+    # answered with an unusable shape is a different problem for the user to see.
+    if renamed:
+        status = "used"
+    elif misaligned or (raw_groups and len(raw_groups) < len(candidates)):
+        status = "no_usable_response"
+    else:
+        status = "no_changes"
     diagnostic_event("ticket_analysis.llm_naming.response", renamed=renamed, candidates=len(candidates), misaligned=misaligned, status=status)
     if progress:
         progress("llm_labels", f"{selected_model} rewrote {renamed} of {len(candidates)} problem group label(s)")

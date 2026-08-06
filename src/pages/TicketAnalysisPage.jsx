@@ -215,6 +215,7 @@ function TicketAnalysisPage({ files, openMenu }) {
   const llmLabelSummary = String(llmLabelStatus).startsWith('failed')
     ? `naming call failed (${llmLabelStatus.replace('failed: ', '')}) — deterministic labels kept`
     : llmLabelStatus === 'disabled' ? 'not run for this analysis'
+    : llmLabelStatus === 'no_usable_response' ? `${config.model || 'the selected model'} did not return usable labels — try a stronger model`
     : `${llmLabelCount} of ${groups.length} group labels rewritten by LLM`;
   const llmSuggestionCount = Number(llmStage?.details?.taxonomy_suggestions_generated || trace.taxonomy_suggestions?.length || 0);
   const okfMatchedCount = isClusterOnly ? 0 : Number(coverage.taxonomy_matched || 0);
