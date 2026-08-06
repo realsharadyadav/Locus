@@ -731,6 +731,26 @@ def _safe_indices(value: Any, upper_bound: int, assigned: set[int]) -> list[int]
     return indices
 
 
+def _json_list(payload: Any, *keys: str) -> list[Any]:
+    """Pull the array out of a model response that may or may not wrap it.
+
+    Smaller models routinely answer a "return {key: [...]}" instruction with the
+    bare array, or wrap it under a key they invented. Treating those as an empty
+    result silently discards a perfectly good response, so accept any of the
+    three shapes and only give up when the payload genuinely holds no list.
+    """
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in keys:
+            if isinstance(payload.get(key), list):
+                return payload[key]
+        candidates = [value for value in payload.values() if isinstance(value, list)]
+        if len(candidates) == 1:
+            return candidates[0]
+    return []
+
+
 def _clean_suggestion(raw: dict[str, Any]) -> dict[str, Any] | None:
     name = str(raw.get("name") or raw.get("groupName") or "").strip()
     if not name:
@@ -815,9 +835,7 @@ def _llm_assisted_unknown_groups(
     groups: list[dict[str, Any]] = []
     suggestions: list[dict[str, Any]] = []
     assigned: set[int] = set()
-    raw_groups = result.get("groups") if isinstance(result, dict) else []
-    if not isinstance(raw_groups, list):
-        raw_groups = []
+    raw_groups = _json_list(result, "groups") if isinstance(result, dict) and "groups" in result else (result if isinstance(result, list) else [])
     for raw in raw_groups:
         if not isinstance(raw, dict):
             continue
@@ -911,6 +929,7 @@ def _llm_relabel_groups(
         "instructions": {
             "scope": "Improve only the name and description of each group. Never merge, split, drop, or re-order groups.",
             "indices": "Return one entry per provided index. Use only the given index values.",
+            "echo": "Copy the group's currentName into a currentName field on your entry, unchanged, so each rewrite stays attached to the group it came from.",
             "naming": "Name the underlying business/IT pain point in 3-8 words, specific enough to distinguish it from the other groups. No ticket ids, no counts, no vendor-neutral filler like 'Various Issues'.",
             "description": "One sentence describing what the tickets in the group have in common and the impact on users.",
             "keep": "If the current name is already accurate and specific, return it unchanged.",
@@ -922,7 +941,8 @@ def _llm_relabel_groups(
             progress("llm_labels", f"Calling {selected_model} to improve {len(candidates)} problem group name(s)")
         result = _json_object(_chat(
             "You are an ITSM reporting analyst writing problem-group labels for an executive summary. "
-            "Return JSON only with key groups: an array of {index, name, description}. "
+            "Return JSON only with key groups: an array of {index, currentName, name, description}, "
+            "where currentName is copied verbatim from the input. "
             "Keep every group distinct from the others and grounded in its example tickets.",
             json.dumps(prompt),
             selected_model,
@@ -936,21 +956,32 @@ def _llm_relabel_groups(
             progress("llm_labels", f"{selected_model} group naming skipped: {type(exception).__name__}")
         return 0, f"failed: {type(exception).__name__}"
 
-    raw_groups = result.get("groups") if isinstance(result, dict) else []
-    if not isinstance(raw_groups, list):
-        raw_groups = []
+    raw_groups = _json_list(result, "groups", "problemGroups", "labels", "results")
     taken = {_normalized_group_key(str(group.get("groupName") or "")) for group in groups}
     renamed = 0
+    by_current_name = {_normalized_group_key(str(group.get("groupName") or "")): group for _, group in candidates}
+    misaligned = 0
     for raw in raw_groups:
         if not isinstance(raw, dict):
             continue
         try:
             position = int(raw.get("index"))
         except (TypeError, ValueError):
-            continue
-        if not 0 <= position < len(candidates):
-            continue
-        group = candidates[position][1]
+            position = -1
+        # The echoed currentName is the anchor, not the index. Weaker models drop
+        # an entry and shift every index after it, which would otherwise staple
+        # each new label onto the wrong group's tickets — worse than not renaming.
+        echoed = _normalized_group_key(str(raw.get("currentName") or ""))
+        group = by_current_name.get(echoed)
+        if group is None:
+            if echoed:
+                misaligned += 1
+                continue
+            if not 0 <= position < len(candidates):
+                continue
+            group = candidates[position][1]
+        elif 0 <= position < len(candidates) and candidates[position][1] is not group:
+            misaligned += 1
         current_name = str(group.get("groupName") or "")
         name = re.sub(r"\s+", " ", str(raw.get("name") or raw.get("groupName") or "")).strip()[:140]
         description = re.sub(r"\s+", " ", str(raw.get("description") or "")).strip()[:500]
@@ -974,7 +1005,7 @@ def _llm_relabel_groups(
             renamed += 1
 
     status = "used" if renamed else "no_changes"
-    diagnostic_event("ticket_analysis.llm_naming.response", renamed=renamed, candidates=len(candidates), status=status)
+    diagnostic_event("ticket_analysis.llm_naming.response", renamed=renamed, candidates=len(candidates), misaligned=misaligned, status=status)
     if progress:
         progress("llm_labels", f"{selected_model} rewrote {renamed} of {len(candidates)} problem group label(s)")
     return renamed, status
@@ -1028,15 +1059,13 @@ def _llm_taxonomy_suggestions(
             progress("taxonomy_suggestions", f"{selected_model} taxonomy suggestions skipped: {type(exception).__name__}")
         return [], f"failed: {type(exception).__name__}"
 
-    raw = result.get("taxonomySuggestions") if isinstance(result, dict) else []
     suggestions: list[dict[str, Any]] = []
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            suggestion = _clean_suggestion(item)
-            if suggestion and suggestion["patterns"] and suggestion not in suggestions:
-                suggestions.append(suggestion)
+    for item in _json_list(result, "taxonomySuggestions", "suggestions", "rules"):
+        if not isinstance(item, dict):
+            continue
+        suggestion = _clean_suggestion(item)
+        if suggestion and suggestion["patterns"] and suggestion not in suggestions:
+            suggestions.append(suggestion)
     status = "used" if suggestions else "no_suggestions"
     diagnostic_event("ticket_analysis.taxonomy_suggestions.response", suggestions=len(suggestions), status=status)
     if progress:

@@ -718,3 +718,64 @@ def test_ticket_analysis_stream_reports_real_stages_before_the_result():
     assert "cluster" in stages
     assert result["manifest"]["clusteringMethod"] == "kmeans"
     assert len(result["groups"]) == 2
+
+
+def test_llm_naming_accepts_a_bare_array_response(monkeypatch):
+    """Smaller models answer "return {groups: [...]}" with just the array."""
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        current = json.loads(prompt)["problemGroups"][0]["currentName"]
+        return json.dumps([{"index": 0, "currentName": current, "name": "Lab Calibration Breakdowns"}])
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["groups"][0]["groupName"] == "Lab Calibration Breakdowns"
+    assert result["manifest"]["llmGroupsRenamed"] == 1
+
+
+def test_llm_naming_accepts_an_unexpected_wrapper_key(monkeypatch):
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        current = json.loads(prompt)["problemGroups"][0]["currentName"]
+        return json.dumps({"renamedGroups": [{"index": 0, "currentName": current, "name": "Lab Calibration Breakdowns"}]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["groups"][0]["groupName"] == "Lab Calibration Breakdowns"
+
+
+def test_llm_naming_anchors_on_the_echoed_name_not_the_index(monkeypatch):
+    """A model that drops an entry shifts every index after it. Following the
+    index would staple each label onto the wrong group's tickets."""
+    rows = NOVEL_ROWS + [
+        {"incident_no": f"T{index}", "short_description": "Telescope array alignment drift detected"}
+        for index in range(4)
+    ]
+
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        groups = json.loads(prompt)["problemGroups"]
+        assert len(groups) == 2
+        # Both entries claim index 0, but each echoes the group it means.
+        return json.dumps({"groups": [
+            {"index": 0, "currentName": groups[1]["currentName"], "name": "Telescope Alignment Drift"},
+            {"index": 0, "currentName": groups[0]["currentName"], "name": "Lab Calibration Breakdowns"},
+        ]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(rows, pause_okf_taxonomy=True, min_group_size=2, llm_labels=True, llm_model="local-test-model")
+
+    named = {group["llm_original_name"]: group["groupName"] for group in result["groups"] if group.get("llm_named")}
+    assert set(named.values()) == {"Telescope Alignment Drift", "Lab Calibration Breakdowns"}
+    for original, new in named.items():
+        assert ("calibration" in original.lower()) == ("Calibration" in new)
+
+
+def test_llm_naming_drops_an_entry_echoing_an_unknown_group(monkeypatch):
+    def fake_chat(system, prompt, model, temperature=0.0, max_tokens=None, **kwargs):
+        return json.dumps({"groups": [{"index": 0, "currentName": "A Group That Was Never Sent", "name": "Should Not Apply"}]})
+
+    monkeypatch.setattr("backend.app.ticket_analysis._chat", fake_chat)
+    result = analyze_ticket_rows(NOVEL_ROWS, pause_okf_taxonomy=True, llm_labels=True, llm_model="local-test-model")
+
+    assert result["manifest"]["llmGroupsRenamed"] == 0
+    assert all(group["groupName"] != "Should Not Apply" for group in result["groups"])
