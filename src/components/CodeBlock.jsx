@@ -40,10 +40,15 @@ export function CodeBlock({ className, children, streaming }) {
 
   if (isMermaid) {
     if (streaming) {
+      // A full-height dump of raw Mermaid syntax here would collapse into the much shorter
+      // rendered diagram the instant streaming ends — a code block full of "flowchart LR" and
+      // node ids folding down into a small figure reads as a pop, not a reveal. Showing the same
+      // placeholder MermaidBlock itself uses keeps that transition to one step instead of two:
+      // the identical DOM means the placeholder simply resizes into the diagram once.
       return (
         <div className="code-block mermaid-block mermaid-block-pending">
           <div className="code-block-toolbar"><span className="code-block-lang">diagram</span></div>
-          <pre><code className={className}>{children}</code></pre>
+          <div className="mermaid-loading">Rendering diagram…</div>
         </div>
       );
     }

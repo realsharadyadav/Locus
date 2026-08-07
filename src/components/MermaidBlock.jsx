@@ -76,18 +76,26 @@ export function MermaidBlock({ code }) {
 
   // Scale the diagram down to fit its container, but stop at the legibility floor and let the
   // container scroll from there. Narrow diagrams fit exactly; wide ones stay readable and pan.
+  // The data-fitted gate lives on the FIGURE (not the canvas or the SVG) because the reveal fade
+  // is animated on the figure — see the diagram comment in 29-answer-layout.css.
   const fitDiagram = useCallback(() => {
     const canvas = canvasRef.current;
     const svgElement = canvas?.querySelector('svg');
     if (!canvas || !svgElement) return;
+    const figure = canvas.closest('.mermaid-figure');
     const style = window.getComputedStyle(canvas);
     const available = canvas.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0);
     if (available <= 0) return;
     const alreadySized = Boolean(svgElement.style.width);
-    if (alreadySized && Math.abs(available - lastFitRef.current) < 1 && canvas.dataset.fitted === 'true') return;
+    if (alreadySized && Math.abs(available - lastFitRef.current) < 1 && figure?.dataset.fitted === 'true') return;
     dropDrawnTitle(svgElement);
     const natural = naturalDiagramWidth(svgElement);
-    if (!natural) return;
+    // Every real Mermaid render ships a viewBox, so this only fires for a malformed diagram —
+    // reveal it at its natural size rather than stranding the reader with an invisible card.
+    if (!natural) {
+      figure?.setAttribute('data-fitted', 'true');
+      return;
+    }
     // Never enlarge past the natural size — an upscaled diagram is blurry text, not more detail.
     const scale = Math.min(1, Math.max(available / natural, MIN_LEGIBLE_SCALE));
     const width = Math.round(natural * scale);
@@ -95,9 +103,9 @@ export function MermaidBlock({ code }) {
     svgElement.style.maxWidth = 'none';
     svgElement.style.height = 'auto';
     lastFitRef.current = available;
-    // Only now is the diagram at its final size. The canvas stays hidden until this flips, so the
+    // Only now is the diagram at its final size. The figure stays hidden until this flips, so the
     // first frame the user sees is the fitted one rather than Mermaid's own full-size layout.
-    canvas.dataset.fitted = 'true';
+    figure?.setAttribute('data-fitted', 'true');
     setOverflows(width > available + 1);
   }, []);
 
@@ -106,9 +114,9 @@ export function MermaidBlock({ code }) {
   useLayoutEffect(() => {
     if (!svg || showSource) return undefined;
     lastFitRef.current = -1;
-    if (canvasRef.current) delete canvasRef.current.dataset.fitted;
-    fitDiagram();
     const canvas = canvasRef.current;
+    if (canvas) delete (canvas.closest('.mermaid-figure') || canvas).dataset.fitted;
+    fitDiagram();
     if (!canvas) return undefined;
     // Rotating the phone or opening the sidebar changes the available width. Coalescing into an
     // animation frame keeps the measure-then-write pair out of the observer's own callback, which

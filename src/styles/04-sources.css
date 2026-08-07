@@ -387,13 +387,16 @@ div.sources-panel-card {
 .markdown-answer .mermaid-canvas svg { max-width: 100%; height: auto; }
 .markdown-answer .mermaid-canvas-zoomable { cursor: zoom-in; }
 .markdown-answer .mermaid-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
   padding: 20px 12px;
   text-align: center;
   color: #8b8578;
   font-size: 13px;
   background: #fdfcfa;
 }
-.markdown-answer .mermaid-block-pending pre { opacity: .55; }
 .markdown-answer .mermaid-error { background: #fdfcfa; padding: 12px; }
 .markdown-answer .mermaid-error-message { margin: 0 0 8px; color: #b0413e; font-size: 12.5px; }
 .markdown-answer .mermaid-error pre {

@@ -229,19 +229,20 @@
 
 /* --- Diagrams ------------------------------------------------------------------------------- */
 /* Mermaid lays the diagram out at its own natural size; MermaidBlock then measures the container
-   and writes the fitted width on, flipping data-fitted once it has. Holding the SVG invisible
-   until that attribute appears is what stops the diagram from being painted once at full size and
-   again a moment later at the fitted one — the flicker readers were seeing. A diagram inside a
-   collapsed section measures 0 wide and simply stays unfitted until the ResizeObserver sees it
-   open, so nothing is stranded invisible. */
-.markdown-answer .mermaid-canvas svg {
+   and writes the fitted width on, flipping data-fitted once it has. Holding the whole FIGURE
+   invisible until that attribute appears is what stops the diagram from being painted once at
+   full size and again a moment later at the fitted one — the flicker readers were seeing. The
+   reveal fade lives on the figure rather than the <svg>: the SVG sits inside a touch-scroll box,
+   and animating opacity on an element inside a -webkit-overflow-scrolling box is the exact
+   combination that makes iOS Safari repaint-flicker. A diagram inside a collapsed section
+   measures 0 wide and simply stays unfitted until the ResizeObserver sees it open, so nothing is
+   stranded invisible. */
+.markdown-answer .mermaid-figure {
   opacity: 0;
 }
 
-/* Opacity only: this element lives in a horizontally scrolling box, and animating a transform on
-   it changes scrollWidth every frame, which made the edge-shadow observer strobe alongside it. */
-.markdown-answer .mermaid-canvas[data-fitted] svg {
-  animation: answer-diagram-in 320ms ease both;
+.markdown-answer .mermaid-figure[data-fitted] {
+  animation: answer-diagram-in 240ms ease-out both;
 }
 
 @keyframes answer-diagram-in {
@@ -398,7 +399,7 @@ html[data-theme='dark'] .answer-table-wrap {
 
   /* No fade, but the fitted gate still decides visibility — dropping the animation must not drop
      the opacity:1 it was carrying. */
-  .markdown-answer .mermaid-canvas[data-fitted] svg {
+  .markdown-answer .mermaid-figure[data-fitted] {
     animation: none;
     opacity: 1;
   }
@@ -421,7 +422,13 @@ html[data-theme='dark'] .answer-table-wrap {
 .markdown-answer .mermaid-canvas {
   justify-content: flex-start;
   overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  /* -webkit-overflow-scrolling: touch is deprecated on iOS 13+ (momentum scrolling is native now)
+     and, combined with overflow-x: auto, is a documented source of repaint flicker while panning.
+     translateZ(0) promotes the scroll box to its own compositor layer so the diagram is not
+     redrawn every frame during a drag, and overscroll-behavior-x stops a sideways swipe on the
+     diagram from chaining into the page's own scrolling/back-gesture. */
+  -webkit-transform: translateZ(0);
+  overscroll-behavior-x: contain;
   /* Horizontal panning belongs to this scroll container; vertical stays with the page. */
   touch-action: pan-x pan-y;
 }

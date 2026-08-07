@@ -168,8 +168,8 @@ that will bite you again if forgotten.
     Fitting runs in a **layout** effect (a plain effect paints Mermaid's own full-size layout for one
     frame first — that jump is what reads as flicker), only re-runs when the available width actually
     changed (writing the width can add or remove a scrollbar, which wakes the ResizeObserver straight
-    back up), and the canvas holds the SVG at `opacity: 0` until `data-fitted` appears so the first
-    visible frame is the fitted one. A MutationObserver re-fits if anything strips the sized width.
+    back up), and the figure holds the whole card at `opacity: 0` until `data-fitted` appears so
+    the first visible frame is the fitted one. A MutationObserver re-fits if anything strips the sized width.
 
 18. **The diagram lightbox owns its touch gestures** — pinch is implemented from pointer events
     (a Map of live pointers; two entries is a pinch), zooming about the focal point so content stays
@@ -200,6 +200,21 @@ that will bite you again if forgotten.
     rewrites only the top-level direction (a `direction LR` inside a subgraph keeps its row layout)
     below the same 640px breakpoint the diagram CSS uses. Only what is *drawn* is re-oriented — copy
     and "view source" still return the author's original diagram.
+
+22. **Mobile diagram flicker is a CSS-composition problem, not a React one** — three fixes in the
+    mermaid CSS/JS made inline diagrams calm on phones: (a) the reveal fade and the `opacity: 0`
+    until-fitted gate live on the **figure**, never the `<svg>` — the SVG sits inside an
+    `overflow-x: auto` box, and animating opacity on an element inside a touch-scroll container is
+    the exact combination that makes iOS Safari repaint-flicker while panning; (b)
+    `-webkit-overflow-scrolling: touch` was **removed** from `.mermaid-canvas` (deprecated since
+    iOS 13 — momentum is native — and a documented flicker source) and replaced with
+    `-webkit-transform: translateZ(0)` to promote the scroll box to its own compositor layer plus
+    `overscroll-behavior-x: contain` so a sideways swipe on a wide diagram stops chaining into the
+    page; (c) the streaming placeholder in `CodeBlock` shows the same `.mermaid-loading` box (fixed
+    `min-height`, flex-centred) that `MermaidBlock` uses, so the raw-syntax code block no longer
+    collapses into a small figure — that collapse was the "pop then scroll" jump on mobile.
+    `data-fitted` is set/cleared on the figure (`canvas.closest('.mermaid-figure')`) and
+    `fitDiagram` reveals a viewBox-less SVG at natural size instead of stranding it invisible.
 
 ---
 
