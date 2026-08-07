@@ -145,6 +145,31 @@ html[data-theme='dark'] .explore-header-new-chat:hover { background: rgba(116,92
   gap: 10px;
 }
 .settings-model-header h3 { margin: 0; }
+.settings-provider-filter {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+.settings-provider-filter select {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 5px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.settings-provider-filter select:hover,
+.settings-provider-filter select:focus { border-color: var(--violet); outline: none; }
 .settings-free-toggle {
   flex-shrink: 0;
   border: 1px solid var(--line);

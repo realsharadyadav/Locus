@@ -274,6 +274,16 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
 
         <div className="settings-model-header">
           <h3>Default model</h3>
+          <label className="settings-provider-filter">
+            <span>Provider</span>
+            <select value={draft.provider} onChange={e => selectProvider(e.target.value)}>
+              {providers.map(provider => (
+                <option key={provider} value={provider}>
+                  {PROVIDER_LABELS[provider]} ({providerModels(provider).length})
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
         {providerModels(draft.provider).length === 0 ? (
           <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
