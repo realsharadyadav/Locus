@@ -173,11 +173,33 @@ that will bite you again if forgotten.
 
 18. **The diagram lightbox owns its touch gestures** — pinch is implemented from pointer events
     (a Map of live pointers; two entries is a pinch), zooming about the focal point so content stays
-    under the fingers. `touch-action: none` on `.diagram-lightbox-canvas` is what stops the browser
-    claiming the two-finger gesture for page zoom; without it Chromium fires `pointercancel`
-    mid-gesture and the pinch freezes part-way. The app does not disable page zoom globally and
-    should not — that is an accessibility regression. Double-tap is timed manually (300ms) rather
-    than using `dblclick`, and zooms in from 1x or resets when already magnified.
+    under the fingers. **Pan is real scrolling, not a transform**: the canvas is an `overflow: auto`
+    flex container and `.diagram-lightbox-content` is a `margin: auto; flex: none` flex item, so a
+    fitting diagram sits centred while an overflowing one scrolls from its top-left edge — trackpad
+    and mouse wheel pan it natively (a plain wheel is left alone), desktop zoomed-in diagrams get
+    scrollbars, and a single-finger swipe keeps native momentum. `touch-action: pan-x pan-y` is what
+    lets the browser take over the single-finger scroll while leaving the two-finger pinch to us
+    (browsers do not claim a two-finger gesture, so pointer events keep firing — a `touch-action:
+    none` would hand us the pan too and lose the momentum, which read as "not easy to scroll").
+    **Ctrl/Cmd+wheel zooms about the cursor** — and a trackpad pinch is delivered as exactly that
+    ctrl+wheel sequence by Chrome and Safari, so laptop pinch-to-zoom works, wired non-passive so the
+    page behind cannot zoom instead. The app does not disable page zoom globally and should not — that
+    is an accessibility regression. Double-tap is timed manually (300ms) rather than using `dblclick`,
+    and zooms in from 1x or resets when already magnified. **Crucially, zoom is not a CSS transform on
+    the content**: a transform composites the texture the browser already rasterized at the element's
+    layout size, so scaling up just stretches that bitmap and Mermaid's HTML labels
+    (`flowchart.htmlLabels`) turn to blurry pixels — and a `will-change: transform` layer made it
+    worse (a giant raster the GPU drags around = mobile scroll stutter). The lightbox instead grows
+    the SVG's own `width` (re-anchoring the pan so the focal point stays under the fingers), which
+    makes the browser re-lay the whole diagram at the new resolution — crisp at any zoom. That is also
+    why `.diagram-lightbox-content svg` must have **no** `max-width`/`max-height` cap **and** the cap
+    must be `!important`: Mermaid stamps an inline `style="max-width: <natural>px"` onto the svg root,
+    and an inline style beats a plain stylesheet rule — without `!important` the zoomed-in diagram
+    stops growing at its natural size while the pan keeps moving, which reads as the diagram sliding
+    sideways instead of enlarging. The scroll-based focal math is `feature = (focal + scroll) / scale;
+    newScroll = feature * nextScale - focal`. This was a hand-rolled implementation that a
+    `react-zoom-pan-pinch` migration regressed; do not migrate it back without solving the
+    re-render-at-zoom problem first.
 
 19. **Later style layers must out-specify, not just come after** — `20-layout.css` pins `.chat-top`
     with `display: flex !important` and `.workspace-label` with `display: inline-flex !important`,

@@ -347,22 +347,13 @@
   text-align: right;
 }
 
-/* The transform is driven per pointer event; a transition here would lag the fingers. */
+/* Pan is real scrolling on the canvas, not a transform; zoom grows the SVG's own width (see
+   DiagramLightbox.jsx). Either way there is no transition to add - one would lag the fingers. */
 .diagram-lightbox-content {
   transition: none;
-  will-change: transform;
 }
 
 @media (max-width: 640px) {
-  .diagram-lightbox-content {
-    padding: 16px;
-  }
-
-  .diagram-lightbox-content svg {
-    max-width: 92vw;
-    max-height: 70vh;
-  }
-
   .diagram-lightbox-title {
     display: none;
   }

@@ -441,28 +441,56 @@ html[data-theme='dark'] .markdown-answer .mermaid-error pre { background: #0d121
   cursor: pointer;
 }
 .diagram-lightbox-action:hover { background: rgba(255,255,255,.16); }
-/* Centering is react-zoom-pan-pinch's job now (centerOnInit) - flexbox alignment here would fight
-   the library's own translate math, which assumes the content sits at the wrapper's top-left. */
+/* The canvas is a native scroll container: pan is real scrolling, so a trackpad, a mouse wheel
+   and a single-finger swipe all move the diagram the way any page scrolls, with momentum on touch
+   and scrollbars on desktop. Pinch stays ours because multi-touch is not a browser pan gesture.
+   .diagram-lightbox-content is the flex item with margin: auto - the classic combo that centres a
+   diagram that fits and scrolls from the top-left edge once it overflows. */
 .diagram-lightbox-canvas {
   flex: 1;
-  overflow: hidden;
+  display: flex;
+  overflow: auto;
   cursor: grab;
-  touch-action: none;
-  /* Hidden until centerOnInit has positioned it (DiagramLightbox flips .is-ready once react-zoom-
-     pan-pinch's onInit fires) - staying invisible for that one frame is what skips the "pinned to
-     the top-left corner, then jumps to centre" blink a plain opacity:1 default would show. */
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,120,140,.4) transparent;
+  /* Hidden until the initial fit-and-centre has been computed (DiagramLightbox flips .is-ready
+     once that runs) - staying invisible for that one frame is what skips the "pinned to the
+     top-left corner, then jumps to centre" blink a plain opacity:1 default would show. */
   opacity: 0;
   transition: opacity 160ms ease;
 }
+.diagram-lightbox-canvas::-webkit-scrollbar { width: 10px; height: 10px; }
+.diagram-lightbox-canvas::-webkit-scrollbar-thumb {
+  background: rgba(120,120,140,.4);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.diagram-lightbox-canvas::-webkit-scrollbar-thumb:hover { background: rgba(120,120,140,.65); background-clip: padding-box; }
 .diagram-lightbox-canvas.is-ready { opacity: 1; }
 .diagram-lightbox-canvas:active { cursor: grabbing; }
+/* Zoom is applied by growing the SVG's own width (see the zoom comment in DiagramLightbox.jsx),
+   which is what keeps HTML labels crisp. No will-change here: promoting the content to a raster
+   layer is exactly what made zoom blurry. */
 .diagram-lightbox-content {
-  transition: transform .04s linear;
-  background: #fdfcfa;
-  padding: 32px;
-  border-radius: 12px;
+  margin: auto;
+  flex: none;
 }
-.diagram-lightbox-content svg { max-width: min(85vw, 1100px); max-height: 78vh; }
+/* The diagram is the card: the lightbox backdrop is translucent, so the drawing gets its own
+   opaque sheet rather than a muddy tinted one. Width/height are written inline by the lightbox,
+   so no max-* caps here - a cap would shrink the box away from the width the pan math assumed.
+   The !important is load-bearing: Mermaid stamps an inline style="max-width: <natural>px" onto
+   the svg root, and an inline style beats a plain stylesheet rule - so without !important the
+   zoomed-in diagram stops growing at its natural size while the pan translate keeps moving, which
+   reads as the diagram sliding sideways instead of enlarging. */
+.diagram-lightbox-content svg {
+  display: block;
+  background: #fdfcfa;
+  border-radius: 12px;
+  max-width: none !important;
+  max-height: none !important;
+}
 
 /* Answer table of contents */
 .answer-toc {
