@@ -1,0 +1,463 @@
+/* Glassmorphism skin — surfaces only.
+   No layout, spacing, sizing, or placement changes.
+   Apple-style frosted glass over calm purple-tinted depth. */
+
+:root {
+  --glass-blur: blur(28px) saturate(180%);
+  --glass-blur-soft: blur(18px) saturate(160%);
+  --glass-blur-heavy: blur(40px) saturate(190%);
+  --glass-edge: rgba(255, 255, 255, .38);
+  --glass-edge-soft: rgba(255, 255, 255, .18);
+  --glass-fill: rgba(255, 255, 255, .52);
+  --glass-fill-strong: rgba(255, 255, 255, .72);
+  --glass-fill-soft: rgba(255, 255, 255, .34);
+  --glass-inset: rgba(255, 255, 255, .22);
+  --glass-shadow: 0 10px 40px rgba(23, 38, 58, .08), inset 0 1px 0 rgba(255, 255, 255, .55);
+  --glass-shadow-float: 0 18px 50px rgba(23, 38, 58, .14), inset 0 1px 0 rgba(255, 255, 255, .6);
+  --glass-hairline: rgba(23, 38, 58, .08);
+}
+
+html[data-theme='dark'] {
+  --glass-edge: rgba(255, 255, 255, .14);
+  --glass-edge-soft: rgba(255, 255, 255, .08);
+  --glass-fill: rgba(22, 27, 34, .48);
+  --glass-fill-strong: rgba(22, 27, 34, .72);
+  --glass-fill-soft: rgba(13, 17, 23, .36);
+  --glass-inset: rgba(255, 255, 255, .04);
+  --glass-shadow: 0 12px 40px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255, 255, 255, .08);
+  --glass-shadow-float: 0 22px 60px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(255, 255, 255, .1);
+  --glass-hairline: rgba(255, 255, 255, .08);
+  --paper: rgba(22, 27, 34, .55);
+  --canvas: #07090e;
+  --sidebar: rgba(1, 4, 9, .42);
+  --dark-canvas: #07090e;
+  --dark-inset: rgba(1, 4, 9, .55);
+  --dark-surface: rgba(22, 27, 34, .48);
+  --dark-surface-raised: rgba(28, 33, 40, .58);
+  --dark-surface-hover: rgba(33, 38, 45, .62);
+  --dark-border: rgba(255, 255, 255, .1);
+  --dark-border-muted: rgba(255, 255, 255, .06);
+}
+
+/* Depth field behind frosted panels */
+body {
+  background:
+    radial-gradient(ellipse 70% 50% at 12% 8%, rgba(167, 139, 250, .22), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 88% 12%, rgba(118, 99, 170, .16), transparent 50%),
+    radial-gradient(ellipse 60% 50% at 70% 88%, rgba(139, 116, 246, .12), transparent 55%),
+    radial-gradient(ellipse 40% 35% at 20% 75%, rgba(255, 255, 255, .35), transparent 60%),
+    linear-gradient(165deg, #f3f0f8 0%, #ebe6f2 42%, #e4e0ea 100%) !important;
+}
+
+html[data-theme='dark'] body {
+  background:
+    radial-gradient(ellipse 65% 48% at 10% 0%, rgba(139, 92, 246, .28), transparent 52%),
+    radial-gradient(ellipse 50% 40% at 92% 8%, rgba(88, 166, 255, .12), transparent 48%),
+    radial-gradient(ellipse 55% 45% at 78% 92%, rgba(124, 58, 237, .16), transparent 55%),
+    radial-gradient(ellipse 35% 30% at 30% 70%, rgba(167, 139, 250, .08), transparent 60%),
+    linear-gradient(165deg, #05070c 0%, #0a0d14 48%, #070910 100%) !important;
+}
+
+html[data-theme='dark'],
+html[data-theme='dark'] .app-shell,
+html[data-theme='dark'] main,
+html[data-theme='dark'] .page,
+html[data-theme='dark'] .home-page,
+html[data-theme='dark'] .inner-page,
+html[data-theme='dark'] .explore-shell,
+html[data-theme='dark'] .chat-page,
+html[data-theme='dark'] .chat-thread {
+  background: transparent !important;
+}
+
+.app-shell,
+main,
+.page,
+.home-page,
+.inner-page,
+.explore-shell,
+.chat-page,
+.chat-thread {
+  background: transparent !important;
+}
+
+/* Shared frosted material */
+.sidebar,
+header,
+.home-hero,
+.panel,
+.store-card,
+.simple-files,
+.simple-files article,
+.onboarding-card,
+.modal,
+.command-palette,
+.global-search,
+.chat-composer,
+.markdown-answer,
+.message-body > p,
+.source-chip,
+.stat-grid article,
+.drop-zone,
+.options-popover,
+.pipeline-card,
+.pipeline-operation,
+.workspace-actions .file-scope-button,
+.knowledge-button,
+.desktop-controls .model-control,
+.reasoning-switch,
+.suggestion-grid button,
+.chat-history,
+.chat-history > div > .new-chat-button,
+.chat-history-item,
+.file-tree-panel,
+.file-picker,
+.file-tree-foot,
+.file-picker-foot,
+.composer-meta span,
+.chat-controls select,
+.model-control input,
+.capture-form > input,
+.capture-form textarea,
+.theme-toggle,
+.agent-card,
+.panel-toggle-button,
+.focus-mode-button,
+.panel-icon-toggle,
+.sidebar-mode-toggle,
+.copy-conv-id-button,
+.collapsed-new-chat-button,
+.compact-chart,
+.chat-rail,
+.pipeline-panel,
+.sources-panel,
+.sources-bar-btn,
+.login-card,
+.toast,
+.toast-success,
+.toast-error,
+.splash {
+  background: var(--glass-fill) !important;
+  background-image: none !important;
+  border-color: var(--glass-edge-soft) !important;
+  box-shadow: var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* Chrome: sidebar + sticky header */
+.sidebar,
+header,
+.chat-history,
+.file-tree-panel,
+.chat-rail {
+  background: var(--glass-fill-soft) !important;
+  border-color: var(--glass-hairline) !important;
+  box-shadow: inset -1px 0 0 var(--glass-edge-soft), var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur-heavy);
+  -webkit-backdrop-filter: var(--glass-blur-heavy);
+}
+
+header {
+  background: color-mix(in srgb, var(--glass-fill-soft) 88%, transparent) !important;
+  border-bottom: 1px solid var(--glass-hairline) !important;
+  box-shadow: 0 1px 0 var(--glass-edge-soft), 0 8px 28px rgba(0, 0, 0, .06) !important;
+}
+
+html[data-theme='dark'] header {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .06), 0 10px 32px rgba(0, 0, 0, .28) !important;
+}
+
+/* Floating cards */
+.home-hero,
+.panel,
+.store-card,
+.modal,
+.command-palette,
+.pipeline-card,
+.file-picker,
+.chat-composer,
+.onboarding-card,
+.sources-panel,
+.login-card {
+  background: var(--glass-fill-strong) !important;
+  border: 1px solid var(--glass-edge) !important;
+  box-shadow: var(--glass-shadow-float) !important;
+  backdrop-filter: var(--glass-blur-heavy);
+  -webkit-backdrop-filter: var(--glass-blur-heavy);
+}
+
+.home-hero,
+.pipeline-card {
+  background:
+    linear-gradient(160deg, rgba(167, 139, 250, .12), transparent 48%),
+    var(--glass-fill-strong) !important;
+}
+
+html[data-theme='dark'] .home-hero,
+html[data-theme='dark'] .pipeline-card {
+  background:
+    linear-gradient(160deg, rgba(139, 92, 246, .16), transparent 52%),
+    var(--glass-fill-strong) !important;
+}
+
+/* Composer + answer bubbles */
+.chat-composer,
+.markdown-answer,
+.message-body > p {
+  border: 1px solid var(--glass-edge-soft) !important;
+}
+
+html[data-theme='dark'] .chat-message.user .message-body > p {
+  background: linear-gradient(145deg, rgba(139, 92, 246, .72), rgba(109, 40, 217, .78)) !important;
+  border-color: rgba(196, 181, 253, .35) !important;
+  box-shadow: 0 10px 28px rgba(109, 40, 217, .28), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
+/* Controls / chips stay glassy but denser */
+.global-search,
+.suggestion-grid button,
+.reasoning-switch,
+.knowledge-button,
+.workspace-actions .file-scope-button,
+.source-chip,
+.theme-toggle,
+.panel-toggle-button,
+.focus-mode-button,
+.panel-icon-toggle,
+.desktop-controls .model-control,
+.composer-meta span,
+.chat-controls select,
+.model-control input,
+.capture-form > input,
+.capture-form textarea,
+.sources-bar-btn {
+  background: var(--glass-inset) !important;
+  border: 1px solid var(--glass-edge-soft) !important;
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft) !important;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
+.sidebar nav button:hover,
+.sidebar nav button.active,
+.panel-row:hover,
+.chat-history-item:hover,
+.chat-history-item.active,
+.suggestion-grid button:hover,
+.quick-actions button:hover,
+.source-chip:hover,
+.command-results button:hover,
+.command-results button.active,
+.file-picker-list label:hover,
+.file-picker-list label.selected,
+.file-tree-children label:hover,
+.file-tree-children label.selected,
+.chat-rail-item:hover,
+.chat-rail-item.active {
+  background: color-mix(in srgb, var(--glass-fill-strong) 70%, rgba(167, 139, 250, .22)) !important;
+  border-color: rgba(167, 139, 250, .35) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12) !important;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
+html[data-theme='dark'] .sidebar nav button:hover,
+html[data-theme='dark'] .sidebar nav button.active,
+html[data-theme='dark'] .panel-row:hover,
+html[data-theme='dark'] .chat-history-item:hover,
+html[data-theme='dark'] .chat-history-item.active,
+html[data-theme='dark'] .suggestion-grid button:hover,
+html[data-theme='dark'] .source-chip:hover,
+html[data-theme='dark'] .command-results button:hover,
+html[data-theme='dark'] .command-results button.active,
+html[data-theme='dark'] .file-picker-list label:hover,
+html[data-theme='dark'] .file-picker-list label.selected,
+html[data-theme='dark'] .file-tree-children label:hover,
+html[data-theme='dark'] .file-tree-children label.selected,
+html[data-theme='dark'] .chat-rail-item:hover,
+html[data-theme='dark'] .chat-rail-item.active {
+  background: rgba(124, 58, 237, .2) !important;
+  border-color: rgba(167, 139, 250, .38) !important;
+}
+
+/* Primary CTAs keep solid gradient for contrast */
+.new-button,
+.chat-composer .composer-input-row button,
+.save-button,
+.file-picker-foot button,
+.api-banner {
+  background: linear-gradient(135deg, #8b5cf6, #6d28d9) !important;
+  border-color: rgba(196, 181, 253, .45) !important;
+  color: #f5f3ff !important;
+  box-shadow: 0 10px 28px rgba(109, 40, 217, .32), inset 0 1px 0 rgba(255, 255, 255, .28) !important;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Overlays */
+.modal-wrap,
+.sources-panel-overlay {
+  background: rgba(12, 16, 24, .38) !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+html[data-theme='dark'] .modal-wrap,
+html[data-theme='dark'] .sources-panel-overlay {
+  background: rgba(0, 0, 0, .42) !important;
+}
+
+/* Code stays readable — denser glass, not fully transparent */
+.markdown-answer pre,
+.markdown-answer code,
+.markdown-answer th,
+.markdown-answer tbody tr:nth-child(even),
+.composer-meta kbd,
+.global-search kbd,
+.command-input kbd {
+  background: color-mix(in srgb, var(--glass-fill-strong) 82%, #000 8%) !important;
+  border-color: var(--glass-hairline) !important;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
+html[data-theme='dark'] .markdown-answer pre {
+  background: rgba(1, 4, 9, .72) !important;
+  border-color: rgba(255, 255, 255, .08) !important;
+}
+
+/* Pipeline inner panels */
+.pipeline-panel,
+.pipeline-operation,
+.console-feed > div.live {
+  background: rgba(255, 255, 255, .28) !important;
+  border-color: var(--glass-edge-soft) !important;
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+}
+
+html[data-theme='dark'] .pipeline-panel,
+html[data-theme='dark'] .pipeline-operation,
+html[data-theme='dark'] .console-feed > div.live {
+  background: rgba(124, 58, 237, .14) !important;
+  border-color: rgba(167, 139, 250, .28) !important;
+}
+
+/* Login / splash */
+.login,
+.splash {
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 35%, rgba(167, 139, 250, .2), transparent 58%),
+    radial-gradient(ellipse 40% 30% at 20% 80%, rgba(255, 255, 255, .35), transparent 55%),
+    linear-gradient(165deg, #efeaf7, #e6e1ee) !important;
+}
+
+html[data-theme='dark'] .login,
+html[data-theme='dark'] .splash {
+  background:
+    radial-gradient(ellipse 55% 45% at 50% 36%, rgba(139, 92, 246, .24), transparent 58%),
+    radial-gradient(ellipse 40% 30% at 80% 80%, rgba(88, 166, 255, .08), transparent 50%),
+    linear-gradient(165deg, #05070c, #0a0d14) !important;
+}
+
+.login-card,
+.splash {
+  border: 1px solid var(--glass-edge) !important;
+}
+
+/* Private chat surfaces */
+.secret-chat-page,
+.scs-shell,
+.scs-header,
+.scs-composer,
+.scs-bubble,
+.private-chats-page .chat-rail,
+.secret-chat-standalone {
+  background: var(--glass-fill) !important;
+  border-color: var(--glass-edge-soft) !important;
+  box-shadow: var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* Explore rails that set solid fills later in cascade */
+html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed),
+html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .chat-history-item,
+html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .new-chat-button,
+html[data-theme='dark'] .chat-rail {
+  background: var(--glass-fill-soft) !important;
+  border-color: var(--glass-hairline) !important;
+  box-shadow: var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur-heavy);
+  -webkit-backdrop-filter: var(--glass-blur-heavy);
+}
+
+html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .chat-history-item:hover,
+html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .chat-history-item.active {
+  background: rgba(124, 58, 237, .2) !important;
+}
+
+/* Ticket analysis page shell if present */
+.ticket-analysis-page,
+.ticket-settings-panel,
+.ticket-live-stage {
+  background: var(--glass-fill) !important;
+  border-color: var(--glass-edge-soft) !important;
+  box-shadow: var(--glass-shadow) !important;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+/* Softer hairlines everywhere glass meets glass */
+html[data-theme='dark'] .markdown-answer table,
+html[data-theme='dark'] .markdown-answer th,
+html[data-theme='dark'] .markdown-answer td,
+html[data-theme='dark'] .composer-meta,
+html[data-theme='dark'] .panel-head,
+html[data-theme='dark'] .chat-top,
+html[data-theme='dark'] .file-tree-head,
+html[data-theme='dark'] .file-tree-foot,
+html[data-theme='dark'] .file-picker-head,
+html[data-theme='dark'] .file-picker-foot,
+html[data-theme='dark'] .simple-files article,
+html[data-theme='dark'] .panel-row {
+  border-color: var(--glass-hairline) !important;
+}
+
+/* Reduce motion / unsupported blur fallbacks still look translucent */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar,
+  header,
+  .home-hero,
+  .panel,
+  .store-card,
+  .modal,
+  .command-palette,
+  .chat-composer,
+  .pipeline-card,
+  .chat-history,
+  .file-tree-panel,
+  .file-picker,
+  .sources-panel {
+    background: color-mix(in srgb, var(--glass-fill-strong) 92%, #fff 8%) !important;
+  }
+
+  html[data-theme='dark'] .sidebar,
+  html[data-theme='dark'] header,
+  html[data-theme='dark'] .home-hero,
+  html[data-theme='dark'] .panel,
+  html[data-theme='dark'] .store-card,
+  html[data-theme='dark'] .modal,
+  html[data-theme='dark'] .command-palette,
+  html[data-theme='dark'] .chat-composer,
+  html[data-theme='dark'] .pipeline-card,
+  html[data-theme='dark'] .chat-history,
+  html[data-theme='dark'] .file-tree-panel,
+  html[data-theme='dark'] .file-picker,
+  html[data-theme='dark'] .sources-panel {
+    background: rgba(22, 27, 34, .92) !important;
+  }
+}
