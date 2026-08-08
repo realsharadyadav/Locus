@@ -4,11 +4,51 @@ import {
 } from 'lucide-react';
 
 export const SLASH_COMMANDS = [
-  { id: 'light', label: '/light', desc: 'Fast direct chat — default mode', icon: Radio, color: '#7c6cff' },
-  { id: 'unrestricted', label: '/unrestricted', desc: 'Expert mode — direct, low-fluff answers', icon: Zap, color: '#ff6b6b' },
-  { id: 'thinking', label: '/thinking', desc: 'Deep analysis — inspects all selected content', icon: Sparkles, color: '#a78bfa' },
-  { id: 'deep_summary', label: '/deepsummary', desc: 'Complete section-by-section doc coverage', icon: BookOpen, color: '#60a5fa' },
-  { id: 'ticket_analysis', label: '/ticketanalysis', desc: 'Group incidents by problem pattern', icon: Database, color: '#34d399' },
+  {
+    id: 'light',
+    label: '/light',
+    desc: 'Fast direct chat — default mode',
+    friendlyLabel: 'Quick answer',
+    friendlyDesc: 'A fast answer with the most useful context',
+    icon: Radio,
+    color: '#7c6cff',
+  },
+  {
+    id: 'unrestricted',
+    label: '/unrestricted',
+    desc: 'Expert mode — direct, low-fluff answers',
+    friendlyLabel: 'Advanced answer',
+    friendlyDesc: 'Direct responses with fewer guardrails',
+    icon: Zap,
+    color: '#ff6b6b',
+  },
+  {
+    id: 'thinking',
+    label: '/thinking',
+    desc: 'Deep analysis — inspects all selected content',
+    friendlyLabel: 'Deep analysis',
+    friendlyDesc: 'Compare and reason across selected content',
+    icon: Sparkles,
+    color: '#a78bfa',
+  },
+  {
+    id: 'deep_summary',
+    label: '/deepsummary',
+    desc: 'Complete section-by-section doc coverage',
+    friendlyLabel: 'Document summary',
+    friendlyDesc: 'Cover a document section by section',
+    icon: BookOpen,
+    color: '#60a5fa',
+  },
+  {
+    id: 'ticket_analysis',
+    label: '/ticketanalysis',
+    desc: 'Group incidents by problem pattern',
+    friendlyLabel: 'Ticket patterns',
+    friendlyDesc: 'Group incidents by recurring problems',
+    icon: Database,
+    color: '#34d399',
+  },
 ];
 
 export const AUTO_WEB_SEARCH_PATTERNS = [

@@ -22,6 +22,8 @@ import {
   ChevronDown,
   Globe,
   FilePlus2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { api } from '../api';
 import { assistantLabel, readStorage } from '../brand';
@@ -46,9 +48,16 @@ import { parseServerTime } from '../utils';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
 
+const STARTER_PROMPTS = [
+  'Give me a concise summary',
+  'Find the key risks and open questions',
+  'Compare the selected files',
+];
+
 export function ExplorePage({
   files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat,
   requestDeleteAllChats, hasActiveJobs, refreshChats, refreshJobs, openMenu, newChatSignal,
+  historyCollapsed = false, setHistoryCollapsed,
 }) {
   const savedAiPreference = readSavedAiPreference();
   const [question, setQuestion] = useState('');
@@ -78,6 +87,7 @@ export function ExplorePage({
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const composerRef = useRef(null);
   const mobileHeaderRef = useRef(null);
+  const emptyStateRef = useRef(null);
 
   useChatViewportLock();
   const compactViewport = useCompactViewport();
@@ -103,11 +113,26 @@ export function ExplorePage({
     setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
   };
   const selectedCount = selectedFileIds === null ? files.length : selectedFileIds.length;
+  const selectedFiles = selectedFileIds === null
+    ? files
+    : files.filter(file => selectedFileIds.includes(file.id));
+  const selectedContextLabel = selectedFileIds === null
+    ? (files.length ? `All ${files.length} library files` : 'No library files')
+    : selectedFileIds.length
+      ? `${selectedFileIds.length} selected file${selectedFileIds.length === 1 ? '' : 's'}`
+      : 'General knowledge';
+  const selectedContextDetail = selectedFileIds === null
+    ? 'Search across your uploaded library'
+    : selectedFiles.length
+      ? selectedFiles.slice(0, 2).map(file => file.name).join(', ') + (selectedFiles.length > 2 ? ` +${selectedFiles.length - 2} more` : '')
+      : 'Add files when you want answers grounded in your library';
   // Header identity: the conversation's own title, with the model and mode as the second line.
   // On a phone this replaces the row of labels and stat pills that used to wrap over the thread.
   const activeChatTitle = chats.find(item => item.id === activeChat)?.title || 'New chat';
-  const modeLabel = SLASH_COMMANDS.find(command => command.id === reasoningMode)?.label.slice(1) || reasoningMode;
+  const activeModeCommand = SLASH_COMMANDS.find(command => command.id === reasoningMode);
+  const modeLabel = activeModeCommand?.friendlyLabel || activeModeCommand?.label.slice(1) || reasoningMode;
   const headerSubtitle = [model, modeLabel].filter(Boolean).join(' · ');
+  const welcomeModes = SLASH_COMMANDS.filter(command => command.id !== 'unrestricted');
   // `jobs` comes back newest-first (see api.chatJobs), so matching on conversation_id and status
   // together in one .find() is a trap: if this conversation's latest job has already completed,
   // .find() keeps scanning past it and can surface an *older* job for the same conversation that
@@ -150,13 +175,8 @@ export function ExplorePage({
 
   const previewReasoningMode = getReasoningMode(question.trim());
   const autoWebSearchPreview = shouldAutoWebSearch(question.trim().replace(/^\/\w+\s*/, ''), previewReasoningMode);
-  const activeModeLabel = previewReasoningMode === 'light' ? 'Light'
-    : previewReasoningMode === 'unrestricted' ? 'Unrestricted'
-    : previewReasoningMode === 'thinking' ? 'Thinking'
-    : previewReasoningMode === 'deep_summary' ? 'Deep Summary'
-    : previewReasoningMode === 'ticket_analysis' ? 'Ticket Analysis'
-    : previewReasoningMode === 'web_research' ? 'Web Research'
-    : previewReasoningMode;
+  const activeModeLabel = SLASH_COMMANDS.find(command => command.id === previewReasoningMode)?.friendlyLabel
+    || (previewReasoningMode === 'web_research' ? 'Web research' : previewReasoningMode);
   const displayedModeLabel = autoWebSearchPreview
     ? `${activeModeLabel} + Auto Web`
     : activeModeLabel;
@@ -166,6 +186,31 @@ export function ExplorePage({
       window.localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, String(activeChat));
     }
   }, [activeChat]);
+
+  useEffect(() => {
+    if (messages.length) return undefined;
+    const thread = emptyStateRef.current?.closest('.chat-thread');
+    if (!thread) return undefined;
+    const frame = window.requestAnimationFrame(() => { thread.scrollTop = 0; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages.length, compactViewport, selectedCount, stores.length, historyCollapsed]);
+
+  useEffect(() => {
+    if (messages.length) return undefined;
+    let timer = 0;
+    const resetEmptyScroll = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const thread = emptyStateRef.current?.closest('.chat-thread');
+        if (thread) thread.scrollTop = 0;
+      }, 100);
+    };
+    window.addEventListener('resize', resetEmptyScroll);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', resetEmptyScroll);
+    };
+  }, [messages.length]);
 
   useEffect(() => {
     Promise.all([
@@ -666,6 +711,27 @@ export function ExplorePage({
     composerRef.current?.focus();
   };
 
+  const selectReasoningMode = (cmd) => {
+    setReasoningMode(cmd.id);
+    setModePickerOpen(false);
+    setQuestion(current => current.startsWith(`${cmd.label} `) ? current.slice(cmd.label.length + 1) : current);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  };
+
+  const fillStarterPrompt = (prompt) => {
+    setQuestion(prompt);
+    setSlashOpen(false);
+    setSlashIndex(-1);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
+  };
+
+  const startFromStore = (store) => {
+    const storeFileIds = files.filter(file => file.store_id === store.id).map(file => file.id);
+    setSelectedFileIds(storeFileIds);
+    setReasoningMode('light');
+    fillStarterPrompt(`What are the key ideas in ${store.title}?`);
+  };
+
   const handleComposerInput = (event) => {
     const val = event.target.value;
     setQuestion(val);
@@ -781,7 +847,7 @@ export function ExplorePage({
   };
 
   return (
-    <div className="explore-shell">
+    <div className={`explore-shell ${historyCollapsed ? 'history-collapsed' : ''}`}>
       <aside className={`chat-rail ${railOpen ? 'open' : ''}`}>
         <div className="chat-rail-head">
           <span className="kicker">Chats</span>
@@ -789,6 +855,15 @@ export function ExplorePage({
           {runningCount > 0 && <span className="chat-rail-running">{runningCount} running</span>}
           <button type="button" className="chat-rail-new" onClick={newChat} aria-label="Start a new conversation">
             <Plus size={13} /> New
+          </button>
+          <button
+            type="button"
+            className="chat-rail-toggle"
+            onClick={() => setHistoryCollapsed?.(value => !value)}
+            aria-label={historyCollapsed ? 'Expand chat history' : 'Collapse chat history'}
+            title={historyCollapsed ? 'Expand chat history' : 'Collapse chat history'}
+          >
+            {historyCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
           </button>
           <button type="button" className="chat-rail-close icon-button" onClick={() => setRailOpen(false)} aria-label="Close chat history">
             <X size={18} />
@@ -813,7 +888,8 @@ export function ExplorePage({
                 title={chat.title}
               >
                 <span className="chat-rail-name">
-                  <span>{chat.title}</span>
+                  <span className="chat-rail-avatar" aria-hidden="true">{(chat.title || '?').trim().charAt(0).toUpperCase()}</span>
+                  <span className="chat-rail-title">{chat.title}</span>
                   {inProgress && <i className="chat-dot progress" />}
                   {ready && <i className="chat-dot ready" />}
                   {failed && <i className="chat-dot failed" />}
@@ -830,7 +906,12 @@ export function ExplorePage({
               </div>
             );
           })}
-          {!chats.length && <span className="chat-rail-empty">No chats yet</span>}
+          {!chats.length && (
+            <div className="chat-rail-empty-state">
+              <span className="chat-rail-empty-kicker">START HERE</span>
+              <p>Your conversations will appear here. Use + New above to start one.</p>
+            </div>
+          )}
         </div>
         {!!chats.length && (
           <button
@@ -962,38 +1043,95 @@ export function ExplorePage({
         >
           <div className="chat-thread-inner" ref={threadContentRef}>
             {!messages.length && (
-              <div className="chat-empty">
-                <div className="chat-orb"><Sparkles size={29} /></div>
-                <h2>What do you want to ask?</h2>
-                <p>Ask directly, attach files, or switch modes when the question needs deeper work.</p>
+              <div className="chat-empty" ref={emptyStateRef}>
+                <div className="chat-empty-intro">
+                  <div className="chat-orb"><Sparkles size={29} /></div>
+                  <span className="chat-empty-kicker">YOUR RESEARCH DESK</span>
+                  <h2>What are you working on?</h2>
+                  <p>Ask a question, choose your sources, and let Locus turn them into a clear answer.</p>
+                </div>
+
+                <div className="ask-context-panel">
+                  <div className="ask-context-copy">
+                    <span className="ask-section-label">ANSWER FROM</span>
+                    <strong>{selectedContextLabel}</strong>
+                    <small>{selectedContextDetail}</small>
+                  </div>
+                  <button type="button" className="ask-context-action" onClick={() => setSelectFilesOpen(true)}>
+                    {selectedCount > 0 ? 'Change files' : 'Choose files'}
+                    <FileText size={14} />
+                  </button>
+                </div>
+
                 {stores.length > 0 && (
-                  <div className="quick-start-chips">
-                    {stores.slice(0, 3).map(store => (
-                      <button
-                        key={store.id}
-                        type="button"
-                        className="quick-start-chip"
-                        onClick={() => {
-                          setQuestion(`What can you tell me about ${store.title}?`);
-                          window.setTimeout(() => composerRef.current?.focus(), 0);
-                        }}
-                      >
-                        <Folder size={12} /> Ask about {store.title}
+                  <div className="ask-library-section">
+                    <div className="ask-section-heading">
+                      <span>Start with a library</span>
+                      <small>Pick a source to scope your question</small>
+                    </div>
+                    <div className="quick-start-chips">
+                      {stores.slice(0, 3).map(store => {
+                        const storeFileCount = files.filter(file => file.store_id === store.id).length;
+                        return (
+                          <button
+                            key={store.id}
+                            type="button"
+                            className="quick-start-chip"
+                            onClick={() => startFromStore(store)}
+                          >
+                            <Folder size={14} />
+                            <span>{store.title}</span>
+                            <small>{storeFileCount} file{storeFileCount === 1 ? '' : 's'}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="ask-starter-section">
+                  <div className="ask-section-heading">
+                    <span>Try a starter question</span>
+                    <small>Click to edit before sending</small>
+                  </div>
+                  <div className="starter-prompts">
+                    {STARTER_PROMPTS.map(prompt => (
+                      <button type="button" key={prompt} onClick={() => fillStarterPrompt(prompt)}>
+                        <Sparkles size={13} />
+                        <span>{prompt}</span>
                       </button>
                     ))}
                   </div>
-                )}
-                <div className="slash-hints">
-                  {SLASH_COMMANDS.map(cmd => {
-                    const Icon = cmd.icon;
-                    return (
-                      <button type="button" key={cmd.id} className="slash-hint" onClick={() => applySlashCommand(cmd)}>
-                        <Icon size={13} style={{ color: cmd.color }} />
-                        <span className="slash-hint-key">{cmd.label}</span>
-                        <span className="slash-hint-desc">{cmd.desc}</span>
-                      </button>
-                    );
-                  })}
+                </div>
+
+                <div className="ask-mode-section">
+                  <div className="ask-section-heading">
+                    <span>How should Locus answer?</span>
+                    <small>Change this any time below</small>
+                  </div>
+                  <div className="mode-card-grid">
+                    {welcomeModes.map(cmd => {
+                      const Icon = cmd.icon;
+                      const active = reasoningMode === cmd.id;
+                      return (
+                        <button
+                          type="button"
+                          key={cmd.id}
+                          className={`mode-card ${active ? 'active' : ''}`}
+                          onClick={() => selectReasoningMode(cmd)}
+                          aria-pressed={active}
+                        >
+                          <span className="mode-card-icon" style={{ color: cmd.color }}><Icon size={15} /></span>
+                          <span className="mode-card-copy">
+                            <strong>{cmd.friendlyLabel}</strong>
+                            <small>{cmd.friendlyDesc}</small>
+                          </span>
+                          {active && <Check size={15} className="mode-card-check" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <small className="ask-advanced-note">Advanced answer mode is available from the mode picker below.</small>
                 </div>
               </div>
             )}
@@ -1163,8 +1301,8 @@ export function ExplorePage({
                         >
                           <Icon size={14} style={{ color: cmd.color }} />
                           <span className="mode-picker-option-text">
-                            <strong>{cmd.label.slice(1)}</strong>
-                            <small>{cmd.desc}</small>
+                           <strong>{cmd.friendlyLabel || cmd.label.slice(1)}</strong>
+                           <small>{cmd.friendlyDesc || cmd.desc}</small>
                           </span>
                           {active && <Check size={13} />}
                         </button>
@@ -1181,6 +1319,7 @@ export function ExplorePage({
                 {...tip(selectedCount > 0 ? `${selectedCount} file${selectedCount > 1 ? 's' : ''} selected` : 'Select files to scope this chat')}
               >
                 <FileText size={13} />
+                <span className="composer-tool-label">{selectedCount > 0 ? `${selectedCount} file${selectedCount === 1 ? '' : 's'}` : 'Add files'}</span>
                 {selectedCount > 0 && <span className="tool-count-badge">{selectedCount}</span>}
               </button>
               <button
@@ -1191,6 +1330,7 @@ export function ExplorePage({
                 {...tip('Upload a file')}
               >
                 <FilePlus2 size={13} />
+                <span className="composer-tool-label">Upload</span>
               </button>
               <button
                 type="button"
@@ -1201,6 +1341,7 @@ export function ExplorePage({
                 {...tip('Allow the model to use general knowledge beyond your files')}
               >
                 <BrainCircuit size={13} />
+                <span className="composer-tool-label">{allowGeneralKnowledge ? 'Model knowledge' : 'Files only'}</span>
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
               </button>
             </div>

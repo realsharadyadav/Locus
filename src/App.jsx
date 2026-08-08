@@ -436,6 +436,8 @@ export function App({ initialSecretChatToken = null }) {
             hasActiveJobs={hasActiveJobs}
             refreshJobs={refreshJobs}
             openMenu={() => setMobileOpen(true)}
+            historyCollapsed={historyCollapsed}
+            setHistoryCollapsed={setHistoryCollapsed}
           />
         )}
         {page === 'ticket-analysis' && (
