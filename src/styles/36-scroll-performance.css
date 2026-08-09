@@ -34,3 +34,40 @@
     box-shadow: 18px 0 48px rgba(0, 0, 0, .48) !important;
   }
 }
+
+@media (max-width: 820px) {
+  /* Let the mobile Ask controls float over the canvas like Cowork; the header should not
+     read as a separate horizontal panel. */
+  .app-shell.explore-active .chat-page > .chat-top {
+    border-bottom: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  .app-shell.explore-active .chat-page > .chat-top .chat-top-model-subtitle {
+    display: none !important;
+  }
+
+  .app-shell.explore-active .chat-page > .chat-top .chat-top-heading.has-active-chat {
+    display: none !important;
+  }
+
+  .app-shell.explore-active .composer-meta {
+    justify-content: flex-start;
+  }
+
+  .app-shell.explore-active .composer-knowledge-label {
+    display: none !important;
+  }
+
+  .app-shell.explore-active .composer-model-label {
+    display: inline !important;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+}
+
+.composer-model-label { display: none; }

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  BrainCircuit,
   Check,
   Copy,
   Cpu,
@@ -942,9 +941,9 @@ export function ExplorePage({
               {chats.length > 0 && <span className="rail-toggle-count">{chats.length}</span>}
             </button>
             <span className="workspace-label"><i /> ASK</span>
-            <div className="chat-top-heading">
+            <div className={`chat-top-heading ${activeChat ? 'has-active-chat' : ''}`}>
               <strong>{activeChatTitle}</strong>
-              <small>{headerSubtitle}</small>
+              <small className="chat-top-model-subtitle">{headerSubtitle}</small>
             </div>
             <div className="chat-top-info">
               {activeChat && (
@@ -1334,14 +1333,15 @@ export function ExplorePage({
               </button>
               <button
                 type="button"
-                className={`composer-tool-btn composer-tool-btn-icon ${allowGeneralKnowledge ? 'active' : ''}`}
+                className={`composer-tool-btn composer-tool-btn-icon composer-tool-btn-model ${allowGeneralKnowledge ? 'active' : ''}`}
                 onClick={() => setAllowGeneralKnowledge(v => !v)}
                 aria-pressed={allowGeneralKnowledge}
-                aria-label={`LLM knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
-                {...tip('Allow the model to use general knowledge beyond your files')}
+                aria-label={`Current model ${model || 'not selected'}. General knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
+                {...tip(`Current model: ${model || 'not selected'}. Click to turn general knowledge ${allowGeneralKnowledge ? 'off' : 'on'}.`)}
               >
-                <BrainCircuit size={13} />
-                <span className="composer-tool-label">{allowGeneralKnowledge ? 'Model knowledge' : 'Files only'}</span>
+                <Cpu size={13} />
+                <span className="composer-tool-label composer-knowledge-label">{allowGeneralKnowledge ? 'Model knowledge' : 'Files only'}</span>
+                <span className="composer-tool-label composer-model-label">{model || 'Choose model'}</span>
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
               </button>
             </div>
