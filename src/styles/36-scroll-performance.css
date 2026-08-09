@@ -1,0 +1,36 @@
+/* Keep frosted surfaces polished without making every scroll repaint a large blur region. */
+:root {
+  --glass-blur: blur(16px) saturate(150%);
+  --glass-blur-soft: blur(9px) saturate(135%);
+  --glass-blur-heavy: blur(20px) saturate(165%);
+}
+
+/* A translucent fill keeps the layered look; the browser does not have to sample and blur
+   the entire page behind every card, rail, and composer on every scroll frame. */
+.app-shell,
+.app-shell * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (max-width: 980px) {
+  /* The navigation drawer must sit above Ask's floating mobile header and be opaque enough
+     that the page underneath cannot compete with the menu labels. */
+  .app-shell .scrim {
+    z-index: 55;
+    background: rgba(22, 28, 42, .34) !important;
+  }
+
+  .app-shell .sidebar.open {
+    z-index: 60;
+    background: #f4f3fb !important;
+    border-right: 1px solid rgba(92, 86, 126, .16) !important;
+    box-shadow: 18px 0 48px rgba(31, 35, 58, .22) !important;
+  }
+
+  html[data-theme='dark'] .app-shell .sidebar.open {
+    background: #0d1118 !important;
+    border-right-color: rgba(255, 255, 255, .1) !important;
+    box-shadow: 18px 0 48px rgba(0, 0, 0, .48) !important;
+  }
+}
