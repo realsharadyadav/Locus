@@ -1,0 +1,157 @@
+/* ─── UI bug fixes: mobile + desktop pass ────────────────────────────────
+   Highest-numbered layer, so everything here is a deliberate override of an
+   earlier layer. Each block records which layer it is correcting and why. */
+
+/* ── 1. Dark mode accent had drifted back to GitHub blue ──────────────────
+   Layer 13 ("Calm GitHub-inspired dark theme") set `--violet: #58a6ff`.
+   Layer 14 then moved dark mode to purple, but only updated `--dark-accent*`
+   — it never took `--violet` with it, and neither did any later layer. Every
+   surface that reads `--violet` (primary buttons, `accent-color` on the
+   Settings checkboxes, the selected pills in Private chats) therefore
+   rendered blue inside an otherwise purple UI. Align the token with the
+   `#8b5cf6 → #6d28d9` pair layer 14 already uses for dark primary buttons. */
+html[data-theme='dark'] {
+  --violet: #8b5cf6;
+  --violet-dark: #6d28d9;
+}
+
+/* ── 2. Login card had a border but no box ────────────────────────────────
+   Layer 26 styles `.login-card` as a bare transparent stack — no padding, no
+   radius, since nothing was painting it. Layer 34 (glass) later added it to
+   the "floating cards" list, which gave it a background and a 1px border. The
+   result was a hard square-cornered rectangle clamped to the content, with
+   the scaled-up logo sitting on top of the border. Give the card the box the
+   glass treatment assumes. */
+.login-card {
+  padding: 30px 26px 26px;
+  border-radius: 20px;
+}
+
+.login .logo { margin-bottom: 16px; }
+
+/* ── 3. Pages opened flush against the sticky header ──────────────────────
+   `.page` (layer 01) is `padding: 0 4.2vw 70px` — no top padding. Pages that
+   open with `.inner-title` or `.home-hero` get their air from those margins,
+   but Settings starts with a bare `.kicker`, so its title sat ~10px under the
+   header on both desktop and mobile. Pad the page itself rather than the
+   kicker, so any future page that opens with plain content is covered too. */
+.settings-page { padding-top: 34px; }
+
+/* ── 4. Touch targets below the 44px minimum ──────────────────────────────
+   `.icon-button` (layer 01) is `padding: 5px` around a 18–20px glyph, which
+   left the header's menu button at 30×30. `.mobile-close` additionally
+   inherits `.side-top`'s stretch alignment, so it rendered 28 wide × 66 tall
+   — a sliver that is hard to hit and visually lopsided next to the logo.
+   Only the drawer/header chrome is touched; `.icon-button` elsewhere (row
+   affordances such as delete) keeps its compact size. */
+@media (max-width: 980px) {
+  .menu-button,
+  .mobile-close {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    padding: 0;
+    border-radius: 12px;
+    align-self: center;
+    flex-shrink: 0;
+  }
+
+  /* The rail sets its own larger circular button on the Ask page; leave it. */
+  .chat-page > .chat-top .menu-button {
+    width: revert;
+    height: revert;
+    min-width: revert;
+    padding: revert;
+    border-radius: revert;
+  }
+}
+
+/* ── 5. Native checkboxes in a dark UI ────────────────────────────────────
+   The Settings provider toggles and the model table render stock 13×13 OS
+   checkboxes. Layer 13 tried to restyle them via `background`, which a
+   checkbox with `appearance: auto` ignores, so they stayed bright system
+   blue-on-white. Draw them properly instead — same radius, border and accent
+   as the rest of the form controls, and large enough to hit on a phone. */
+.settings-provider-toggle input[type='checkbox'],
+.model-table .mt-col-show input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--paper);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.settings-provider-toggle input[type='checkbox']::after,
+.model-table .mt-col-show input[type='checkbox']::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transition: transform .12s ease;
+  background: #fff;
+  /* Checkmark drawn with a mask so it inherits a solid colour in both themes. */
+  clip-path: polygon(14% 47%, 0 61%, 36% 96%, 100% 22%, 85% 8%, 35% 68%);
+}
+
+.settings-provider-toggle input[type='checkbox']:checked,
+.model-table .mt-col-show input[type='checkbox']:checked {
+  border-color: var(--violet);
+  background: var(--violet);
+}
+
+.settings-provider-toggle input[type='checkbox']:checked::after,
+.model-table .mt-col-show input[type='checkbox']:checked::after {
+  transform: scale(1);
+}
+
+.settings-provider-toggle input[type='checkbox']:focus-visible,
+.model-table .mt-col-show input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
+}
+
+html[data-theme='dark'] .settings-provider-toggle input[type='checkbox'],
+html[data-theme='dark'] .model-table .mt-col-show input[type='checkbox'] {
+  /* Layer 13 paints every checkbox with !important; match its specificity. */
+  background: rgba(255, 255, 255, .04) !important;
+  border-color: rgba(255, 255, 255, .14) !important;
+}
+
+html[data-theme='dark'] .settings-provider-toggle input[type='checkbox']:checked,
+html[data-theme='dark'] .model-table .mt-col-show input[type='checkbox']:checked {
+  background: var(--violet) !important;
+  border-color: var(--violet) !important;
+}
+
+/* The label is the whole hit area, so give it a comfortable one on touch. */
+.settings-provider-toggle { gap: 8px; }
+
+/* ── 6. Native select chrome ──────────────────────────────────────────────
+   Layer 20 gives the provider filter a themed border, background and radius
+   but leaves `appearance: auto`, so Chrome still paints its own light drop-
+   down button inside the dark control. Drop the native chrome and draw the
+   chevron as a background image (a CSS-only SVG, so it needs no asset and
+   picks up `currentColor` via the stroke below). */
+.settings-provider-filter select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%238b949e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5 6 7.5 9 4.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  background-size: 12px 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-provider-toggle input[type='checkbox'],
+  .settings-provider-toggle input[type='checkbox']::after,
+  .model-table .mt-col-show input[type='checkbox'],
+  .model-table .mt-col-show input[type='checkbox']::after { transition: none; }
+}

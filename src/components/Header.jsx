@@ -1,9 +1,18 @@
 import React from 'react';
 import {
-  Menu, Plus, Search,
+  Menu, Search,
 } from 'lucide-react';
 
-export function Header({ query, setQuery, openMenu, openCreate, openCommand, page }) {
+/**
+ * The header carries navigation and search only.
+ *
+ * It used to also render a "New library" button on the Library page, but
+ * HubPage already renders one beside its own title — on desktop the two sat
+ * roughly 180px apart, and on mobile the header collapsed to a bare "+" that
+ * duplicated the labelled button just below it. The page-level button wins:
+ * it is the one with a label and with the heading for context.
+ */
+export function Header({ query, openMenu, openCommand }) {
   return (
     <header>
       <button className="menu-button icon-button" onClick={openMenu} aria-label="Open menu">
@@ -14,11 +23,6 @@ export function Header({ query, setQuery, openMenu, openCreate, openCommand, pag
         <span>{query || 'Search everything you know...'}</span>
         <kbd>⌘ K</kbd>
       </button>
-      {page === 'library' && (
-        <button className="new-button" onClick={openCreate}>
-          <Plus size={17} /> New library
-        </button>
-      )}
     </header>
   );
 }

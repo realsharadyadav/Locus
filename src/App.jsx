@@ -375,11 +375,8 @@ export function App({ initialSecretChatToken = null }) {
         {!['ask', 'ticket-analysis', 'secret-chat', 'secret-images'].includes(page) && (
           <Header
             query={query}
-            setQuery={setQuery}
             openMenu={() => setMobileOpen(true)}
-            openCreate={() => setCreateOpen(true)}
             openCommand={() => setCommandOpen(true)}
-            page={page}
           />
         )}
         {apiError && (
