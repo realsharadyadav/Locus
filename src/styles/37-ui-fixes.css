@@ -55,14 +55,30 @@ html[data-theme='dark'] {
     align-self: center;
     flex-shrink: 0;
   }
+}
 
-  /* The rail sets its own larger circular button on the Ask page; leave it. */
-  .chat-page > .chat-top .menu-button {
-    width: revert;
-    height: revert;
-    min-width: revert;
-    padding: revert;
-    border-radius: revert;
+/* The Ask header draws its own circular controls (layer 30, `.chat-page >
+   .chat-top .menu-button`, specificity 0-3-0), so it already wins over the
+   rule above and needs no exception here — an earlier attempt to add one with
+   `revert` broke it, because `revert` rolls back to the *user-agent* value and
+   therefore discarded layer 30's sizing too, leaving a squashed 32x22 glyph
+   jammed against the viewport edge. Only nudge those controls up to 44px. */
+@media (max-width: 820px) {
+  .chat-page > .chat-top .menu-button,
+  .chat-page > .chat-top .chat-more-toggle {
+    width: 44px;
+    height: 44px;
+  }
+
+  /* Layer 30 takes the header out of grid flow (`position: absolute; left: 0;
+     right: 0`), which also takes it out of `.chat-page`'s gutter, and sets
+     `padding: 2px 0 8px !important` — no horizontal padding at all. Both
+     circular controls therefore sat flush against the screen edges and read as
+     half-cut discs. Restore a gutter; the grid is `auto 1fr auto`, so padding
+     both sides keeps the title centred. */
+  .chat-page > .chat-top {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
   }
 }
 

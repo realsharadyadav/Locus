@@ -18,6 +18,10 @@ import { useEffect, useRef, useState } from 'react';
 
 const KEYBOARD_OPEN_THRESHOLD_PX = 120;
 const REPIN_SETTLE_MS = 60;
+// How long after a scroll gesture the user still counts as "driving". Long enough to
+// cover the gap between a flick and the resize the browser chrome makes in response,
+// short enough that a keyboard opening a moment after a scroll still re-pins.
+const USER_DRIVING_MS = 700;
 
 // Guards against two surfaces briefly overlapping during a route swap - the outgoing
 // component's cleanup must not strip the lock the incoming one just installed.
@@ -86,6 +90,18 @@ export function useChatViewportLock(active = true) {
 // The re-pin only fires if the user was already near the bottom, tracked on scroll: a
 // resize must never yank someone who has deliberately scrolled back through history.
 //
+// It also never fires while the user is the one scrolling. On a phone, scrolling down
+// is exactly when the browser hides or shows its URL bar, which resizes this container -
+// so "near the bottom" plus "resize" describes an ordinary downward flick just as well
+// as it describes the keyboard opening. Re-pinning there snatched the last ~150px away
+// and dropped the reader at the very bottom mid-gesture. Genuine user input (wheel,
+// touch, scroll keys) on the container therefore suppresses the next re-pin.
+//
+// The suppressor deliberately listens for *input* rather than for scroll events: a
+// resize that clamps scrollTop fires a scroll event of its own, so scroll events cannot
+// tell "the user is driving" from "the resize we are compensating for". Input on the
+// composer is not on this element, so opening the keyboard still re-pins as before.
+//
 // Returns a state-backed callback ref rather than taking a ref object, because chat
 // surfaces render a loading state first - a plain ref would still be null when the effect
 // ran, and nothing would re-run it once the real container appeared.
@@ -98,12 +114,22 @@ export function useRepinOnResize(scrollToBottom, thresholdPx = 150) {
     if (!element) return undefined;
     let nearBottom = true;
     let timer = 0;
+    let lastUserInputAt = 0;
 
     const measure = () => {
       nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight <= thresholdPx;
     };
     measure();
     element.addEventListener('scroll', measure, { passive: true });
+
+    const noteUserInput = () => { lastUserInputAt = Date.now(); };
+    const SCROLL_KEYS = new Set([
+      'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' ',
+    ]);
+    const noteUserKey = event => { if (SCROLL_KEYS.has(event.key)) noteUserInput(); };
+    element.addEventListener('wheel', noteUserInput, { passive: true });
+    element.addEventListener('touchmove', noteUserInput, { passive: true });
+    element.addEventListener('keydown', noteUserKey);
 
     // Deliberately trailing-edge. A container that *grows* makes the browser clamp
     // scrollTop, which use-stick-to-bottom reads (on a deferred handler) as the user
@@ -112,7 +138,12 @@ export function useRepinOnResize(scrollToBottom, thresholdPx = 150) {
     // bookkeeping to settle and re-assert the bottom after it.
     const repin = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => scrollToBottomRef.current?.({ animation: 'instant' }), REPIN_SETTLE_MS);
+      timer = window.setTimeout(() => {
+        // Re-checked here rather than at schedule time: the gesture often lands during
+        // the settle window, which is precisely the case worth bailing out of.
+        if (Date.now() - lastUserInputAt < USER_DRIVING_MS) return;
+        scrollToBottomRef.current?.({ animation: 'instant' });
+      }, REPIN_SETTLE_MS);
     };
 
     let observer;
@@ -129,6 +160,9 @@ export function useRepinOnResize(scrollToBottom, thresholdPx = 150) {
     return () => {
       window.clearTimeout(timer);
       element.removeEventListener('scroll', measure);
+      element.removeEventListener('wheel', noteUserInput);
+      element.removeEventListener('touchmove', noteUserInput);
+      element.removeEventListener('keydown', noteUserKey);
       observer?.disconnect();
     };
   }, [element, thresholdPx]);
