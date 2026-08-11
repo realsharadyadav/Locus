@@ -5,6 +5,8 @@ Tests monkeypatch local_storage to stay hermetic.
 """
 
 import io
+import os
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -13,6 +15,7 @@ from sqlalchemy import delete
 
 from backend.app import auth as auth_module
 from backend.app import local_storage
+from backend.app import secret_images
 from backend.app.database import SessionLocal
 from backend.app.main import app
 from backend.app.models import SecretImage
@@ -206,3 +209,55 @@ def test_requires_auth_when_password_set(client, storage, monkeypatch):
     monkeypatch.setenv("LOCUS_AUTH_PASSWORD", PASSWORD)
     response = client.get("/api/secret-images")
     assert response.status_code == 401
+
+
+def test_phone_sized_photo_is_bounded_not_just_quality_crushed(client, storage):
+    """A 12MP photo must come back small *and* downscaled.
+
+    Compression used to sweep quality across the full-resolution image before it
+    ever considered resizing, which burned seconds of CPU per upload and left the
+    result as a full-size frame crushed to quality 5. Bounding the long edge first
+    is what makes the upload fast enough to finish, so assert the bound holds.
+    """
+    # Noise built from urandom rather than _create_test_image's per-pixel loop:
+    # at 12M pixels that loop costs ~16s, which the suite should not pay.
+    size = (4032, 3024)
+    noise = Image.frombytes("RGB", size, os.urandom(size[0] * size[1] * 3))
+    buffer = io.BytesIO()
+    noise.save(buffer, format="JPEG", quality=92)
+    photo = buffer.getvalue()
+
+    upload = client.post(
+        "/api/secret-images",
+        files={"file": ("IMG_0001.jpg", photo, "image/jpeg")},
+    )
+    assert upload.status_code == 201
+    assert upload.json()["size_bytes"] <= 50 * 1024
+
+    stored = Image.open(io.BytesIO(next(iter(storage.files.values()))))
+    assert max(stored.size) <= secret_images.MAX_EDGE_PX
+    # Aspect ratio survives the downscale — 4:3 in, 4:3 out.
+    assert abs((stored.width / stored.height) - (4032 / 3024)) < 0.02
+
+
+def test_exif_orientation_is_applied(client, storage):
+    """Re-encoding drops EXIF, so the rotation has to be baked into the pixels.
+
+    Without this the portrait photos that phones store as landscape-plus-a-rotation
+    tag would come back on their side.
+    """
+    portrait = Image.new("RGB", (400, 200), color="red")
+    exif = portrait.getexif()
+    exif[274] = 6  # Orientation: rotate 90° CW on display
+    buffer = io.BytesIO()
+    portrait.save(buffer, format="JPEG", exif=exif)
+
+    upload = client.post(
+        "/api/secret-images",
+        files={"file": ("rotated.jpg", buffer.getvalue(), "image/jpeg")},
+    )
+    assert upload.status_code == 201
+
+    stored = Image.open(io.BytesIO(next(iter(storage.files.values()))))
+    # 400x200 tagged "rotate 90" displays as 200x400.
+    assert stored.height > stored.width

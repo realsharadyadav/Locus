@@ -9,7 +9,45 @@ export default function SecretImagesPage({ toast, openMenu, requestConfirm }) {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [viewerImage, setViewerImage] = useState(null);
+  const [sources, setSources] = useState({});
   const inputRef = useRef(null);
+  // Object URLs hold their blob alive until revoked, so every one handed out is
+  // tracked here and released on unmount.
+  const sourcesRef = useRef({});
+  sourcesRef.current = sources;
+
+  useEffect(() => () => {
+    Object.values(sourcesRef.current).forEach(URL.revokeObjectURL);
+  }, []);
+
+  // Resolve any image we do not have bytes for yet. Keyed by id, so re-running
+  // after an upload only fetches the new one.
+  useEffect(() => {
+    let cancelled = false;
+    const missing = images.filter(image => !sources[image.id]);
+    if (!missing.length) return undefined;
+    (async () => {
+      for (const image of missing) {
+        try {
+          const url = await secretImagesApi.view(image.id);
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          setSources(current => (current[image.id] ? current : { ...current, [image.id]: url }));
+        } catch {
+          // A single unreadable photo should not take the gallery down with it;
+          // its tile stays in the placeholder state.
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [images, sources]);
+
+  const releaseSource = id => setSources(current => {
+    if (!current[id]) return current;
+    URL.revokeObjectURL(current[id]);
+    const next = { ...current };
+    delete next[id];
+    return next;
+  });
 
   const load = async () => {
     setLoading(true);
@@ -59,6 +97,7 @@ export default function SecretImagesPage({ toast, openMenu, requestConfirm }) {
         try {
           await secretImagesApi.remove(image.id);
           setImages(current => current.filter(item => item.id !== image.id));
+          releaseSource(image.id);
           if (viewerImage?.id === image.id) setViewerImage(null);
         } catch (error) {
           toast?.(error.message || 'Could not delete image', 'error');
@@ -113,8 +152,14 @@ export default function SecretImagesPage({ toast, openMenu, requestConfirm }) {
       {configured && (
         <div className="secret-images-grid">
           {images.map(image => (
-            <button key={image.id} className="secret-images-tile" onClick={() => setViewerImage(image)}>
-              <img src={image.url} alt="" loading="lazy" />
+            <button
+              key={image.id}
+              className="secret-images-tile"
+              onClick={() => sources[image.id] && setViewerImage(image)}
+            >
+              {sources[image.id]
+                ? <img src={sources[image.id]} alt="" />
+                : <span className="secret-images-tile-loading"><Loader2 size={18} className="spin" /></span>}
             </button>
           ))}
         </div>
@@ -125,7 +170,7 @@ export default function SecretImagesPage({ toast, openMenu, requestConfirm }) {
           <button className="icon-button secret-images-viewer-close" onClick={() => setViewerImage(null)} aria-label="Close">
             <X size={20} />
           </button>
-          <img src={viewerImage.url} alt="" onClick={event => event.stopPropagation()} />
+          <img src={sources[viewerImage.id]} alt="" onClick={event => event.stopPropagation()} />
           <button
             className="secret-images-viewer-delete"
             onClick={event => { event.stopPropagation(); handleDelete(viewerImage); }}

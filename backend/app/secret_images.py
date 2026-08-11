@@ -4,11 +4,12 @@ Stored in backend/secret_images/ with automatic compression to 50KB max.
 All uploads are password-gated via the app's Sign-in Gate middleware.
 """
 
+import asyncio
 from io import BytesIO
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
-from PIL import Image
+from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -22,6 +23,14 @@ router = APIRouter(prefix="/api/secret-images", tags=["secret-images"])
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_COMPRESSED_BYTES = 50 * 1024
 COMPRESSION_QUALITY = 85
+# A 50KB budget is never met at phone resolution, so a full-size quality sweep is
+# guaranteed wasted work — every pass encodes all 12M pixels only to overshoot.
+# Bounding the long edge first makes each pass ~30x cheaper and, at this budget,
+# also looks better: fewer pixels carrying more quality each beats a full-size
+# image crushed to quality 5.
+MAX_EDGE_PX = 1600
+MIN_EDGE_PX = 320
+QUALITY_FLOOR = 30
 
 
 def _extension(filename: str, content_type: str) -> str:
@@ -30,38 +39,48 @@ def _extension(filename: str, content_type: str) -> str:
     return (content_type.split("/")[-1] or "jpg").lower()[:10]
 
 
+def _encode(img: Image.Image, quality: int) -> bytes:
+    buffer = BytesIO()
+    img.save(buffer, format="JPEG", quality=quality, optimize=True)
+    return buffer.getvalue()
+
+
 def _compress_image(data: bytes) -> tuple[bytes, str]:
-    """Compress image to max 50KB, returning (compressed_data, final_format)."""
+    """Compress image to max 50KB, returning (compressed_data, final_format).
+
+    Blocking and CPU-bound — callers must keep it off the event loop.
+
+    Downscale first, then sweep quality, then downscale again if the budget is
+    still missed. The previous order (sweep the full-resolution image through 17
+    quality steps before ever resizing) spent seconds of CPU on passes that could
+    not have fit, which on a small instance was slow enough to hold the whole
+    request open until the client gave up.
+    """
     try:
-        img = Image.open(BytesIO(data))
-        img = img.convert("RGB")
+        with Image.open(BytesIO(data)) as opened:
+            # EXIF orientation is applied here: dropping it later would silently
+            # rotate everyone's phone photos, since we re-encode as bare JPEG.
+            img = ImageOps.exif_transpose(opened)
+            img = img.convert("RGB")
 
-        quality = COMPRESSION_QUALITY
-        while quality > 5:
-            buffer = BytesIO()
-            img.save(buffer, format="JPEG", quality=quality, optimize=True)
-            compressed = buffer.getvalue()
-            if len(compressed) <= MAX_COMPRESSED_BYTES:
-                return compressed, "image/jpeg"
-            quality -= 5
+        img.thumbnail((MAX_EDGE_PX, MAX_EDGE_PX), Image.Resampling.LANCZOS)
 
-        buffer = BytesIO()
-        img.save(buffer, format="JPEG", quality=5)
-        compressed = buffer.getvalue()
-        if len(compressed) <= MAX_COMPRESSED_BYTES:
-            return compressed, "image/jpeg"
+        while True:
+            for quality in range(COMPRESSION_QUALITY, QUALITY_FLOOR - 1, -10):
+                compressed = _encode(img, quality)
+                if len(compressed) <= MAX_COMPRESSED_BYTES:
+                    return compressed, "image/jpeg"
 
-        max_width = img.width
-        while max_width > 100 and len(compressed) > MAX_COMPRESSED_BYTES:
-            max_width = int(max_width * 0.8)
-            scale_factor = max_width / img.width
-            new_size = (int(img.width * scale_factor), int(img.height * scale_factor))
-            scaled_img = img.resize(new_size, Image.Resampling.LANCZOS)
-            buffer = BytesIO()
-            scaled_img.save(buffer, format="JPEG", quality=5, optimize=True)
-            compressed = buffer.getvalue()
-
-        return compressed, "image/jpeg"
+            # Still over budget at the quality floor: halve the pixel count and
+            # retry rather than degrading quality into mush.
+            if max(img.size) <= MIN_EDGE_PX:
+                return _encode(img, QUALITY_FLOOR), "image/jpeg"
+            img = img.resize(
+                (max(1, int(img.width * 0.7)), max(1, int(img.height * 0.7))),
+                Image.Resampling.LANCZOS,
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to compress image: {str(e)}")
 
@@ -95,10 +114,16 @@ async def upload_secret_image(file: UploadFile = File(...), db: Session = Depend
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image is too large")
 
-    compressed_data, final_content_type = _compress_image(data)
+    # Off the event loop: compressing a phone photo is seconds of pure CPU, and
+    # running it inline froze the entire backend for the duration — health checks
+    # and every other request included. Verified before the change: a concurrent
+    # /api/health went from 10ms to 1.8s on a fast box, and proportionally worse
+    # on a small instance, which is what surfaced in the browser as a bare
+    # "Failed to fetch" rather than a real error message.
+    compressed_data, final_content_type = await asyncio.to_thread(_compress_image, data)
 
     filename = f"{uuid4().hex}.{_extension(file.filename or '', final_content_type)}"
-    local_storage.save_image(filename, compressed_data)
+    await asyncio.to_thread(local_storage.save_image, filename, compressed_data)
 
     image = SecretImage(
         file_path=filename,

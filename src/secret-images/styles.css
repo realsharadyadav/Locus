@@ -82,6 +82,16 @@
   display: block;
 }
 
+/* Held while the photo's bytes are fetched — they arrive over an authenticated
+   request rather than straight from the img tag, so a tile briefly has no src. */
+.secret-images-tile-loading {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: var(--muted);
+}
+
 .secret-images-viewer {
   position: fixed;
   inset: 0;
