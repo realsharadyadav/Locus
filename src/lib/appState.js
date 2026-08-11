@@ -21,7 +21,6 @@ export const PROVIDER_META = {
   opencode: { icon: '🐹', blurb: 'Curated coding models on one key', envHint: 'Set OPENCODE_API_KEY in your .env file.' },
 };
 export const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
-export const ACTIVE_CHAT_STORAGE_KEY = storageKey('explore-active-chat');
 export const APP_DATA_CACHE_KEY = storageKey('last-data');
 export const APP_PAGES = ['home', 'library', 'ask', 'ticket-analysis', 'secret-chat', 'settings'];
 export const normalizePageId = pageId => {

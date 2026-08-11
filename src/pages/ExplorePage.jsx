@@ -25,7 +25,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { api } from '../api';
-import { assistantLabel, readStorage } from '../brand';
+import { assistantLabel } from '../brand';
 import { AssistantMarkdown } from '../components/AssistantMarkdown';
 import { CollapsibleSources } from '../components/CollapsibleSources';
 import { DirectStreamTrace } from '../components/DirectStreamTrace';
@@ -34,7 +34,6 @@ import { PipelineActivity } from '../components/PipelineActivity';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../hooks/useChatViewport';
 import { useClickOutside } from '../hooks/useClickOutside';
 import {
-  ACTIVE_CHAT_STORAGE_KEY,
   AI_PREFERENCE_STORAGE_KEY,
   DEFAULT_PROVIDER_MODELS,
   PROVIDER_LABELS,
@@ -179,12 +178,6 @@ export function ExplorePage({
   const displayedModeLabel = autoWebSearchPreview
     ? `${activeModeLabel} + Auto Web`
     : activeModeLabel;
-
-  useEffect(() => {
-    if (activeChat) {
-      window.localStorage.setItem(ACTIVE_CHAT_STORAGE_KEY, String(activeChat));
-    }
-  }, [activeChat]);
 
   useEffect(() => {
     if (messages.length) return undefined;
@@ -350,13 +343,10 @@ export function ExplorePage({
     clearInitialChat();
   }, [initialChatId, chats]);
 
-  useEffect(() => {
-    if (initialChatId || activeChat || !chats.length) return;
-    const savedChatId = Number(readStorage('explore-active-chat'));
-    if (!savedChatId) return;
-    const chat = chats.find(item => item.id === savedChatId);
-    if (chat) openChat(chat);
-  }, [initialChatId, activeChat, chats]);
+  // Ask always opens on its landing screen. It used to reopen whichever conversation was
+  // last active, which meant the prompt, the source picker and the mode hints were only
+  // reachable by first dismissing a transcript you had not asked for. Deep links still
+  // open a specific chat through initialChatId above, and the rail still lists everything.
 
   // Streaming answers grow the thread continuously; use-stick-to-bottom's ResizeObserver
   // keeps us pinned to the newest content while still letting the user scroll away.
@@ -458,7 +448,6 @@ export function ExplorePage({
     setRailOpen(false);
     stopReveal();
     setActiveChat(null);
-    window.localStorage.removeItem(ACTIVE_CHAT_STORAGE_KEY);
     setMessages([]);
     setQuestion('');
     setSelectedFileIds([]);
