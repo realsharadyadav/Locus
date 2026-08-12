@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
@@ -208,6 +208,14 @@ class SecretImage(Base):
     __tablename__ = "secret_images"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Bytes live in the row, not on disk. The container filesystem is ephemeral on
+    # the hosts this deploys to, so local files vanished on every restart while
+    # these rows survived — a gallery of images that no longer existed. At the
+    # 50KB compression budget a few thousand photos is tens of megabytes, well
+    # within the database, and they get backed up with everything else.
+    data: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    # Retained for rows written by the previous disk-backed version; new rows
+    # leave it blank. Nothing reads it any more.
     file_path: Mapped[str] = mapped_column(String(160), unique=True, index=True)
     content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)

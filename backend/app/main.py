@@ -23,6 +23,7 @@ from sqlalchemy import delete, func, inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from . import local_storage
 from .database import Base, SessionLocal, engine, get_db
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
@@ -139,6 +140,8 @@ def _ensure_schema_columns():
     stored_file_columns = {column["name"] for column in inspector.get_columns("stored_files")}
     secret_chat_session_columns = {column["name"] for column in inspector.get_columns("secret_chat_sessions")}
     secret_chat_message_columns = {column["name"] for column in inspector.get_columns("secret_chat_messages")}
+    secret_image_columns = {column["name"] for column in inspector.get_columns("secret_images")}
+    BLOB = "BYTEA" if postgres else "BLOB"
     with engine.begin() as connection:
         if "file_ids" not in chat_job_columns:
             connection.execute(text("ALTER TABLE chat_jobs ADD COLUMN file_ids JSON"))
@@ -185,6 +188,45 @@ def _ensure_schema_columns():
                 connection.execute(text(ddl))
         if "via_ai" not in secret_chat_message_columns:
             connection.execute(text(f"ALTER TABLE secret_chat_messages ADD COLUMN via_ai BOOLEAN NOT NULL DEFAULT {FALSE}"))
+        if "data" not in secret_image_columns:
+            connection.execute(text(f"ALTER TABLE secret_images ADD COLUMN data {BLOB}"))
+            _backfill_secret_images_from_disk(connection)
+
+
+def _backfill_secret_images_from_disk(connection) -> None:
+    """Move any still-present disk files into the rows that reference them.
+
+    Only does anything on a host that kept its filesystem across the upgrade —
+    a local checkout. Where the disk was ephemeral the files are already gone,
+    and those rows stay empty; `_prune_dataless_secret_images` clears them so the
+    gallery does not advertise photos it cannot serve.
+    """
+    rows = connection.execute(text("SELECT id, file_path FROM secret_images WHERE data IS NULL")).all()
+    for image_id, file_path in rows:
+        if not file_path:
+            continue
+        source = local_storage.get_file_path(file_path)
+        try:
+            if not source.exists():
+                continue
+            payload = source.read_bytes()
+        except OSError:
+            continue
+        connection.execute(
+            text("UPDATE secret_images SET data = :data WHERE id = :id"),
+            {"data": payload, "id": image_id},
+        )
+
+
+def _prune_dataless_secret_images() -> None:
+    """Drop rows whose bytes never made it into the database.
+
+    These are leftovers from the disk-backed version whose files the host threw
+    away. They can only ever render as broken tiles, so they are cleared once at
+    startup rather than left for the reader to discover one by one.
+    """
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM secret_images WHERE data IS NULL"))
 
 
 def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:
@@ -457,6 +499,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_vector_schema()
     _ensure_schema_columns()
+    _prune_dataless_secret_images()
     with SessionLocal() as db:
         interrupted_jobs = db.scalars(select(ChatJob).where(ChatJob.status.in_(["queued", "running"]))).all()
         for job in interrupted_jobs:

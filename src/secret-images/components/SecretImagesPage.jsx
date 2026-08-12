@@ -137,8 +137,8 @@ export default function SecretImagesPage({ toast, openMenu, requestConfirm }) {
       {!checkingStatus && !configured && (
         <div className="secret-images-empty">
           <ShieldOff size={28} />
-          <p>Secret Images isn't set up on this deployment yet.</p>
-          <p className="secret-images-hint">Set the R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME environment variables to enable it.</p>
+          <p>Secret Images can't reach its storage right now.</p>
+          <p className="secret-images-hint">Photos are kept in the workspace database. Check that the backend is running, then reload.</p>
         </div>
       )}
 

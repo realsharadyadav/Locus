@@ -1,7 +1,9 @@
-"""Secret Images — private photo uploads saved to local disk.
+"""Secret Images — private photo uploads stored in the database.
 
-Stored in backend/secret_images/ with automatic compression to 50KB max.
-All uploads are password-gated via the app's Sign-in Gate middleware.
+Each upload is compressed to 50KB max and kept as bytes on its own row, so the
+photos survive restarts and redeploys on hosts with an ephemeral filesystem and
+are covered by the database's own backups. All uploads are password-gated via
+the app's Sign-in Gate middleware.
 """
 
 import asyncio
@@ -9,11 +11,11 @@ from io import BytesIO
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import Response
 from PIL import Image, ImageOps
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from . import local_storage
 from .database import get_db
 from .models import SecretImage
 from .schemas import SecretImageRead, SecretImagesStatus
@@ -94,13 +96,37 @@ def _with_url(image: SecretImage) -> SecretImageRead:
 
 @router.get("/status", response_model=SecretImagesStatus)
 def secret_images_status():
-    return SecretImagesStatus(configured=local_storage.configured())
+    # Nothing left to configure: storage is the database the app already runs on.
+    return SecretImagesStatus(configured=True)
 
 
 @router.get("", response_model=list[SecretImageRead])
 def list_secret_images(db: Session = Depends(get_db)):
-    images = db.scalars(select(SecretImage).order_by(SecretImage.created_at.desc())).all()
-    return [_with_url(image) for image in images]
+    # Columns listed explicitly to leave `data` behind — selecting the whole model
+    # would drag every photo's bytes through the connection just to render a
+    # listing that shows none of them.
+    rows = db.execute(
+        select(
+            SecretImage.id,
+            SecretImage.content_type,
+            SecretImage.size_bytes,
+            SecretImage.original_filename,
+            SecretImage.created_at,
+        )
+        .where(SecretImage.data.is_not(None))
+        .order_by(SecretImage.created_at.desc())
+    ).all()
+    return [
+        SecretImageRead(
+            id=row.id,
+            content_type=row.content_type,
+            size_bytes=row.size_bytes,
+            original_filename=row.original_filename,
+            created_at=row.created_at,
+            url=f"/api/secret-images/view/{row.id}",
+        )
+        for row in rows
+    ]
 
 
 @router.post("", response_model=SecretImageRead, status_code=status.HTTP_201_CREATED)
@@ -122,11 +148,11 @@ async def upload_secret_image(file: UploadFile = File(...), db: Session = Depend
     # "Failed to fetch" rather than a real error message.
     compressed_data, final_content_type = await asyncio.to_thread(_compress_image, data)
 
-    filename = f"{uuid4().hex}.{_extension(file.filename or '', final_content_type)}"
-    await asyncio.to_thread(local_storage.save_image, filename, compressed_data)
-
     image = SecretImage(
-        file_path=filename,
+        data=compressed_data,
+        # No file is written any more; the name is kept because the column is
+        # unique and indexed, and a stable identifier is still useful in logs.
+        file_path=f"{uuid4().hex}.{_extension(file.filename or '', final_content_type)}",
         content_type=final_content_type,
         size_bytes=len(compressed_data),
         original_filename=file.filename or "",
@@ -139,17 +165,18 @@ async def upload_secret_image(file: UploadFile = File(...), db: Session = Depend
 
 @router.get("/view/{image_id}")
 def view_secret_image(image_id: int, db: Session = Depends(get_db)):
-    """Serve the image file."""
+    """Serve the image bytes."""
     image = db.get(SecretImage, image_id)
-    if image is None:
+    if image is None or not image.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
 
-    filepath = local_storage.get_file_path(image.file_path)
-    if not filepath.exists():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image file not found")
-
-    from fastapi.responses import FileResponse
-    return FileResponse(filepath, media_type=image.content_type)
+    return Response(
+        content=image.data,
+        media_type=image.content_type,
+        # Private by definition: never let a shared cache hold a copy. The bytes
+        # for a given id never change, so the browser may keep its own.
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @router.delete("/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -157,7 +184,6 @@ def delete_secret_image(image_id: int, db: Session = Depends(get_db)):
     image = db.get(SecretImage, image_id)
     if image is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Image not found")
-    local_storage.delete_image(image.file_path)
     db.delete(image)
     db.commit()
     return None

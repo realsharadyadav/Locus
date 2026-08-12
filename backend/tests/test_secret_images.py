@@ -1,7 +1,8 @@
-"""Secret Images: upload/list/delete with local compression, plus the auth gate.
+"""Secret Images: upload/list/delete with compression, plus the auth gate.
 
-Images are compressed to 50KB max and stored in backend/secret_images/.
-Tests monkeypatch local_storage to stay hermetic.
+Images are compressed to 50KB max and stored as bytes on their own row, so these
+tests need no filesystem stubbing — the hermetic per-module database is the
+storage.
 """
 
 import io
@@ -11,10 +12,9 @@ import pytest
 
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from backend.app import auth as auth_module
-from backend.app import local_storage
 from backend.app import secret_images
 from backend.app.database import SessionLocal
 from backend.app.main import app
@@ -50,40 +50,25 @@ def client():
         yield test_client
 
 
-class FakeStorage:
-    """In-memory storage for testing."""
+class StoredImages:
+    """Reads the stored bytes back out of the database.
 
-    def __init__(self):
-        self.files: dict[str, bytes] = {}
+    Stands in for the old in-memory storage stub so the existing assertions keep
+    reading naturally, but it now inspects the real storage rather than a fake.
+    """
 
-    def save(self, filename, data):
-        self.files[filename] = data
-        return filename
-
-    def delete(self, filename):
-        self.files.pop(filename, None)
-
-    def get_path(self, filename):
-        class FakePath:
-            def __init__(self, data):
-                self.data = data
-
-            def exists(self):
-                return True
-
-            def read_bytes(self):
-                return self.data
-
-        return FakePath(self.files.get(filename, b""))
+    @property
+    def files(self) -> dict[str, bytes]:
+        with SessionLocal() as db:
+            return {
+                image.file_path: image.data
+                for image in db.scalars(select(SecretImage)).all()
+            }
 
 
 @pytest.fixture()
-def storage(monkeypatch):
-    fake = FakeStorage()
-    monkeypatch.setattr(local_storage, "save_image", fake.save)
-    monkeypatch.setattr(local_storage, "delete_image", fake.delete)
-    monkeypatch.setattr(local_storage, "get_file_path", fake.get_path)
-    yield fake
+def storage():
+    yield StoredImages()
     _clear_secret_images()
 
 
@@ -209,6 +194,37 @@ def test_requires_auth_when_password_set(client, storage, monkeypatch):
     monkeypatch.setenv("LOCUS_AUTH_PASSWORD", PASSWORD)
     response = client.get("/api/secret-images")
     assert response.status_code == 401
+
+
+def test_view_serves_the_stored_bytes(client, storage):
+    """Round-trip through the database: what went in is what comes back out."""
+    upload = client.post(
+        "/api/secret-images",
+        files={"file": ("cat.png", _create_test_image(size=(300, 300), format="PNG"), "image/png")},
+    ).json()
+
+    response = client.get(f"/api/secret-images/view/{upload['id']}")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/jpeg"
+    # Never cacheable by a shared proxy — these are private photos.
+    assert "private" in response.headers.get("cache-control", "")
+    assert response.content == next(iter(storage.files.values()))
+    assert Image.open(io.BytesIO(response.content)).size == (300, 300)
+
+
+def test_rows_without_bytes_are_hidden_not_broken(client, storage):
+    """Leftovers from the disk-backed version must not render as broken tiles.
+
+    Startup prunes them, but a row can also be left behind by a failed write, so
+    listing and viewing both have to hold the line on their own.
+    """
+    with SessionLocal() as db:
+        db.add(SecretImage(data=None, file_path="gone.jpg", content_type="image/jpeg", size_bytes=10))
+        db.commit()
+        orphan_id = db.scalars(select(SecretImage.id)).one()
+
+    assert client.get("/api/secret-images").json() == []
+    assert client.get(f"/api/secret-images/view/{orphan_id}").status_code == 404
 
 
 def test_phone_sized_photo_is_bounded_not_just_quality_crushed(client, storage):
