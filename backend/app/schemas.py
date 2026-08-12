@@ -412,6 +412,30 @@ class SecretChatAssistResponse(BaseModel):
     style_samples: int = 0
 
 
+class SecretChatAutopilotDraft(BaseModel):
+    """An autopilot reply the host can still stop, shown while it is held for review."""
+
+    id: str
+    content: str
+    trigger_message_id: int | None = None
+    hold_seconds: float = 0.0
+    remaining_seconds: float = 0.0
+
+
+class SecretChatAutopilotPending(BaseModel):
+    pending: SecretChatAutopilotDraft | None = None
+
+
+class SecretChatAutopilotDecision(BaseModel):
+    host_key: str = Field(default="", max_length=64)
+    draft_id: str = Field(default="", max_length=64)
+    action: str = Field(default="cancel", pattern="^(cancel|send)$")
+
+
+class SecretChatAutopilotDecisionResult(BaseModel):
+    status: str = "missing"
+
+
 class AuthStatusRead(BaseModel):
     auth_required: bool
     authenticated: bool = False

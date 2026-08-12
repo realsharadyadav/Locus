@@ -23,7 +23,7 @@ import re
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from threading import Lock, Thread
+from threading import Event, Lock, Thread
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -45,6 +45,10 @@ from .models import (
 from .schemas import (
     SecretChatAssistRequest,
     SecretChatAssistResponse,
+    SecretChatAutopilotDecision,
+    SecretChatAutopilotDecisionResult,
+    SecretChatAutopilotDraft,
+    SecretChatAutopilotPending,
     SecretChatBridgeLink,
     SecretChatBridgeRead,
     SecretChatBridgeStatus,
@@ -160,6 +164,7 @@ def _purge_expired_messages(db: Session, session: SecretChatSession) -> list[int
 def _destroy(db: Session, session: SecretChatSession) -> None:
     """Delete a room and drop everyone still connected to it."""
     token = session.token
+    _cancel_held_draft(token)
     db.delete(session)
     db.commit()
     # Tell open clients why, then cut the streams so nobody reconnects into a 404 loop.
@@ -478,6 +483,7 @@ def delete_all_secret_chats(host_key: str = "", db: Session = Depends(get_db)):
         db.delete(session)
     db.commit()
     for token in tokens:
+        _cancel_held_draft(token)
         _broadcast(token, {"type": "room", "state": "ended"})
         _revoke_streams(token)
     return None
@@ -529,6 +535,10 @@ def update_secret_chat(token: str, payload: SecretChatOptionsUpdate, db: Session
         session.ai_persona = payload.ai_persona[:2000]
     if payload.ai_autopilot is not None:
         session.ai_autopilot = payload.ai_autopilot
+        if not payload.ai_autopilot:
+            # Switching autopilot off has to stop the reply already waiting to go out,
+            # otherwise the last draft still lands after the host pulled the plug.
+            _cancel_held_draft(token)
     if payload.ai_mimic_me is not None:
         session.ai_mimic_me = payload.ai_mimic_me
     db.commit()
@@ -553,6 +563,8 @@ def clear_secret_chat_messages(token: str, host_key: str = "", db: Session = Dep
     """Delete every message but keep the room and its link alive."""
     session = _load_room(db, token)
     _require_host(db, session, host_key)
+    # Anything autopilot was about to say answers a message that is being deleted.
+    _cancel_held_draft(token)
     ids = db.scalars(select(SecretChatMessage.id).where(SecretChatMessage.session_token == token)).all()
     db.execute(delete(SecretChatMessage).where(SecretChatMessage.session_token == token))
     db.execute(
@@ -1068,10 +1080,88 @@ def assist_secret_chat(token: str, payload: SecretChatAssistRequest, db: Session
 AUTOPILOT_NOTICE_SECONDS = (1.5, 4.0)
 AUTOPILOT_SECONDS_PER_CHARACTER = 0.045
 AUTOPILOT_MAX_TYPING_SECONDS = 9.0
+# That "typing" stretch is not dead time any more: the draft is held here, visible to the
+# host alone, so they can read what is about to go out and stop it. The window is never
+# shorter than this — a two-word reply would otherwise be gone before it could be read.
+AUTOPILOT_REVIEW_MIN_SECONDS = 6.0
+AUTOPILOT_REVIEW_MAX_SECONDS = 12.0
 
 
 def _autopilot_typing_seconds(reply: str) -> float:
     return min(AUTOPILOT_MAX_TYPING_SECONDS, 0.9 + len(reply) * AUTOPILOT_SECONDS_PER_CHARACTER)
+
+
+def _autopilot_hold_seconds(reply: str) -> float:
+    """How long a drafted reply waits, typing indicator running, before it sends itself."""
+    return min(AUTOPILOT_REVIEW_MAX_SECONDS, max(AUTOPILOT_REVIEW_MIN_SECONDS, _autopilot_typing_seconds(reply)))
+
+
+# ─── Held drafts ───
+#
+# In-memory on purpose: a draft only exists for the few seconds of its review window, and a
+# process restart should drop it rather than send something the host never saw. One held
+# draft per room — a newer guest message supersedes an older draft, same as before.
+_AUTOPILOT_PENDING: dict[str, dict] = {}
+_AUTOPILOT_PENDING_LOCK = Lock()
+
+
+def _hold_draft(token: str, reply: str, trigger_message_id: int) -> dict:
+    entry = {
+        "id": uuid4().hex,
+        "token": token,
+        "content": reply,
+        "trigger_message_id": trigger_message_id,
+        "hold_seconds": _autopilot_hold_seconds(reply),
+        "started": time.monotonic(),
+        "decision": Event(),
+        "action": "hold",
+    }
+    with _AUTOPILOT_PENDING_LOCK:
+        previous = _AUTOPILOT_PENDING.get(token)
+        _AUTOPILOT_PENDING[token] = entry
+    if previous is not None:
+        # A superseded draft's worker is still waiting on its own event; release it.
+        previous["action"] = "cancel"
+        previous["decision"].set()
+    return entry
+
+
+def _held_draft(token: str) -> dict | None:
+    with _AUTOPILOT_PENDING_LOCK:
+        return _AUTOPILOT_PENDING.get(token)
+
+
+def _release_draft(token: str, draft_id: str | None = None) -> None:
+    """Forget a held draft once it has been sent, stopped or abandoned."""
+    with _AUTOPILOT_PENDING_LOCK:
+        entry = _AUTOPILOT_PENDING.get(token)
+        if entry and (draft_id is None or entry["id"] == draft_id):
+            del _AUTOPILOT_PENDING[token]
+
+
+def _decide_draft(token: str, action: str, draft_id: str = "") -> str:
+    """Apply the host's call — `cancel` or `send` — to whatever is held for this room."""
+    entry = _held_draft(token)
+    if entry is None or (draft_id and entry["id"] != draft_id):
+        return "missing"
+    entry["action"] = action
+    entry["decision"].set()
+    return "stopped" if action == "cancel" else "sending"
+
+
+def _cancel_held_draft(token: str) -> None:
+    """Drop a room's held draft outright — autopilot switched off, room cleared or deleted."""
+    _decide_draft(token, "cancel")
+
+
+def _draft_remaining_seconds(entry: dict) -> float:
+    return max(0.0, entry["hold_seconds"] - (time.monotonic() - entry["started"]))
+
+
+def _wait_for_decision(entry: dict) -> str:
+    """Hold the draft for its review window, returning early the moment the host decides."""
+    entry["decision"].wait(_draft_remaining_seconds(entry))
+    return entry["action"]
 
 
 def _set_typing(db: Session, token: str, participant: SecretChatParticipant, typing: bool) -> None:
@@ -1141,7 +1231,22 @@ def _run_autopilot(token: str, trigger_message_id: int) -> None:
                 return
             _set_typing(db, token, host_row, True)
 
-        time.sleep(_autopilot_typing_seconds(reply))
+        # The room shows the host typing while the host — and only the host — reads the
+        # draft and decides. Silence for the whole window means "send it".
+        entry = _hold_draft(token, reply, trigger_message_id)
+        decision = _wait_for_decision(entry)
+        _release_draft(token, entry["id"])
+        if decision == "cancel":
+            with SessionLocal() as db:
+                host_row = db.scalar(
+                    select(SecretChatParticipant).where(
+                        SecretChatParticipant.session_token == token,
+                        SecretChatParticipant.client_id == request.client_id,
+                    )
+                )
+                if host_row is not None:
+                    _set_typing(db, token, host_row, False)
+            return
 
         with SessionLocal() as db:
             session = db.get(SecretChatSession, token)
@@ -1187,7 +1292,11 @@ def _maybe_autopilot(db: Session, session: SecretChatSession, message: SecretCha
             SecretChatParticipant.role == "host",
         )
     )
-    if host is None or (author_client and author_client == host.client_id):
+    if host is None:
+        return
+    if author_client and author_client == host.client_id:
+        # The host answered by hand. Whatever autopilot was holding is now redundant.
+        _cancel_held_draft(session.token)
         return
     Thread(
         target=_run_autopilot,
@@ -1195,6 +1304,35 @@ def _maybe_autopilot(db: Session, session: SecretChatSession, message: SecretCha
         name=f"locus-autopilot-{session.token}",
         daemon=True,
     ).start()
+
+
+@router.get("/{token}/autopilot", response_model=SecretChatAutopilotPending)
+def read_autopilot_draft(token: str, host_key: str = "", db: Session = Depends(get_db)):
+    """The draft autopilot is holding, if any. Host-only: a guest must never see it coming."""
+    session = _load_room(db, token)
+    _require_host(db, session, host_key)
+    entry = _held_draft(token)
+    if entry is None:
+        return SecretChatAutopilotPending()
+    return SecretChatAutopilotPending(pending=SecretChatAutopilotDraft(
+        id=entry["id"],
+        content=entry["content"],
+        trigger_message_id=entry["trigger_message_id"],
+        hold_seconds=round(entry["hold_seconds"], 2),
+        remaining_seconds=round(_draft_remaining_seconds(entry), 2),
+    ))
+
+
+@router.post("/{token}/autopilot", response_model=SecretChatAutopilotDecisionResult)
+def decide_autopilot_draft(
+    token: str,
+    payload: SecretChatAutopilotDecision,
+    db: Session = Depends(get_db),
+):
+    """Stop the held reply, or let it go now instead of waiting out the window."""
+    session = _load_room(db, token)
+    _require_host(db, session, payload.host_key)
+    return SecretChatAutopilotDecisionResult(status=_decide_draft(token, payload.action, payload.draft_id))
 
 
 # ─── Stream ───

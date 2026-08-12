@@ -10,6 +10,7 @@ import ShareMenu from './ShareMenu';
 import ChatThread from './ChatThread';
 import GuestsPanel from './GuestsPanel';
 import AiCopilot from './AiCopilot';
+import AutopilotDraft from './AutopilotDraft';
 import TelegramConnect from './TelegramConnect';
 import { DISAPPEAR_OPTIONS, LINK_EXPIRY_OPTIONS, ROOM_EXPIRY_OPTIONS, ttlLabel } from './PrivateChatsPage';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../../hooks/useChatViewport';
@@ -308,6 +309,12 @@ export default function SecretChatPage({ token, onBack, onChanged, onRevoked, op
       </div>
 
       <div className="secret-chat-composer-stack">
+        <AutopilotDraft
+          token={token}
+          hostKey={hostKey}
+          active={Boolean(room.session?.ai_autopilot)}
+          toast={toast}
+        />
         <AiCopilot
           token={token}
           hostKey={hostKey}

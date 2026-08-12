@@ -56,6 +56,10 @@ export const secretChatApi = {
   presence: (token, payload) => request(`/${token}/presence`, { method: 'POST', body: JSON.stringify(payload) }),
   participants: (token, hostKey) => request(`/${token}/participants${query({ host_key: hostKey })}`),
   assist: (token, payload) => request(`/${token}/assist`, { method: 'POST', body: JSON.stringify(payload) }),
+  // Autopilot holds each drafted reply for a few seconds before sending it. Both calls are
+  // host-only: the draft must never reach the guest it is about to answer.
+  autopilotDraft: (token, hostKey) => request(`/${token}/autopilot${query({ host_key: hostKey })}`),
+  autopilotDecide: (token, payload) => request(`/${token}/autopilot`, { method: 'POST', body: JSON.stringify(payload) }),
   // Bridge — host-only. `bridgeStatus` says whether this deployment has a Telegram
   // account connected at all, so the UI can stay hidden instead of offering a dead button.
   bridgeStatus: () => request('/bridge/status'),

@@ -96,6 +96,9 @@ Real-time one-to-one and small-group rooms, separate from the document workspace
 - **Autopilot** — the server answers on the host's behalf with human-like pacing (a pause
   before noticing, a typing indicator, time proportional to reply length), so it works with
   the browser closed.
+- **Held for review** — during that typing pause the host (and only the host) sees exactly
+  what autopilot is about to send, typing itself out with a countdown, and can **Stop** it
+  before it lands or **Send now** to skip the wait. Leave it alone and it sends itself.
 
 ### Telegram bridge
 

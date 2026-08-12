@@ -1468,3 +1468,165 @@ html[data-theme='dark'] .scs-day span {
   white-space: nowrap;
   color: var(--violet);
 }
+
+/* ─── Autopilot review card ───
+ *
+ * Sits between the copilot bar and the composer while the server holds a drafted reply.
+ * The animation is the point: the draft types itself out and the bar drains, so the few
+ * seconds the reply is being held read as a countdown the host can interrupt, not as lag.
+ */
+.autopilot-draft {
+  margin: 8px 18px 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--violet) 45%, var(--line));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--violet) 8%, var(--paper));
+  animation: autopilot-draft-in .28s cubic-bezier(.2, .9, .3, 1.2);
+}
+
+@keyframes autopilot-draft-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.autopilot-draft.stopped {
+  animation: autopilot-draft-stopped .4s ease forwards;
+  border-color: var(--line);
+}
+
+@keyframes autopilot-draft-stopped {
+  to { opacity: 0; transform: translateY(6px) scale(.97); }
+}
+
+.autopilot-draft.sent {
+  animation: autopilot-draft-sent .4s ease forwards;
+}
+
+@keyframes autopilot-draft-sent {
+  to { opacity: 0; transform: translateY(-14px) scale(.98); }
+}
+
+.autopilot-draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.autopilot-draft-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--violet);
+}
+
+.autopilot-draft-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--violet) 20%, transparent);
+  animation: autopilot-orb-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes autopilot-orb-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--violet) 45%, transparent); }
+  60% { box-shadow: 0 0 0 6px transparent; }
+}
+
+.autopilot-draft-countdown {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.autopilot-draft-text {
+  margin: 8px 0 0 !important;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink) !important;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-height: 1.5em;
+}
+
+.autopilot-draft-text.typing::after {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--violet);
+  animation: autopilot-caret .8s step-end infinite;
+}
+
+@keyframes autopilot-caret {
+  50% { opacity: 0; }
+}
+
+.autopilot-draft-progress {
+  height: 3px;
+  margin-top: 9px;
+  border-radius: 100px;
+  background: color-mix(in srgb, var(--violet) 15%, transparent);
+  overflow: hidden;
+}
+
+.autopilot-draft-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--violet) 55%, transparent), var(--violet));
+  transition: width .1s linear;
+}
+
+.autopilot-draft-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 9px;
+}
+
+.autopilot-draft-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 100px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .18s ease, color .18s ease, background .18s ease;
+}
+
+.autopilot-draft-actions button:disabled { opacity: .5; cursor: default; }
+
+.autopilot-draft-stop:hover:not(:disabled) {
+  border-color: #e5534b;
+  color: #e5534b;
+  background: color-mix(in srgb, #e5534b 10%, transparent);
+}
+
+.autopilot-draft-send:hover:not(:disabled) {
+  border-color: var(--violet);
+  color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 12%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .autopilot-draft,
+  .autopilot-draft.stopped,
+  .autopilot-draft.sent,
+  .autopilot-draft-orb,
+  .autopilot-draft-text.typing::after { animation: none; }
+  .autopilot-draft.stopped,
+  .autopilot-draft.sent { opacity: 0; }
+  .autopilot-draft-progress i { transition: none; }
+}

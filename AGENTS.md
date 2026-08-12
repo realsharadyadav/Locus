@@ -375,6 +375,7 @@ reorder them, and add new overrides as a new highest-numbered file.
 | `secret-chat/components/ChatThread.jsx` | Shared message list: day dividers, sender runs, unread divider, typing bubble, read receipts, disappear countdowns |
 | `secret-chat/components/GuestsPanel.jsx` | Host-only participant details (device, browser, OS, screen, locale, timezone, IP, activity) |
 | `secret-chat/components/AiCopilot.jsx` | Reply copilot UI — suggestions, tone, persona, talk-like-me, and the autopilot toggle (the replying itself happens server-side) |
+| `secret-chat/components/AutopilotDraft.jsx` | Host-only review card for the reply autopilot is holding — typewriter reveal, countdown, Stop / Send now |
 | `secret-chat/components/ShareMenu.jsx` | Share popover — copy link, WhatsApp, Telegram, SMS, email, X, native share sheet |
 | `secret-chat/messageGroups.js` | Day dividers and sender-run grouping for both chat views |
 | `secret-chat/styles.css` | All Secret Chat styles |
@@ -405,6 +406,16 @@ Private chat rules worth knowing before changing this feature:
   own (`via_ai`) messages, and bails if a newer message has arrived. `via_ai` is stored so the
   reply is excluded from talk-like-me samples and tagged **only in the author's own view** —
   a guest is never shown that a reply was drafted.
+* The old synthetic "typing" delay is now a **review window**. Once drafted, the reply is held
+  in memory (`_AUTOPILOT_PENDING`, one per room, never persisted) while the typing indicator
+  runs, and `AutopilotDraft.jsx` polls `GET /{token}/autopilot` — host-key authorised, so the
+  draft never touches the room's stream and the guest being answered sees only typing. The
+  host can `POST` `cancel` or `send` to end the wait early; silence means it sends itself.
+  A held draft is also dropped when autopilot is switched off, when the host answers by hand,
+  and when the room's messages are cleared or the room is deleted. The window is at least
+  `AUTOPILOT_REVIEW_MIN_SECONDS` — a two-word reply would otherwise be gone before it could
+  be read. Tests stub `_wait_for_decision` rather than the clock; patching `time.sleep` alone
+  would leave the hold waiting in real time.
 * The model comes from Settings, not the environment: `_preferred_ai` reads the `explore_ai`
   preference (provider + model) that Settings saves, falling back to `configured_model()`.
 * A guest's erase button hides messages on their device with no confirmation — deliberate,
