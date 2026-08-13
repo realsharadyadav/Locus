@@ -15,7 +15,7 @@ import {
 import { api } from '../api';
 import { BRAND, writeStorage } from '../brand';
 import { ModelTable } from '../components/ModelTable';
-import { DEFAULT_PROVIDER_MODELS, PROVIDER_LABELS, PROVIDER_META, PROVIDER_ORDER, readSavedAiPreference } from '../lib/appState';
+import { PROVIDER_LABELS, PROVIDER_META, PROVIDER_ORDER, readSavedAiPreference } from '../lib/appState';
 
 export const REASONING_MODE_META = [
   { id: 'light', label: 'Light', icon: Radio, desc: 'Fast direct chat — default mode' },
@@ -42,6 +42,11 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   // from draft.provider: browsing what a provider offers is not the same act as changing the
   // default, and conflating the two is what made this page confusing.
   const [catalogProvider, setCatalogProvider] = useState(null);
+  // Which models actually answered a probe, keyed provider -> model. Saved server-side by the
+  // test endpoint, so the tags are still there on the next visit.
+  const [health, setHealth] = useState({});
+  const [respondingOnly, setRespondingOnly] = useState(false);
+  const [testing, setTesting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,8 +56,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       api.systemLimits().catch(() => null),
       api.preference('enabled_providers').catch(() => ({ value: {} })),
       api.preference('enabled_models').catch(() => ({ value: {} })),
+      api.preference('model_health').catch(() => ({ value: {} })),
     ])
-      .then(([llmConfig, preference, systemLimits, enabledProvidersPref, enabledModelsPref]) => {
+      .then(([llmConfig, preference, systemLimits, enabledProvidersPref, enabledModelsPref, modelHealthPref]) => {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
@@ -83,6 +89,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           if (Array.isArray(ids)) initialEnabledModels[provider] = new Set(ids);
         }
         setEnabledModels(initialEnabledModels);
+        setHealth(modelHealthPref.value || {});
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -149,6 +156,24 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
+  const testModels = async (models) => {
+    if (!models.length) return;
+    setTesting(true);
+    try {
+      const result = await api.testModels(catalogProvider, models);
+      setHealth(current => ({
+        ...current,
+        [catalogProvider]: { ...(current[catalogProvider] || {}), ...result.results },
+      }));
+      const responding = Object.values(result.results).filter(item => item.ok).length;
+      toast(`${responding} of ${models.length} model${models.length === 1 ? '' : 's'} responded`, responding ? 'success' : 'error');
+    } catch (error) {
+      toast(error.message || 'Could not test these models', 'error');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const saveUploadLimit = async () => {
     if (!limits) return;
     const requested = Math.max(1, Math.min(Math.round(Number(limitInput) || 0), limits.upload_ceiling_mb));
@@ -183,21 +208,28 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
   const modelMeta = config?.model_meta || {};
 
-  const selectProvider = (provider) => {
-    const options = providerModels(provider);
-    setDraft(current => ({ ...current, provider, model: options[0] || DEFAULT_PROVIDER_MODELS[provider] || '' }));
-    setCustomModel('');
-  };
+  // Every model that could be the default, grouped by the provider that offers it. The
+  // provider is never chosen by hand any more — it is read off the model you pick, and shown
+  // only as a label (it still travels in the saved preference because the backend routes on it).
+  const modelGroups = providers
+    .map(provider => ({
+      provider,
+      models: providerModels(provider).filter(model => (respondingOnly ? health[provider]?.[model]?.ok : true)),
+    }))
+    .filter(group => group.models.length);
+  const knownModel = modelGroups.some(group => group.models.includes(draft.model));
 
-  const selectModel = (model) => {
-    setDraft(current => ({ ...current, model }));
+  const selectModel = (provider, model) => {
+    setDraft(current => ({ ...current, provider, model }));
     setCustomModel('');
   };
 
   const applyCustomModel = () => {
     const value = customModel.trim();
     if (!value) return;
-    setDraft(current => ({ ...current, model: value }));
+    // A hand-typed id belongs to whichever provider's catalogue is open — nothing else can
+    // say where it should be routed.
+    setDraft(current => ({ ...current, provider: catalogProvider, model: value }));
   };
 
   const selectReasoningMode = (mode) => {
@@ -238,27 +270,35 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         </div>
 
         <div className="settings-default-picker">
-          <label className="settings-provider-filter">
-            <span>Provider</span>
-            <select value={draft.provider} onChange={e => selectProvider(e.target.value)}>
-              {providers.map(provider => (
-                <option key={provider} value={provider}>
-                  {PROVIDER_LABELS[provider]} ({providerModels(provider).length})
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="settings-provider-filter settings-default-model-field">
             <span>Model</span>
-            <select value={providerModels(draft.provider).includes(draft.model) ? draft.model : ''} onChange={e => selectModel(e.target.value)}>
-              {!providerModels(draft.provider).includes(draft.model) && (
-                <option value="">{draft.model || 'none selected'}</option>
-              )}
-              {providerModels(draft.provider).map(model => (
-                <option key={model} value={model}>{model}</option>
+            <select
+              value={knownModel ? `${draft.provider}::${draft.model}` : ''}
+              onChange={e => {
+                const [provider, ...rest] = e.target.value.split('::');
+                if (rest.length) selectModel(provider, rest.join('::'));
+              }}
+            >
+              {!knownModel && <option value="">{draft.model || 'none selected'}</option>}
+              {modelGroups.map(group => (
+                <optgroup key={group.provider} label={`${PROVIDER_LABELS[group.provider]} (${group.models.length})`}>
+                  {group.models.map(model => (
+                    <option key={`${group.provider}::${model}`} value={`${group.provider}::${model}`}>
+                      {model}{health[group.provider]?.[model] ? (health[group.provider][model].ok ? ' \u00B7 responding' : ' \u00B7 no answer') : ''}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
+          <label className="settings-responding-filter">
+            <input type="checkbox" checked={respondingOnly} onChange={() => setRespondingOnly(value => !value)} />
+            <span>Only models that responded to a test</span>
+          </label>
+        </div>
+        <div className="settings-default-provider">
+          <span className="settings-provider-icon">{PROVIDER_META[draft.provider]?.icon}</span>
+          <span>Runs on <strong>{PROVIDER_LABELS[draft.provider] || draft.provider}</strong> — taken from the model you picked.</span>
         </div>
 
         {!providerReady(draft.provider) && (
@@ -360,6 +400,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
               modelMeta={modelMeta}
               selectedModel={catalogProvider === draft.provider ? draft.model : ''}
               onSelect={model => { setDraft(current => ({ ...current, provider: catalogProvider, model })); setCustomModel(''); }}
+              health={health[catalogProvider] || {}}
+              onTest={testModels}
+              testing={testing}
               enabledModelIds={enabledModels[catalogProvider] || null}
               onToggleEnabled={id => toggleModelEnabled(catalogProvider, id)}
               onSetEnabled={(ids, enabled) => setModelsEnabled(catalogProvider, ids, enabled)}

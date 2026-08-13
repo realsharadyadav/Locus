@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, nullcontext
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -51,11 +52,11 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, probe_model, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
 from .providers import PROVIDER_ORDER, PROVIDERS
-from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
+from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, ModelTestRequest, ModelTestResponse, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from . import telegram_bridge
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
@@ -691,6 +692,44 @@ def llm_config():
         "using_fallback_models": using_fallback,
         "model_meta": build_model_meta(provider_models, gateway_metadata),
     }
+
+
+MODEL_HEALTH_PREFERENCE_KEY = "model_health"
+# Probes are network-bound, so a handful at a time finishes a page of models quickly without
+# looking like a burst of abuse to a provider's rate limiter.
+MODEL_TEST_CONCURRENCY = 4
+
+
+@app.post("/api/llm/models/test", response_model=ModelTestResponse)
+def test_models(payload: ModelTestRequest, db: Session = Depends(get_db)):
+    """Ping each model and record whether it answered.
+
+    Settings uses this to tag models as responding, so a default can be picked from models
+    that are known to work rather than from everything a provider happens to list. Results are
+    saved under the `model_health` preference: the tags survive a reload, and a model that has
+    never been tested stays untagged rather than being guessed at.
+    """
+    checked_at = datetime.now(timezone.utc).isoformat()
+    # Deduplicated, but kept in the order the client sent so the response reads like the table.
+    models = list(dict.fromkeys(payload.models))
+
+    def probe(model: str) -> tuple[str, dict]:
+        return model, {**probe_model(payload.provider, model), "checked_at": checked_at}
+
+    with ThreadPoolExecutor(max_workers=MODEL_TEST_CONCURRENCY) as pool:
+        results = dict(pool.map(probe, models))
+
+    preference = db.get(UserPreference, MODEL_HEALTH_PREFERENCE_KEY)
+    stored = dict(preference.value) if preference and isinstance(preference.value, dict) else {}
+    provider_health = dict(stored.get(payload.provider) or {})
+    provider_health.update(results)
+    stored[payload.provider] = provider_health
+    if preference:
+        preference.value = stored
+    else:
+        db.add(UserPreference(key=MODEL_HEALTH_PREFERENCE_KEY, value=stored))
+    db.commit()
+    return ModelTestResponse(provider=payload.provider, results=results)
 
 
 @app.get("/api/preferences/{key}", response_model=UserPreferenceRead)

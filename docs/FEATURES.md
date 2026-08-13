@@ -118,9 +118,13 @@ Real-time one-to-one and small-group rooms, separate from the document workspace
 - One default model, chosen in Settings, used by every module — Ask, Ticket Analysis and the
   private-chat copilot. No page has its own picker; Ask and Ticket Analysis show which model
   will answer, and link to Settings to change it.
-- Settings has two separate sections: **Default model** (provider + model, or a custom model
-  ID) and **Available providers & models** (which providers and models stay in the catalogue —
+- Settings has two separate sections: **Default model** (one dropdown listing every model
+  grouped by provider — the provider is read off the model you pick and shown as a label) and
+  **Available providers & models** (which providers and models stay in the catalogue —
   visibility only, never the default).
+- **Test models**: one click pings the listed models (up to 40 at a time), tags each as
+  responding or no answer with its latency, and remembers the result. Both the catalogue and
+  the default-model dropdown can then filter to models that actually answered.
 - Requests carry no provider or model: the backend resolves the saved default when the request
   runs, so changing it in Settings takes effect on the next question with no page reload.
 - Ollama models are always queried live from `OLLAMA_URL/api/tags`; nothing is hardcoded, so

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Check, Search } from 'lucide-react';
+import { Check, Loader2, Search } from 'lucide-react';
 import { formatContextLength, formatPrice } from '../lib/format';
 
 const SORT_ACCESSORS = {
@@ -9,9 +9,36 @@ const SORT_ACCESSORS = {
   price: item => item.priceValue ?? -1,
 };
 
-export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabledModelIds, onToggleEnabled, onSetEnabled }) {
+/* An untested model shows a dash, not a cross: never asked is not the same as asked and
+   silent, and only the second one is a reason to avoid picking it. */
+function statusCell(result) {
+  if (!result) return <span className="mt-status untested">—</span>;
+  if (result.ok) {
+    return (
+      <span className="mt-status ok" title={`Answered in ${result.latency_ms} ms`}>
+        Responding{result.latency_ms ? ` · ${result.latency_ms} ms` : ''}
+      </span>
+    );
+  }
+  return <span className="mt-status failed" title={result.error || 'No answer'}>No answer</span>;
+}
+
+export function ModelTable({
+  models,
+  modelMeta,
+  selectedModel,
+  onSelect,
+  enabledModelIds,
+  onToggleEnabled,
+  onSetEnabled,
+  health = {},
+  onTest,
+  testing = false,
+  testLimit = 40,
+}) {
   const [query, setQuery] = useState('');
   const [freeOnly, setFreeOnly] = useState(false);
+  const [respondingOnly, setRespondingOnly] = useState(false);
   const [sortKey, setSortKey] = useState('context');
   const [sortDir, setSortDir] = useState('desc');
 
@@ -32,6 +59,7 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
 
   const filtered = rows
     .filter(row => (freeOnly ? row.free : true))
+    .filter(row => (respondingOnly ? health[row.id]?.ok : true))
     .filter(row => {
       if (!query.trim()) return true;
       const needle = query.trim().toLowerCase();
@@ -81,6 +109,26 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
         </button>
         <button
           type="button"
+          className={`settings-free-toggle ${respondingOnly ? 'active' : ''}`}
+          onClick={() => setRespondingOnly(current => !current)}
+          aria-pressed={respondingOnly}
+          title="Only models that answered the last test"
+        >
+          Responding only
+        </button>
+        {onTest && (
+          <button
+            type="button"
+            className="settings-free-toggle model-table-test"
+            onClick={() => onTest(visibleIds.slice(0, testLimit))}
+            disabled={testing || visibleIds.length === 0}
+            title={`Send one tiny prompt to each listed model (up to ${testLimit} at a time) and tag the ones that answer`}
+          >
+            {testing ? <><Loader2 size={12} className="spin" /> Testing...</> : `Test ${Math.min(visibleIds.length, testLimit)} listed`}
+          </button>
+        )}
+        <button
+          type="button"
           className="settings-free-toggle"
           onClick={() => onSetEnabled(visibleIds, true)}
           disabled={visibleIds.length === 0}
@@ -109,6 +157,7 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
                 <th className="mt-col-params" onClick={() => toggleSort('params')}>Parameters {sortIndicator('params')}</th>
                 <th className="mt-col-context" onClick={() => toggleSort('context')}>Context {sortIndicator('context')}</th>
                 <th className="mt-col-price" onClick={() => toggleSort('price')}>Price {sortIndicator('price')}</th>
+                <th className="mt-col-status">Test</th>
               </tr>
             </thead>
             <tbody>
@@ -140,6 +189,7 @@ export function ModelTable({ models, modelMeta, selectedModel, onSelect, enabled
                     <td data-label="Parameters" className="mt-col-params">{row.paramSize || '—'}</td>
                     <td data-label="Context" className="mt-col-context">{contextLabel || '—'}</td>
                     <td data-label="Price" className="mt-col-price">{priceLabel || (row.free ? 'Free' : '—')}</td>
+                    <td data-label="Test" className="mt-col-status">{statusCell(health[row.id])}</td>
                   </tr>
                 );
               })}

@@ -163,3 +163,50 @@ def test_chat_job_records_the_settings_default(client, monkeypatch):
         assert job["model"] == "settings-choice-model"
     finally:
         clear_default()
+
+
+def test_testing_models_tags_the_ones_that_answer(client, monkeypatch):
+    def fake_probe(provider, model):
+        assert provider == "groq"
+        if model == "quiet-model":
+            raise RuntimeError("upstream said no")
+        return {"ok": True, "latency_ms": 12, "error": ""}
+
+    monkeypatch.setattr("backend.app.main.probe_model", lambda provider, model: (
+        {"ok": False, "latency_ms": 5, "error": "upstream said no"} if model == "quiet-model" else fake_probe(provider, model)
+    ))
+    response = client.post("/api/llm/models/test", json={"provider": "groq", "models": ["talkative-model", "quiet-model"]})
+    assert response.status_code == 200
+    results = response.json()["results"]
+    assert results["talkative-model"]["ok"] is True
+    assert results["quiet-model"]["ok"] is False
+    assert results["quiet-model"]["error"] == "upstream said no"
+
+    # Saved, so the tags survive a reload rather than living in the page's memory.
+    saved = client.get("/api/preferences/model_health").json()["value"]
+    assert saved["groq"]["talkative-model"]["ok"] is True
+    assert saved["groq"]["talkative-model"]["checked_at"]
+
+
+def test_a_later_test_run_keeps_earlier_results(client, monkeypatch):
+    monkeypatch.setattr("backend.app.main.probe_model", lambda provider, model: {"ok": True, "latency_ms": 1, "error": ""})
+    client.post("/api/llm/models/test", json={"provider": "groq", "models": ["first-model"]})
+    client.post("/api/llm/models/test", json={"provider": "ollama", "models": ["second-model"]})
+    saved = client.get("/api/preferences/model_health").json()["value"]
+    assert set(saved) == {"groq", "ollama"}
+    assert saved["groq"]["first-model"]["ok"] is True
+
+
+def test_a_probe_that_answers_nothing_is_not_responding(monkeypatch):
+    from backend.app import llm as llm_module
+
+    monkeypatch.setattr(llm_module, "_chat", lambda *args, **kwargs: "   ")
+    assert llm_module.probe_model("groq", "empty-model")["ok"] is False
+
+    monkeypatch.setattr(llm_module, "_chat", lambda *args, **kwargs: "ok")
+    assert llm_module.probe_model("groq", "good-model")["ok"] is True
+
+
+def test_the_test_batch_is_capped(client):
+    response = client.post("/api/llm/models/test", json={"provider": "groq", "models": [f"m{index}" for index in range(41)]})
+    assert response.status_code == 422

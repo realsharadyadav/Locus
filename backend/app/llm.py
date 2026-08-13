@@ -1204,6 +1204,48 @@ def generate_unrestricted_answer(question: str, sources: list[tuple[str, str]], 
     return _run_jailbreak_pipeline(question, sources, history, model, notify)
 
 
+MODEL_PROBE_SYSTEM = "You are a connectivity check. Answer with a single word."
+MODEL_PROBE_PROMPT = "Reply with the single word: ok"
+MODEL_PROBE_MAX_TOKENS = 16
+
+
+def probe_model(provider: str, model: str) -> dict:
+    """Ask one model for one word and report whether it answered.
+
+    This is what tags a model as responding in Settings: a listing endpoint only proves the
+    catalogue knows a model id, not that the key, the quota and the model itself will produce
+    a completion. Rate-limit backoff is capped at zero — a probe that has to wait for a
+    retry window has already answered the question it was asked.
+    """
+    started = perf_counter()
+    try:
+        with llm_provider_context(provider):
+            reply = _chat(
+                MODEL_PROBE_SYSTEM,
+                MODEL_PROBE_PROMPT,
+                model,
+                temperature=0,
+                max_tokens=MODEL_PROBE_MAX_TOKENS,
+                max_retry_after_seconds=0,
+            )
+    except Exception as exception:  # noqa: BLE001 - every failure mode is a result here, not an error
+        return {
+            "ok": False,
+            "latency_ms": round((perf_counter() - started) * 1000),
+            "error": _probe_error_text(exception),
+        }
+    latency_ms = round((perf_counter() - started) * 1000)
+    if not (reply or "").strip():
+        return {"ok": False, "latency_ms": latency_ms, "error": "Returned an empty answer"}
+    return {"ok": True, "latency_ms": latency_ms, "error": ""}
+
+
+def _probe_error_text(exception: Exception) -> str:
+    """One readable line for a table cell — provider errors run to hundreds of characters."""
+    text = " ".join(str(exception).split())
+    return text[:200] if text else type(exception).__name__
+
+
 def refusal_diagnostic(answer: str, provider: str | None, model: str | None) -> str | None:
     if not is_refusal(answer):
         return None

@@ -48,6 +48,9 @@ export const api = {
     return body;
   },
   llmConfig: () => request('/llm/config'),
+  // One completion per model, so the backend caps the batch — send a page of models, not a
+  // whole gateway catalogue. Results are also saved as the `model_health` preference.
+  testModels: (provider, models) => request('/llm/models/test', { method: 'POST', body: JSON.stringify({ provider, models }) }),
   systemLimits: () => request('/system/limits'),
   preference: (key) => request(`/preferences/${key}`),
   updatePreference: (key, value) => request(`/preferences/${key}`, { method: 'PATCH', body: JSON.stringify({ value }) }),

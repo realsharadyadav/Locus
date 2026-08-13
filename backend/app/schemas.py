@@ -161,6 +161,30 @@ class SuggestionsResponse(BaseModel):
     suggestions: list[str] = []
 
 
+# A test run costs one completion per model, so the batch is capped rather than letting a
+# 300-model gateway catalogue be probed in a single click.
+MODEL_TEST_MAX_MODELS = 40
+
+
+class ModelTestRequest(BaseModel):
+    provider: str
+    models: list[str] = Field(min_length=1, max_length=MODEL_TEST_MAX_MODELS)
+
+    _check_provider = field_validator("provider")(_require_known_provider)
+
+
+class ModelHealth(BaseModel):
+    ok: bool
+    latency_ms: int = 0
+    error: str = ""
+    checked_at: str = ""
+
+
+class ModelTestResponse(BaseModel):
+    provider: str
+    results: dict[str, ModelHealth] = {}
+
+
 class ChatSessionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

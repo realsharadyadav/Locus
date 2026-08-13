@@ -46,10 +46,19 @@ produce a file that still parses but behaves wrongly.
 
 **Reasoning modes:** `light` (fast excerpt), `thinking` (full-file), `deep_summary` (section-by-section), `ticket_analysis` (ITSM grouping), `web_research` (multi-round search + synthesis), `unrestricted` (no guardrails + jailbreak pipeline — 7 strategies + auto-rephrase on refusal)
 
-**Model selection rule:** Settings is the only place a provider/model is chosen. It saves the
-pair to the `explore_ai` preference; `ai_defaults.preferred_ai()` resolves it server-side for
-every request, and the frontend sends no provider/model at all. Don't reintroduce a per-page
-picker — Ask, Ticket Analysis and Private Chats display the default, they don't set it.
+**Model selection rule:** Settings is the only place a provider/model is chosen, and it is
+chosen by picking a *model* — one dropdown grouped by provider. The provider is derived from
+the model and shown as a label; it still rides along in the saved `explore_ai` preference
+because the backend routes on it, but it is never picked by hand.
+`ai_defaults.preferred_ai()` resolves the pair server-side for every request, and the frontend
+sends no provider/model at all. Don't reintroduce a per-page picker — Ask, Ticket Analysis and
+Private Chats display the default, they don't set it.
+
+**Model test tags:** `POST /api/llm/models/test` probes a batch of models (`llm.probe_model`:
+one-word prompt, no rate-limit backoff) and saves the outcome to the `model_health` preference
+as `{provider: {model: {ok, latency_ms, error, checked_at}}}`. Settings' model table shows the
+tag and can filter to responding models; the default-model dropdown can too. Batches are capped
+at `MODEL_TEST_MAX_MODELS` (40) because each probe is a real completion.
 
 **Model list rule:** Never hardcode Ollama model lists. Always query `OLLAMA_URL/api/tags` at runtime. Frontend fallback list should be empty for Ollama. User only wants to see actually-pulled models.
 
@@ -325,7 +334,7 @@ that will bite you again if forgotten.
 | `HomePage.jsx` | Landing dashboard |
 | `HubPage.jsx` | Library / collections |
 | `ExplorePage.jsx` | Ask — chat, composer, slash commands, reasoning modes |
-| `SettingsPage.jsx` | Settings. Two separate sections: **Default model** (the one provider/model the whole app answers with, saved to the `explore_ai` preference) and **Available providers & models** (visibility only — `enabled_providers` / `enabled_models`). No other page picks a model |
+| `SettingsPage.jsx` | Settings. Two separate sections: **Default model** (one dropdown of every model grouped by provider, saved to `explore_ai`; provider is derived and displayed, not chosen) and **Available providers & models** (visibility — `enabled_providers` / `enabled_models` — plus the model test that writes `model_health`). No other page picks a model |
 | `TicketAnalysisPage.jsx` | Patterns — ticket grouping cockpit |
 
 ### Components — `src/components/`
