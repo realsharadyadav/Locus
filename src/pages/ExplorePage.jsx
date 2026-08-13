@@ -13,7 +13,6 @@ import {
   Radio,
   Send,
   RotateCcw,
-  SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
@@ -29,7 +28,6 @@ import { assistantLabel } from '../brand';
 import { AssistantMarkdown } from '../components/AssistantMarkdown';
 import { CollapsibleSources } from '../components/CollapsibleSources';
 import { DirectStreamTrace } from '../components/DirectStreamTrace';
-import { ModelControl } from '../components/ModelControl';
 import { PipelineActivity } from '../components/PipelineActivity';
 import { useChatViewportLock, useCompactViewport, useRepinOnResize } from '../hooks/useChatViewport';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -61,11 +59,11 @@ export function ExplorePage({
   const [question, setQuestion] = useState('');
   const [messages, setMessages] = useState([]);
   const [activeChat, setActiveChat] = useState(null);
+  // Ask no longer chooses a model: the provider and model are whatever Settings holds, kept
+  // here only to label the header and composer. Requests carry neither — the backend reads the
+  // same default when it runs, so an answer never uses a model this page cached at mount.
   const [model, setModel] = useState(savedAiPreference.model || DEFAULT_PROVIDER_MODELS[savedAiPreference.provider] || DEFAULT_PROVIDER_MODELS.ollama);
   const [provider, setProvider] = useState(savedAiPreference.provider || 'ollama');
-  const [llmConfig, setLlmConfig] = useState(null);
-  const [enabledProviders, setEnabledProviders] = useState(null);
-  const [enabledModels, setEnabledModels] = useState(null);
   const [allowGeneralKnowledge, setAllowGeneralKnowledge] = useState(true);
   const [reasoningMode, setReasoningMode] = useState(savedAiPreference.reasoning_mode === 'web_research' ? 'light' : (savedAiPreference.reasoning_mode || 'light'));
   const [webSourceLimit] = useState(savedAiPreference.web_source_limit || 200);
@@ -80,7 +78,6 @@ export function ExplorePage({
   const [slashFilter, setSlashFilter] = useState('');
   const [directStreaming, setDirectStreaming] = useState(false);
   const [modePickerOpen, setModePickerOpen] = useState(false);
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [followups, setFollowups] = useState({ key: null, items: [], loading: false });
   const composerRef = useRef(null);
@@ -102,7 +99,6 @@ export function ExplorePage({
   const directAbortRef = useRef(null);
   const stopRequestedRef = useRef(false);
   const modePickerRef = useClickOutside(modePickerOpen, () => setModePickerOpen(false));
-  const optionsPopoverRef = useClickOutside(optionsOpen, () => setOptionsOpen(false));
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useClickOutside(moreMenuOpen, () => setMoreMenuOpen(false));
   const slashScopeRef = useClickOutside(slashOpen, () => { setSlashOpen(false); setSlashIndex(-1); });
@@ -208,37 +204,23 @@ export function ExplorePage({
     Promise.all([
       api.llmConfig(),
       api.preference('explore_ai').catch(() => ({ value: {} })),
-      api.preference('enabled_providers').catch(() => ({ value: {} })),
-      api.preference('enabled_models').catch(() => ({ value: {} })),
-    ]).then(([config, preference, enabledProvidersPref, enabledModelsPref]) => {
-      setLlmConfig(config);
+    ]).then(([config, preference]) => {
       const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
       const nextProvider = saved.provider || config.provider || 'ollama';
-      const nextModel = saved.model || (nextProvider === config.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]);
       setProvider(nextProvider);
-      setModel(nextModel);
+      setModel(saved.model || (nextProvider === config.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]));
       setReasoningMode(saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'));
-      const knownProviders = Object.keys(config.providers || {});
-      const savedEnabled = enabledProvidersPref.value?.providers;
-      setEnabledProviders(new Set(
-        Array.isArray(savedEnabled) && savedEnabled.length
-          ? savedEnabled.filter(id => knownProviders.includes(id))
-          : knownProviders
-      ));
-      const nextEnabledModels = {};
-      for (const [providerId, ids] of Object.entries(enabledModelsPref.value || {})) {
-        if (Array.isArray(ids)) nextEnabledModels[providerId] = new Set(ids);
-      }
-      setEnabledModels(nextEnabledModels);
       aiPreferenceReady.current = true;
     }).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (!aiPreferenceReady.current) return undefined;
+    // Only the mode is Ask's to save. The provider and model in this preference belong to
+    // Settings, so they are carried over from whatever is stored rather than written back
+    // from this page's copy, which would overwrite a default changed in another tab.
     const payload = {
-      provider,
-      model,
+      ...readSavedAiPreference(),
       reasoning_mode: reasoningMode,
       web_source_limit: webSourceLimit,
     };
@@ -247,7 +229,7 @@ export function ExplorePage({
       api.updatePreference('explore_ai', payload).catch(() => {});
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [provider, model, reasoningMode, webSourceLimit]);
+  }, [reasoningMode, webSourceLimit]);
 
   useEffect(() => {
     setSelectedFileIds(current => current === null ? null : current.filter(id => files.some(file => file.id === id)));
@@ -434,7 +416,7 @@ export function ExplorePage({
       return;
     }
     setFollowups({ key, items: [], loading: true });
-    api.chatSuggestions(priorUser.text, last.text, provider, model)
+    api.chatSuggestions(priorUser.text, last.text)
       .then(result => setFollowups(current => (current.key === key ? { key, items: result.suggestions || [], loading: false } : current)))
       .catch(() => setFollowups(current => (current.key === key ? { key, items: [], loading: false } : current)));
   }, [messages]);
@@ -505,7 +487,7 @@ export function ExplorePage({
         { role: 'assistant', text: '', sources: [], model, provider, streaming: true, streamId, activity: baseActivity },
       ]);
       try {
-        const result = await api.directChatStream(cleanText, activeChat, provider, model, allowGeneralKnowledge, mode, event => {
+        const result = await api.directChatStream(cleanText, activeChat, allowGeneralKnowledge, mode, event => {
           if (event.type === 'start') {
             setActiveChat(event.conversation_id);
             setMessages(current => current.map(message => message.streamId === streamId
@@ -613,7 +595,7 @@ export function ExplorePage({
       const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
       setMessages(current => [...current, { id: tempId, role: 'user', text: cleanText }]);
       try {
-        const job = await createChatJob(cleanText, activeChat, provider, model, allowGeneralKnowledge, mode, selectedFileIds, webSourceLimit, effectiveWebSearch);
+        const job = await createChatJob(cleanText, activeChat, allowGeneralKnowledge, mode, selectedFileIds, webSourceLimit, effectiveWebSearch);
         setActiveChat(job.conversation_id);
       } catch (error) {
         setMessages(current => [...current, { role: 'assistant', text: error.message, sources: [] }]);
@@ -986,9 +968,6 @@ export function ExplorePage({
                     <History size={14} /> Chat history
                     {chats.length > 0 && <span className="chat-more-count">{chats.length}</span>}
                   </button>
-                  <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); setOptionsOpen(true); }}>
-                    <SlidersHorizontal size={14} /> Model options
-                  </button>
                   {activeChat && (
                     <button type="button" role="menuitem" onClick={() => { setMoreMenuOpen(false); copyConversationId(); }}>
                       {copiedConvId ? <Check size={14} /> : <Copy size={14} />} Copy conversation
@@ -1003,22 +982,9 @@ export function ExplorePage({
                 </div>
               )}
             </div>
-            <div className="desktop-controls">
-              <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} enabledProviders={enabledProviders} enabledModels={enabledModels} />
-            </div>
-            <div className="options-popover-wrap" ref={optionsPopoverRef}>
-              <button
-                type="button"
-                className="options-toggle icon-button"
-                onClick={() => setOptionsOpen(value => !value)}
-                aria-label="Model options"
-                aria-expanded={optionsOpen}
-              >
-                <SlidersHorizontal size={18} />
-              </button>
-              <div className={`options-popover desktop-controls ${optionsOpen ? 'open' : ''}`}>
-                <ModelControl config={llmConfig} provider={provider} setProvider={setProvider} model={model} setModel={setModel} enabledProviders={enabledProviders} enabledModels={enabledModels} />
-              </div>
+            <div className="chat-top-model desktop-controls" {...tip(`Answers use the default set in Settings: ${PROVIDER_LABELS[provider] || provider} / ${model || 'none selected'}`)}>
+              <Cpu size={13} />
+              <span className="chat-top-model-name">{model || 'No model set'}</span>
             </div>
           </div>
         </div>
@@ -1325,12 +1291,12 @@ export function ExplorePage({
                 className={`composer-tool-btn composer-tool-btn-icon composer-tool-btn-model ${allowGeneralKnowledge ? 'active' : ''}`}
                 onClick={() => setAllowGeneralKnowledge(v => !v)}
                 aria-pressed={allowGeneralKnowledge}
-                aria-label={`Current model ${model || 'not selected'}. General knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
-                {...tip(`Current model: ${model || 'not selected'}. Click to turn general knowledge ${allowGeneralKnowledge ? 'off' : 'on'}.`)}
+                aria-label={`Answering with ${model || 'the default model'}. General knowledge ${allowGeneralKnowledge ? 'on' : 'off'}`}
+                {...tip(`Answering with ${model || 'the default model'} (change it in Settings). Click to turn general knowledge ${allowGeneralKnowledge ? 'off' : 'on'}.`)}
               >
                 <Cpu size={13} />
                 <span className="composer-tool-label composer-knowledge-label">{allowGeneralKnowledge ? 'Model knowledge' : 'Files only'}</span>
-                <span className="composer-tool-label composer-model-label">{model || 'Choose model'}</span>
+                <span className="composer-tool-label composer-model-label">{model || 'Set a model in Settings'}</span>
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
               </button>
             </div>

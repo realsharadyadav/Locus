@@ -33,6 +33,7 @@ from .config import (
     TICKET_ANALYSIS_MIN_GROUP_SIZE, TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
     configured_model, gateway_settings, llm_provider,
 )
+from .ai_defaults import preferred_ai
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
 from .brand import (
@@ -1015,18 +1016,28 @@ def _ticket_analysis_for_file(
         raise HTTPException(status_code=422, detail=str(exception)) from exception
 
 
+def _ticket_analysis_ai(payload: TicketAnalysisRequest, db: Session) -> tuple[str, str]:
+    """The provider/model this run's LLM steps use: the Settings default unless the request
+    pinned its own, same rule the chat endpoints follow (see _validate_chat_request)."""
+    default_provider, default_model = preferred_ai(db)
+    provider = payload.llmProvider or default_provider
+    model = payload.model or (default_model if provider == default_provider else configured_model())
+    return provider, model
+
+
 @app.post("/api/ticket-analysis")
 def ticket_analysis(payload: TicketAnalysisRequest, db: Session = Depends(get_db)):
     stored_file = db.get(StoredFile, payload.fileId)
     if not stored_file:
         raise HTTPException(status_code=404, detail="File not found")
     taxonomy_rules = _parse_ticket_taxonomy_rules(payload.taxonomyRules)
+    llm_provider_name, llm_model = _ticket_analysis_ai(payload, db)
     return _ticket_analysis_for_file(
         stored_file,
         payload.maxGroups,
         payload.minGroupSize,
         payload.useLlmFallback,
-        payload.model,
+        llm_model,
         embedding_method=payload.embeddingMethod,
         clustering_method=payload.clusteringMethod,
         problem_group_strategy=payload.problemGroupStrategy,
@@ -1038,7 +1049,7 @@ def ticket_analysis(payload: TicketAnalysisRequest, db: Session = Depends(get_db
         include_debug_samples=payload.includeDebugSamples,
         use_llm_labels=payload.useLlmLabels,
         suggest_taxonomy_rules=payload.suggestTaxonomyRules,
-        llm_provider_name=payload.llmProvider,
+        llm_provider_name=llm_provider_name,
         pause_okf_taxonomy=payload.pauseOkfTaxonomy,
         taxonomy_rules=taxonomy_rules,
     )
@@ -1057,6 +1068,9 @@ def ticket_analysis_stream(payload: TicketAnalysisRequest, db: Session = Depends
     if not stored_file:
         raise HTTPException(status_code=404, detail="File not found")
     taxonomy_rules = _parse_ticket_taxonomy_rules(payload.taxonomyRules)
+    # Resolved here rather than inside run(): that runs on its own thread, after this
+    # request's session is gone.
+    llm_provider_name, llm_model = _ticket_analysis_ai(payload, db)
     detached = SimpleNamespace(
         id=stored_file.id,
         name=stored_file.name,
@@ -1075,7 +1089,7 @@ def ticket_analysis_stream(payload: TicketAnalysisRequest, db: Session = Depends
                     payload.maxGroups,
                     payload.minGroupSize,
                     payload.useLlmFallback,
-                    payload.model,
+                    llm_model,
                     embedding_method=payload.embeddingMethod,
                     clustering_method=payload.clusteringMethod,
                     problem_group_strategy=payload.problemGroupStrategy,
@@ -1087,7 +1101,7 @@ def ticket_analysis_stream(payload: TicketAnalysisRequest, db: Session = Depends
                     include_debug_samples=payload.includeDebugSamples,
                     use_llm_labels=payload.useLlmLabels,
                     suggest_taxonomy_rules=payload.suggestTaxonomyRules,
-                    llm_provider_name=payload.llmProvider,
+                    llm_provider_name=llm_provider_name,
                     pause_okf_taxonomy=payload.pauseOkfTaxonomy,
                     taxonomy_rules=taxonomy_rules,
                     progress=lambda stage, detail: events.put({"type": "stage", "stage": stage, "detail": detail}),
@@ -1815,6 +1829,23 @@ def _call_process_chat(payload: ChatRequest, db: Session, notify, cancelled, on_
 
 
 def _validate_chat_request(payload: ChatRequest):
+    """Fill in the provider/model the request left out from the default saved in Settings.
+
+    Every chat entry point calls this first, so the app can stop sending a provider and model
+    with each question: there is one default, Settings owns it, and a request that names
+    neither picks up whatever Settings holds at the moment it runs rather than whatever the
+    page happened to load when it mounted. Mutated in place because the payload is threaded
+    through the pipeline, the job row and the stored message from here on.
+    """
+    if payload.provider and payload.model:
+        return None
+    provider, model = preferred_ai()
+    # A caller that pinned a provider but no model gets that provider's own default rather
+    # than the saved model id, which only means anything to the provider it was chosen for.
+    if payload.provider and payload.provider != provider:
+        model = configured_model()
+    payload.provider = payload.provider or provider
+    payload.model = payload.model or model
     return None
 
 
@@ -2041,14 +2072,17 @@ def chat_direct_stream(payload: ChatRequest):
 
 @app.post("/api/chat/suggestions", response_model=SuggestionsResponse)
 def chat_suggestions(payload: SuggestionsRequest):
-    with llm_provider_context(payload.provider):
+    default_provider, default_model = preferred_ai()
+    provider = payload.provider or default_provider
+    model = payload.model or (default_model if provider == default_provider else configured_model())
+    with llm_provider_context(provider):
         try:
-            suggestions = generate_followup_questions(payload.question, payload.answer, payload.model)
+            suggestions = generate_followup_questions(payload.question, payload.answer, model)
         except Exception as exception:  # noqa: BLE001 - follow-up chips are a nicety, never an error
             # Anything raised here used to surface as a 500, and the frontend's catch turned that
             # into "no suggestions" with no way to tell a broken call from a model with nothing
             # to suggest. Degrade quietly, but leave a diagnostic behind.
-            diagnostic_event("chat.suggestions_failed", provider=payload.provider, model=payload.model, error=str(exception)[:500])
+            diagnostic_event("chat.suggestions_failed", provider=provider, model=model, error=str(exception)[:500])
             suggestions = []
     return SuggestionsResponse(suggestions=suggestions)
 

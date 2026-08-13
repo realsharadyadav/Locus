@@ -115,12 +115,18 @@ Real-time one-to-one and small-group rooms, separate from the document workspace
 
 ## Model Controls
 
-- Providers: Ollama, Groq, OpenAI, Gemini — switchable per conversation.
+- One default model, chosen in Settings, used by every module — Ask, Ticket Analysis and the
+  private-chat copilot. No page has its own picker; Ask and Ticket Analysis show which model
+  will answer, and link to Settings to change it.
+- Settings has two separate sections: **Default model** (provider + model, or a custom model
+  ID) and **Available providers & models** (which providers and models stay in the catalogue —
+  visibility only, never the default).
+- Requests carry no provider or model: the backend resolves the saved default when the request
+  runs, so changing it in Settings takes effect on the next question with no page reload.
 - Ollama models are always queried live from `OLLAMA_URL/api/tags`; nothing is hardcoded, so
   only actually-pulled models appear.
 - Provider and model are stored per message and shown in every message head.
-- Settings: default provider, default model (or a custom model ID), default reasoning mode,
-  upload size limit.
+- Also in Settings: default reasoning mode and the upload size limit.
 
 ## Pipeline / Developer Trace
 

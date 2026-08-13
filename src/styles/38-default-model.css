@@ -1,0 +1,69 @@
+/* 38 — one default model, chosen in one place.
+ *
+ * Settings now separates the two jobs that used to share a panel: picking the default the
+ * whole app answers with, and ticking which providers/models stay in the catalogue. Ask and
+ * Ticket Analysis lost their own pickers, so what they render here is a label, not a control. */
+
+.settings-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+}
+.settings-section-head h3 { margin: 0; }
+.settings-section-head .settings-hint-text { margin: 0; }
+
+.settings-default-section {
+  border-color: var(--violet);
+}
+
+.settings-default-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 22px;
+  align-items: center;
+}
+/* The model list is the long one — let it take the room the provider list doesn't need. */
+.settings-default-model-field { flex: 1 1 260px; }
+.settings-default-model-field select {
+  width: 100%;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.settings-model-header h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+/* Ask header: what the answer will run on, stated rather than offered. */
+.chat-top-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.chat-top-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ticket Analysis run settings: the model row is now read-only. */
+.tset-static-value {
+  padding: 7px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

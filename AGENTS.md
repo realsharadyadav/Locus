@@ -46,6 +46,11 @@ produce a file that still parses but behaves wrongly.
 
 **Reasoning modes:** `light` (fast excerpt), `thinking` (full-file), `deep_summary` (section-by-section), `ticket_analysis` (ITSM grouping), `web_research` (multi-round search + synthesis), `unrestricted` (no guardrails + jailbreak pipeline — 7 strategies + auto-rephrase on refusal)
 
+**Model selection rule:** Settings is the only place a provider/model is chosen. It saves the
+pair to the `explore_ai` preference; `ai_defaults.preferred_ai()` resolves it server-side for
+every request, and the frontend sends no provider/model at all. Don't reintroduce a per-page
+picker — Ask, Ticket Analysis and Private Chats display the default, they don't set it.
+
 **Model list rule:** Never hardcode Ollama model lists. Always query `OLLAMA_URL/api/tags` at runtime. Frontend fallback list should be empty for Ollama. User only wants to see actually-pulled models.
 
 ## Lessons Learned (Session History)
@@ -291,6 +296,7 @@ that will bite you again if forgotten.
 
 | File | Purpose | Key Functions |
 |---|---|---|
+| `ai_defaults.py` | The one provider/model default, read from the `explore_ai` preference with `.env` as the fallback. Every entry point that needs a model resolves it here | `preferred_ai()` |
 | `config.py` | Loads `.env`, exposes all env-based config | `llm_provider()`, `configured_model()`, `GroqSettings`, `groq_settings()`, `TICKET_ANALYSIS_*`, `SEMANTIC_*`, `WEB_RESEARCH_*` |
 | `diagnostics.py` | Per-job diagnostic event logging to JSONL with secret sanitization | `diagnostic_event()` — log event; `initialize_job_log()` — create log file; `sanitize()` — redact secrets |
 | `seed.py` | Seeds database with three default collections on first launch | `seed_database()` |
@@ -319,7 +325,7 @@ that will bite you again if forgotten.
 | `HomePage.jsx` | Landing dashboard |
 | `HubPage.jsx` | Library / collections |
 | `ExplorePage.jsx` | Ask — chat, composer, slash commands, reasoning modes |
-| `SettingsPage.jsx` | Settings |
+| `SettingsPage.jsx` | Settings. Two separate sections: **Default model** (the one provider/model the whole app answers with, saved to the `explore_ai` preference) and **Available providers & models** (visibility only — `enabled_providers` / `enabled_models`). No other page picks a model |
 | `TicketAnalysisPage.jsx` | Patterns — ticket grouping cockpit |
 
 ### Components — `src/components/`
@@ -328,7 +334,6 @@ that will bite you again if forgotten.
 |---|---|
 | `Sidebar.jsx` / `Header.jsx` / `Logo.jsx` | App shell chrome |
 | `SplashScreen.jsx` | Boot screen with real load progress |
-| `ModelControl.jsx` | Provider + model picker |
 | `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
 | `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering. All react-markdown `components` overrides live in one `useMemo` — a new identity remounts the code renderer and restarts in-flight Mermaid renders. Overrides must drop the `node` prop instead of spreading it onto the DOM |
 | `AnswerSection.jsx` | One collapsible answer section (h2 + its content). Starts expanded; collapsing sets `data-collapsed` and CSS hides the body, so children are never restructured |
@@ -416,8 +421,9 @@ Private chat rules worth knowing before changing this feature:
   `AUTOPILOT_REVIEW_MIN_SECONDS` — a two-word reply would otherwise be gone before it could
   be read. Tests stub `_wait_for_decision` rather than the clock; patching `time.sleep` alone
   would leave the hold waiting in real time.
-* The model comes from Settings, not the environment: `_preferred_ai` reads the `explore_ai`
-  preference (provider + model) that Settings saves, falling back to `configured_model()`.
+* The model comes from Settings, not the environment: `_preferred_ai` wraps
+  `ai_defaults.preferred_ai`, which reads the `explore_ai` preference Settings saves and falls
+  back to `configured_model()`. Argument order is flipped (model first) for this module's callers.
 * A guest's erase button hides messages on their device with no confirmation — deliberate,
   the user asked for no interstitial. Nothing is deleted server-side.
 

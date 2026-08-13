@@ -8,8 +8,8 @@ export const DEFAULT_PROVIDER_MODELS = { ollama: 'llama3.2:latest', groq: 'opena
 // Fallback ordering before /api/llm/config responds (which also sends provider_order, the
 // backend's own PROVIDERS registry order — the two are kept in sync by hand).
 export const PROVIDER_ORDER = ['ollama', 'groq', 'openai', 'gemini', 'cerebras', 'openrouter', 'tokenrouter', 'opencode'];
-// Single source of truth for provider icon/blurb/env-hint copy, shared by ModelControl and
-// SettingsPage so the two don't drift out of sync with each other.
+// Single source of truth for provider icon/blurb/env-hint copy. Settings is the only page that
+// renders it now that choosing a model happens in exactly one place.
 export const PROVIDER_META = {
   ollama: { icon: '🦙', blurb: 'Local models, no API key needed', envHint: 'Runs against OLLAMA_URL — start Ollama and pull a model.' },
   groq: { icon: '⚡', blurb: 'Fast cloud inference', envHint: 'Set GROQ_API_KEY in your .env file.' },

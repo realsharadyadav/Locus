@@ -13,7 +13,7 @@ Major frontend surfaces:
 
 - `HomePage`: overview and quick actions
 - `HubPage`: stores and file uploads
-- `ExplorePage`: chat workspace, file scoping, reasoning modes, model controls
+- `ExplorePage`: chat workspace, file scoping, reasoning modes (the model comes from Settings)
 - `PipelineActivity`: live developer/research pipeline card
 - `FileTreePanel`: right-side evidence scope selector
 - `CommandPalette`: global search/navigation
