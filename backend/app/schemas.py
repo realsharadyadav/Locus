@@ -3,7 +3,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from .config import configured_model, llm_provider
 from .providers import PROVIDER_ORDER, PROVIDERS
 
 
@@ -54,8 +53,11 @@ class StoredFileRead(BaseModel):
 class ChatRequest(BaseModel):
     question: str = Field(min_length=2, max_length=8000)
     conversation_id: int | None = None
-    model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
-    provider: str = Field(default_factory=llm_provider)
+    # Omitted by the app: model and provider come from the single default saved in Settings,
+    # resolved server-side (see ai_defaults.preferred_ai). Still accepted so an API client can
+    # pin a specific model for one request.
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    provider: str | None = None
     allow_general_knowledge: bool = True
     reasoning_mode: Literal["light", "thinking", "deep_summary", "ticket_analysis", "web_research", "unrestricted"] = "light"
     web_search: bool = False
@@ -149,8 +151,8 @@ class SuggestionsRequest(BaseModel):
     # at all, and invisible to the user, since the frontend's catch turns any error into "no
     # suggestions" either way.
     answer: str = Field(min_length=1, max_length=200_000)
-    model: str = Field(default_factory=configured_model, min_length=1, max_length=200)
-    provider: str = Field(default_factory=llm_provider)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    provider: str | None = None
 
     _check_provider = field_validator("provider")(_require_known_provider)
 

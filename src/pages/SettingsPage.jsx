@@ -38,6 +38,10 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [savingProviders, setSavingProviders] = useState(false);
   const [enabledModels, setEnabledModels] = useState(null);
   const [savingModels, setSavingModels] = useState(false);
+  // Which provider's catalogue is on screen in the visibility section. Deliberately separate
+  // from draft.provider: browsing what a provider offers is not the same act as changing the
+  // default, and conflating the two is what made this page confusing.
+  const [catalogProvider, setCatalogProvider] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +56,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
+        setCatalogProvider(saved.provider || llmConfig.provider || 'ollama');
         setDraft({
           provider: saved.provider || llmConfig.provider || 'ollama',
           model: saved.model || llmConfig.model || '',
@@ -161,7 +166,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
-  if (loading || !draft || !enabledProviders || !enabledModels) {
+  if (loading || !draft || !enabledProviders || !enabledModels || !catalogProvider) {
     return (
       <div className="page settings-page">
         <div className="loading-grid">
@@ -218,24 +223,92 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         <div>
           <span className="kicker">SETTINGS</span>
           <h1>Providers & models</h1>
-          <p>Choose what {BRAND.name} uses by default for new conversations.</p>
+          <p>{BRAND.name} answers with one model everywhere — Ask, Ticket Analysis and Private Chats. Choose it here.</p>
         </div>
       </div>
 
+      {/* Two separate jobs, two separate sections. Picking the one model the app answers with
+          used to share a panel with the checkboxes that hide providers and models from the
+          catalogue, and selecting a row meant two different things depending on where you
+          clicked it. The default lives on its own below; the catalogue follows it. */}
+      <section className="settings-section settings-default-section">
+        <div className="settings-section-head">
+          <h3>Default model</h3>
+          <p className="settings-hint-text">Used by every module. Nothing else in {BRAND.name} asks you to pick a model.</p>
+        </div>
+
+        <div className="settings-default-picker">
+          <label className="settings-provider-filter">
+            <span>Provider</span>
+            <select value={draft.provider} onChange={e => selectProvider(e.target.value)}>
+              {providers.map(provider => (
+                <option key={provider} value={provider}>
+                  {PROVIDER_LABELS[provider]} ({providerModels(provider).length})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-provider-filter settings-default-model-field">
+            <span>Model</span>
+            <select value={providerModels(draft.provider).includes(draft.model) ? draft.model : ''} onChange={e => selectModel(e.target.value)}>
+              {!providerModels(draft.provider).includes(draft.model) && (
+                <option value="">{draft.model || 'none selected'}</option>
+              )}
+              {providerModels(draft.provider).map(model => (
+                <option key={model} value={model}>{model}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {!providerReady(draft.provider) && (
+          <div className="settings-hint">
+            <Info size={14} />
+            <span>{PROVIDER_META[draft.provider].envHint}</span>
+          </div>
+        )}
+        {providerModels(draft.provider).length === 0 && (
+          <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
+        )}
+
+        <div className="settings-custom-model">
+          <input
+            type="text"
+            placeholder="Or type a custom model ID..."
+            value={customModel}
+            onChange={e => setCustomModel(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCustomModel(); } }}
+          />
+          <button type="button" onClick={applyCustomModel} disabled={!customModel.trim()}>Use</button>
+        </div>
+        <div className="settings-current-model">
+          <KeyRound size={13} />
+          <span>Current default: <strong>{PROVIDER_LABELS[draft.provider]} / {draft.model || 'none selected'}</strong></span>
+        </div>
+        <div className="settings-save-bar settings-save-bar-inline">
+          <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving...' : 'Save default model'}
+          </button>
+        </div>
+      </section>
+
       <section className="settings-section">
-        <h3>Default provider</h3>
+        <div className="settings-section-head">
+          <h3>Available providers & models</h3>
+          <p className="settings-hint-text">Housekeeping only: what stays in this catalogue. Unticking something never changes the default above.</p>
+        </div>
         <div className="settings-provider-grid">
           {providers.map(provider => {
             const meta = PROVIDER_META[provider];
             const ready = providerReady(provider);
-            const active = draft.provider === provider;
+            const browsing = catalogProvider === provider;
             const enabled = enabledProviders.has(provider);
             return (
-              <div key={provider} className={`settings-provider-card ${active ? 'active' : ''} ${enabled ? '' : 'disabled'}`}>
+              <div key={provider} className={`settings-provider-card ${browsing ? 'active' : ''} ${enabled ? '' : 'disabled'}`}>
                 <button
                   type="button"
                   className="settings-provider-card-select"
-                  onClick={() => selectProvider(provider)}
+                  onClick={() => setCatalogProvider(provider)}
                 >
                   <span className="settings-provider-icon">{meta.icon}</span>
                   <span className="settings-provider-info">
@@ -265,18 +338,11 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           </button>
         </div>
 
-        {!providerReady(draft.provider) && (
-          <div className="settings-hint">
-            <Info size={14} />
-            <span>{PROVIDER_META[draft.provider].envHint}</span>
-          </div>
-        )}
-
         <div className="settings-model-header">
-          <h3>Default model</h3>
+          <h4>{PROVIDER_LABELS[catalogProvider]} models</h4>
           <label className="settings-provider-filter">
             <span>Provider</span>
-            <select value={draft.provider} onChange={e => selectProvider(e.target.value)}>
+            <select value={catalogProvider} onChange={e => setCatalogProvider(e.target.value)}>
               {providers.map(provider => (
                 <option key={provider} value={provider}>
                   {PROVIDER_LABELS[provider]} ({providerModels(provider).length})
@@ -285,18 +351,18 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
             </select>
           </label>
         </div>
-        {providerModels(draft.provider).length === 0 ? (
-          <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[draft.provider]}. You can still set a model ID manually below.</p>
+        {providerModels(catalogProvider).length === 0 ? (
+          <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[catalogProvider]}.</p>
         ) : (
           <>
             <ModelTable
-              models={providerModels(draft.provider)}
+              models={providerModels(catalogProvider)}
               modelMeta={modelMeta}
-              selectedModel={draft.model}
-              onSelect={selectModel}
-              enabledModelIds={enabledModels[draft.provider] || null}
-              onToggleEnabled={id => toggleModelEnabled(draft.provider, id)}
-              onSetEnabled={(ids, enabled) => setModelsEnabled(draft.provider, ids, enabled)}
+              selectedModel={catalogProvider === draft.provider ? draft.model : ''}
+              onSelect={model => { setDraft(current => ({ ...current, provider: catalogProvider, model })); setCustomModel(''); }}
+              enabledModelIds={enabledModels[catalogProvider] || null}
+              onToggleEnabled={id => toggleModelEnabled(catalogProvider, id)}
+              onSetEnabled={(ids, enabled) => setModelsEnabled(catalogProvider, ids, enabled)}
             />
             <div className="settings-save-bar settings-save-bar-inline">
               <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>
@@ -305,20 +371,6 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
             </div>
           </>
         )}
-        <div className="settings-custom-model">
-          <input
-            type="text"
-            placeholder="Or type a custom model ID..."
-            value={customModel}
-            onChange={e => setCustomModel(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCustomModel(); } }}
-          />
-          <button type="button" onClick={applyCustomModel} disabled={!customModel.trim()}>Use</button>
-        </div>
-        <div className="settings-current-model">
-          <KeyRound size={13} />
-          <span>Current default: <strong>{PROVIDER_LABELS[draft.provider]} / {draft.model || 'none selected'}</strong></span>
-        </div>
       </section>
 
       {limits && (

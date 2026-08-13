@@ -5,7 +5,7 @@ import {
   Menu, Network, Play, RefreshCw, Trash2,
 } from 'lucide-react';
 import { api } from '../api';
-import { DEFAULT_PROVIDER_MODELS } from '../lib/appState';
+import { readSavedAiPreference } from '../lib/appState';
 import TicketAnalysisSettings, { CLUSTERING_OPTIONS, EMBEDDING_OPTIONS, GROUPING_MODES } from './TicketAnalysisSettings';
 import './TicketAnalysisPage.css';
 
@@ -26,8 +26,6 @@ const DEFAULT_CONFIG = {
   useLlmFallback: false,
   useLlmLabels: true,
   suggestTaxonomyRules: false,
-  llmProvider: 'groq',
-  model: '',
   includeTelemetry: true,
   includeDebugSamples: true,
 };
@@ -194,7 +192,7 @@ function TicketAnalysisPage({ files, openMenu }) {
   const [compareLeftId, setCompareLeftId] = useState('');
   const [compareRightId, setCompareRightId] = useState('');
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false);
-  const [llmConfig, setLlmConfig] = useState(null);
+  const [defaultModel, setDefaultModel] = useState('');
   const [okfTaxonomy, setOkfTaxonomy] = useState(null);
   const [selectedOkfIndex, setSelectedOkfIndex] = useState(0);
   const [availableFiles, setAvailableFiles] = useState(files || []);
@@ -219,7 +217,6 @@ function TicketAnalysisPage({ files, openMenu }) {
   const compareRight = history.find(item => String(item.id) === String(compareRightId));
   const validTickets = trace.input?.valid_tickets || manifest.validTickets || 0;
   const sourceBreakdown = useMemo(() => groups.reduce((acc, g) => { acc[g.source || 'Unknown'] = (acc[g.source || 'Unknown'] || 0) + Number(g.incidentCount || g.count || 0); return acc; }, {}), [groups]);
-  const providerModelOptions = useMemo(() => { const bm = llmConfig?.providers?.[config.llmProvider] || []; const pm = config.llmProvider === llmConfig?.provider ? (llmConfig?.presets || []) : []; return [...new Set([config.model, ...bm, ...pm].filter(Boolean))]; }, [config.llmProvider, config.model, llmConfig]);
   const llmStage = stages.find(s => s.key === 'llm');
   const llmHitCount = Number(coverage.llm_assisted || llmStage?.output_count || 0);
   const llmLabelCount = Number(llmStage?.details?.groups_renamed || 0);
@@ -227,7 +224,7 @@ function TicketAnalysisPage({ files, openMenu }) {
   const llmLabelSummary = String(llmLabelStatus).startsWith('failed')
     ? `naming call failed (${llmLabelStatus.replace('failed: ', '')}) — deterministic labels kept`
     : llmLabelStatus === 'disabled' ? 'not run for this analysis'
-    : llmLabelStatus === 'no_usable_response' ? `${config.model || 'the selected model'} did not return usable labels — try a stronger model`
+    : llmLabelStatus === 'no_usable_response' ? `${defaultModel || 'the default model'} did not return usable labels — set a stronger one in Settings`
     : `${llmLabelCount} of ${groups.length} group labels rewritten by LLM`;
   const llmSuggestionCount = Number(llmStage?.details?.taxonomy_suggestions_generated || trace.taxonomy_suggestions?.length || 0);
   const llmSummaries = {
@@ -292,13 +289,14 @@ function TicketAnalysisPage({ files, openMenu }) {
   useEffect(() => { loadHistory(); }, [loadHistory]);
   useEffect(() => { refreshTicketFiles(); }, []);
   useEffect(() => {
-    api.llmConfig().then(data => {
-      setLlmConfig(data);
-      setConfig(prev => {
-        const provider = prev.llmProvider || data.provider || 'groq';
-        const opts = data.providers?.[provider] || [];
-        return { ...prev, llmProvider: provider, model: prev.model || opts[0] || (provider === data.provider ? data.model : DEFAULT_PROVIDER_MODELS[provider]) || '' };
-      });
+    // Shown, not chosen: Ticket Analysis runs on the same default as every other module, so
+    // this only needs to name it. The backend resolves the default again when the run starts.
+    Promise.all([
+      api.llmConfig(),
+      api.preference('explore_ai').catch(() => ({ value: {} })),
+    ]).then(([data, preference]) => {
+      const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
+      setDefaultModel(saved.model || data.model || '');
     }).catch(() => {});
   }, []);
   useEffect(() => {
@@ -355,7 +353,7 @@ function TicketAnalysisPage({ files, openMenu }) {
     };
 
     try {
-      const data = await api.ticketAnalysisStream(selectedFileId, config.maxGroups || undefined, config.minGroupSize || undefined, config.useLlmFallback, config.model || undefined, {
+      const data = await api.ticketAnalysisStream(selectedFileId, config.maxGroups || undefined, config.minGroupSize || undefined, config.useLlmFallback, {
         embeddingMethod: config.embeddingMethod,
         clusteringMethod: config.clusteringMethod,
         problemGroupStrategy: BACKEND_STRATEGY[config.groupingMode],
@@ -367,7 +365,6 @@ function TicketAnalysisPage({ files, openMenu }) {
         includeDebugSamples: config.includeDebugSamples,
         useLlmLabels: config.useLlmLabels,
         suggestTaxonomyRules: config.suggestTaxonomyRules,
-        llmProvider: config.llmProvider,
         // Discovery-only means "ignore the rule set" — the backend pause flag says
         // exactly that, and keeps a custom rule set from leaking into the run.
         pauseOkfTaxonomy: isClusterOnly,
@@ -416,8 +413,7 @@ function TicketAnalysisPage({ files, openMenu }) {
   const exportJson = (item = null) => { const p = item || { manifest, groups, pipeline_trace: trace, config }; const b = new Blob([JSON.stringify(p, null, 2)], { type: 'application/json' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `patterns-run-${item?.id || trace?.run_id || Date.now()}.json`; a.click(); URL.revokeObjectURL(u); };
   const exportMarkdown = () => { if (!result) return; const lines = ['# Patterns Run Report', '', `File: ${trace.input?.file_name || 'Unknown'}`, `Fingerprint: ${trace.fingerprint || 'n/a'}`, '', '## Problem Groups', '']; groups.forEach((g, i) => { lines.push(`### ${i + 1}. ${g.groupName || g.name}`, `- Count: ${g.incidentCount || g.count}`, `- Source: ${g.source || 'not recorded'}`, `- Why: ${g.why || g.matched_reason || 'not recorded'}`, ''); }); const b = new Blob([lines.join('\n')], { type: 'text/markdown' }); const u = URL.createObjectURL(b); const a = document.createElement('a'); a.href = u; a.download = `patterns-report-${Date.now()}.md`; a.click(); URL.revokeObjectURL(u); };
   const applyPreset = (preset) => setConfig(prev => ({ ...prev, ...preset.config }));
-  const resetConfig = () => setConfig(prev => ({ ...DEFAULT_CONFIG, taxonomyRulesText: prev.taxonomyRulesText, llmProvider: prev.llmProvider, model: prev.model }));
-  const changeLlmProvider = (provider) => { const opts = llmConfig?.providers?.[provider] || []; setConfig(prev => ({ ...prev, llmProvider: provider, model: opts[0] || (provider === llmConfig?.provider ? llmConfig?.model : DEFAULT_PROVIDER_MODELS[provider]) || '' })); };
+  const resetConfig = () => setConfig(prev => ({ ...DEFAULT_CONFIG, taxonomyRulesText: prev.taxonomyRulesText }));
 
   const pipelineConfig = [
     { key: 'intake', tone: 'var(--amber)', icon: FileText, tag: 'Stage 01 \u00B7 Intake', title: 'Parse & Clean', body: 'Reads CSV, XLSX, JSON, or Markdown exports and normalizes the fields that matter \u2014 title, description, id, metadata. Duplicate and empty rows are stripped before anything else touches the data.', chips: [`${trace.input?.total_rows || manifest.totalRows || 0} \u2192 ${validTickets} valid`, `${(manifest.emptyTicketsRemoved || 0) + (manifest.duplicatesRemoved || 0)} dropped`], tech: 'Reader auto-detects delimiter/schema per file type. Field mapper aligns columns to <code>title / description / id / metadata</code> via header aliases, falling back to positional heuristics when headers are missing. Rows with empty <code>title + description</code> are dropped; exact-duplicate hashes of <code>title+description</code> collapse to one record.' },
@@ -560,7 +556,7 @@ function TicketAnalysisPage({ files, openMenu }) {
               {!isTaxonomyOnly && <span className="ti-chip">{optionLabel(EMBEDDING_OPTIONS, config.embeddingMethod)}</span>}
               {!isTaxonomyOnly && <span className="ti-chip">{optionLabel(CLUSTERING_OPTIONS, config.clusteringMethod)}</span>}
               <span className="ti-chip">AI: {[config.useLlmFallback && 'grouping', config.useLlmLabels && 'naming', config.suggestTaxonomyRules && 'suggestions'].filter(Boolean).join(' + ') || 'off'}</span>
-              {(config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules) && <span className="ti-chip">{config.model || 'default model'}</span>}
+              {(config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules) && <span className="ti-chip">{defaultModel || 'default model'}</span>}
             </div>
 
             {controlsOpen && (
@@ -572,9 +568,7 @@ function TicketAnalysisPage({ files, openMenu }) {
                 customTaxonomy={customTaxonomy}
                 taxonomyRuleCount={customTaxonomy.rules?.length || 0}
                 onResetTaxonomyText={() => setConfigValue('taxonomyRulesText', editableTaxonomyFromOkf(okfTaxonomy))}
-                llmConfig={llmConfig}
-                providerModelOptions={providerModelOptions}
-                onProviderChange={changeLlmProvider}
+                defaultModel={defaultModel}
                 llmSummaries={llmSummaries}
               />
             )}

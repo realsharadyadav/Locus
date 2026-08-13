@@ -1,6 +1,5 @@
 import React from 'react';
-import { ChevronDown, RotateCcw } from 'lucide-react';
-import { PROVIDER_ORDER } from '../lib/appState';
+import { RotateCcw } from 'lucide-react';
 
 /* Run settings for Ticket Analysis.
  *
@@ -144,9 +143,7 @@ export default function TicketAnalysisSettings({
   customTaxonomy,
   taxonomyRuleCount,
   onResetTaxonomyText,
-  llmConfig,
-  providerModelOptions,
-  onProviderChange,
+  defaultModel,
   llmSummaries,
 }) {
   const usesRules = config.groupingMode !== 'discovery_only';
@@ -154,7 +151,6 @@ export default function TicketAnalysisSettings({
   const method = CLUSTERING_OPTIONS.find(option => option.value === config.clusteringMethod) || CLUSTERING_OPTIONS[0];
   const uses = (param) => usesDiscovery && method.uses.includes(param);
   const aiOn = config.useLlmFallback || config.useLlmLabels || config.suggestTaxonomyRules;
-  const providers = llmConfig?.provider_order?.length ? llmConfig.provider_order : PROVIDER_ORDER;
   const noRules = usesRules && config.taxonomySource === 'custom' && taxonomyRuleCount === 0 && !customTaxonomy.error;
 
   return (
@@ -267,22 +263,12 @@ export default function TicketAnalysisSettings({
         />
         {aiOn && (
           <div className="tset-params">
-            <Field label="Provider" help="Where the model runs.">
-              <div className="tset-select-wrap">
-                <select className="tset-select" value={config.llmProvider} onChange={event => onProviderChange(event.target.value)}>
-                  {providers.map(provider => <option key={provider} value={provider}>{provider}</option>)}
-                </select>
-                <ChevronDown size={14} />
-              </div>
-            </Field>
-            <Field label="Model" help="Small models often fail the naming format. Prefer a larger instruct model.">
-              <div className="tset-select-wrap">
-                <select className="tset-select" value={config.model || ''} onChange={event => setConfigValue('model', event.target.value)}>
-                  <option value="">Backend default</option>
-                  {providerModelOptions.map(model => <option key={model} value={model}>{model}</option>)}
-                </select>
-                <ChevronDown size={14} />
-              </div>
+            <Field
+              label="Model"
+              help="The one default the whole app answers with. Change it in Settings — small models often fail the naming format, so prefer a larger instruct model."
+              wide
+            >
+              <div className="tset-static-value">{defaultModel || 'Set in Settings'}</div>
             </Field>
           </div>
         )}

@@ -32,7 +32,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from . import telegram_bridge
-from .config import configured_model, llm_provider
+from .ai_defaults import preferred_ai
 from .database import SessionLocal, get_db
 from .llm import LLMProviderError, _chat, llm_provider_context
 from .models import (
@@ -40,7 +40,6 @@ from .models import (
     SecretChatMessage,
     SecretChatParticipant,
     SecretChatSession,
-    UserPreference,
 )
 from .schemas import (
     SecretChatAssistRequest,
@@ -994,16 +993,11 @@ def _parse_replies(content: str) -> list[str]:
     return [line for line in lines if line][:3]
 
 
-def _preferred_ai(db: Session) -> tuple[str, str | None]:
-    """The provider and model chosen in Settings, falling back to the .env defaults.
-
-    Settings saves them under the `explore_ai` preference, so a reply drafted here uses the
-    same model the rest of the app answers with instead of whatever the environment defaults to.
-    """
-    preference = db.get(UserPreference, "explore_ai")
-    saved = preference.value if preference and isinstance(preference.value, dict) else {}
-    model = (saved.get("model") or "").strip() or configured_model()
-    provider = (saved.get("provider") or "").strip() or None
+def _preferred_ai(db: Session) -> tuple[str, str]:
+    """The model and provider chosen in Settings, so a reply drafted here uses the same model
+    the rest of the app answers with. Argument order is flipped from `preferred_ai` because
+    every caller here reads a model first."""
+    provider, model = preferred_ai(db)
     return model, provider
 
 

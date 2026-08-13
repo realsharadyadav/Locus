@@ -65,15 +65,15 @@ export const api = {
     return response.json();
   },
   deleteFile: (id) => request(`/files/${id}`, { method: 'DELETE' }),
-  ticketAnalysis: (fileId, maxGroups, minGroupSize, useLlmFallback = false, model, options = {}) => request('/ticket-analysis', {
+  ticketAnalysis: (fileId, maxGroups, minGroupSize, useLlmFallback = false, options = {}) => request('/ticket-analysis', {
     method: 'POST',
-    body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, model, ...options }),
+    body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, ...options }),
   }),
-  ticketAnalysisStream: async (fileId, maxGroups, minGroupSize, useLlmFallback = false, model, options = {}, onEvent = () => {}) => {
+  ticketAnalysisStream: async (fileId, maxGroups, minGroupSize, useLlmFallback = false, options = {}, onEvent = () => {}) => {
     const response = checkAuthorized(await fetch(`${API_BASE}/api/ticket-analysis/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, model, ...options }),
+      body: JSON.stringify({ fileId, maxGroups, minGroupSize, useLlmFallback, ...options }),
     }));
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'Unable to start the analysis pipeline');
     const reader = response.body.getReader();
@@ -100,15 +100,18 @@ export const api = {
   ticketAnalysisHistoryDetail: (id) => request(`/ticket-analysis/history/${id}`),
   saveTicketAnalysis: (data) => request('/ticket-analysis/history', { method: 'POST', body: JSON.stringify(data) }),
   deleteTicketAnalysisHistory: (id) => request(`/ticket-analysis/history/${id}`, { method: 'DELETE' }),
-  createChatJob: (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, fileIds, webSourceLimit, webSearch = false) => request('/chat/jobs', {
+  // No provider/model on any of the chat calls below: the backend resolves the single default
+  // saved in Settings for every request (see backend/app/ai_defaults.py), so no page has to
+  // hold a copy of it or keep one in sync.
+  createChatJob: (question, conversationId, allowGeneralKnowledge, reasoningMode, fileIds, webSourceLimit, webSearch = false) => request('/chat/jobs', {
     method: 'POST',
-    body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: fileIds, web_source_limit: webSourceLimit, web_search: webSearch }),
+    body: JSON.stringify({ question, conversation_id: conversationId, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: fileIds, web_source_limit: webSourceLimit, web_search: webSearch }),
   }),
   chatJobs: () => request('/chat/jobs'),
   markChatJobSeen: (id) => request(`/chat/jobs/${id}/seen`, { method: 'PATCH' }),
   cancelChatJob: (id) => request(`/chat/jobs/${id}/cancel`, { method: 'POST' }),
-  chatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, webSourceLimit, webSearch, onEvent, options = {}) => {
-    const response = checkAuthorized(await fetch(`${API_BASE}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal }));
+  chatStream: async (question, conversationId, allowGeneralKnowledge, reasoningMode, webSourceLimit, webSearch, onEvent, options = {}) => {
+    const response = checkAuthorized(await fetch(`${API_BASE}/api/chat/stream`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ question, conversation_id: conversationId, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, web_source_limit: webSourceLimit, web_search: webSearch }), signal: options.signal }));
     if (!response.ok) throw new Error('Unable to start the answer pipeline');
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -129,11 +132,11 @@ export const api = {
     if (!result) throw new Error('The answer pipeline ended without a result');
     return result;
   },
-  directChatStream: async (question, conversationId, provider, model, allowGeneralKnowledge, reasoningMode, onEvent, options = {}) => {
+  directChatStream: async (question, conversationId, allowGeneralKnowledge, reasoningMode, onEvent, options = {}) => {
     const response = checkAuthorized(await fetch(`${API_BASE}/api/chat/direct-stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ question, conversation_id: conversationId, provider, model, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: [], web_search: false }),
+      body: JSON.stringify({ question, conversation_id: conversationId, allow_general_knowledge: allowGeneralKnowledge, reasoning_mode: reasoningMode, file_ids: [], web_search: false }),
       signal: options.signal,
     }));
     if (!response.ok) {
@@ -159,9 +162,9 @@ export const api = {
     if (!result) throw new Error('The direct chat stream ended without a result');
     return result;
   },
-  chatSuggestions: (question, answer, provider, model) => request('/chat/suggestions', {
+  chatSuggestions: (question, answer) => request('/chat/suggestions', {
     method: 'POST',
-    body: JSON.stringify({ question, answer, provider, model }),
+    body: JSON.stringify({ question, answer }),
   }),
   chats: () => request('/chats'),
   chatMessages: (id) => request(`/chats/${id}/messages`),

@@ -85,6 +85,10 @@ numbering is load-bearing — later files are chronological override layers on e
 independent per-component sheets. Never reorder existing files; add new overrides as a new
 highest-numbered file.
 
+**Model selection rule:** Settings owns the one provider/model default (saved as the
+`explore_ai` preference, resolved server-side by `backend/app/ai_defaults.py`). No other page
+picks a model — Ask, Ticket Analysis and Private Chats just show it.
+
 **Model list rule:** never hardcode an Ollama model list. Always query `OLLAMA_URL/api/tags` at
 runtime; the frontend's Ollama fallback list must stay empty so only actually-pulled models show.
 
