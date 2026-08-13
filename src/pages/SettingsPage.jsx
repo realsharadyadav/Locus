@@ -62,7 +62,14 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
-        setCatalogProvider(saved.provider || llmConfig.provider || 'ollama');
+        // Open the catalogue on a provider that actually has models to show — landing on the
+        // default's provider is useless when that provider isn't connected, which is exactly
+        // when you want to go looking at what else is available.
+        const stocked = Object.entries(llmConfig.providers || {}).find(([, models]) => models.length);
+        const preferredCatalog = saved.provider || llmConfig.provider || 'ollama';
+        setCatalogProvider(
+          (llmConfig.providers?.[preferredCatalog] || []).length ? preferredCatalog : (stocked?.[0] || preferredCatalog)
+        );
         setDraft({
           provider: saved.provider || llmConfig.provider || 'ollama',
           model: saved.model || llmConfig.model || '',
@@ -459,6 +466,11 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
             );
           })}
         </div>
+        <div className="settings-save-bar settings-save-bar-inline">
+          <button type="button" className="btn-primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving...' : 'Save default mode'}
+          </button>
+        </div>
       </section>
 
       {authRequired && (
@@ -474,11 +486,6 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         </section>
       )}
 
-      <div className="settings-save-bar">
-        <button type="button" className="btn-primary" onClick={save} disabled={saving}>
-          {saving ? 'Saving...' : 'Save defaults'}
-        </button>
-      </div>
     </div>
   );
 }
