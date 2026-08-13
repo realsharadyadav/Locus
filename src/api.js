@@ -48,6 +48,10 @@ export const api = {
     return body;
   },
   llmConfig: () => request('/llm/config'),
+  testModels: (provider, models, timeoutSeconds) => request('/llm/models/test', {
+    method: 'POST',
+    body: JSON.stringify({ provider, models, ...(timeoutSeconds ? { timeout_seconds: timeoutSeconds } : {}) }),
+  }),
   systemLimits: () => request('/system/limits'),
   preference: (key) => request(`/preferences/${key}`),
   updatePreference: (key, value) => request(`/preferences/${key}`, { method: 'PATCH', body: JSON.stringify({ value }) }),

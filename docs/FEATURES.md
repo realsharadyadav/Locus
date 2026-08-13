@@ -121,6 +121,15 @@ Real-time one-to-one and small-group rooms, separate from the document workspace
 - Provider and model are stored per message and shown in every message head.
 - Settings: default provider, default model (or a custom model ID), default reasoning mode,
   upload size limit.
+- Settings model table: search, free-only filter, sortable parameters/context/price columns, and
+  a per-model Show checkbox that controls which models appear elsewhere in the app.
+- Model connectivity test: **Test N models** pings every model currently listed for the provider
+  with a one-word prompt and marks each row as responded (with latency) or failed (with the
+  provider's error). A listed model is not always a usable one — keys can be gated, out of
+  quota, or pointed at a retired model, and only a real round-trip shows that.
+- **Responded only** filters the table down to the models that answered; **Select all
+  respondents** enables exactly those, and **Clear all selection** empties the provider's
+  selection first so the two compose into "keep only what works".
 
 ## Pipeline / Developer Trace
 

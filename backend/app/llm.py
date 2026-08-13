@@ -1,4 +1,4 @@
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
 import json
@@ -459,6 +459,81 @@ def get_llm_client(model: str | None = None, provider: str | None = None) -> LLM
         return LiteLLMGatewayClient(selected_provider, selected_model)
     known = ", ".join(f"'{name}'" for name in PROVIDER_ORDER)
     raise RuntimeError(f"Unsupported LLM provider '{selected_provider}'. Use one of: {known}.")
+
+
+MODEL_PING_SYSTEM = "You are a connectivity probe. Answer with a single short word and nothing else."
+MODEL_PING_PROMPT = "Reply with exactly one word: pong"
+MODEL_PING_MAX_MODELS = 200
+MODEL_PING_MAX_WORKERS = int(os.getenv("MODEL_PING_MAX_WORKERS", "6"))
+MODEL_PING_TIMEOUT_SECONDS = float(os.getenv("MODEL_PING_TIMEOUT_SECONDS", "45"))
+
+
+def ping_model(provider: str, model: str) -> dict:
+    """Send the smallest possible real completion to one model and report whether it answered.
+
+    Listing a model (`/v1/models`) only proves the catalog knows about it — plenty of listed
+    models are gated, retired, or out of quota for a given key. Only an actual round-trip
+    separates "offered" from "usable", which is what the Settings test button is asking.
+    """
+    started = perf_counter()
+    messages = [
+        {"role": "system", "content": MODEL_PING_SYSTEM},
+        {"role": "user", "content": MODEL_PING_PROMPT},
+    ]
+    try:
+        # The provider is set on the context var too, not just passed in: GroqClient's
+        # rate-limit state and _chat's routing both read _ACTIVE_PROVIDER, and each worker
+        # thread starts with its own empty context.
+        with llm_provider_context(provider):
+            reply = get_llm_client(model=model, provider=provider).generate(messages, temperature=0, max_tokens=16)
+    except Exception as exception:  # noqa: BLE001 — every provider failure is a normal result here
+        return {
+            "model": model,
+            "ok": False,
+            "latency_ms": round((perf_counter() - started) * 1000, 1),
+            "reply": "",
+            "error": str(exception).strip()[:300] or type(exception).__name__,
+        }
+    text = (reply or "").strip()
+    return {
+        "model": model,
+        "ok": bool(text),
+        "latency_ms": round((perf_counter() - started) * 1000, 1),
+        "reply": text[:160],
+        "error": None if text else "Model returned an empty response",
+    }
+
+
+def ping_models(provider: str, models: list[str], timeout_seconds: float | None = None) -> list[dict]:
+    """Ping every model in parallel, preserving input order in the results.
+
+    `timeout_seconds` is a wall clock cap on the whole batch: a model that has not answered
+    by then is reported as timed out rather than holding the HTTP response open. The worker
+    itself may still be in flight — the executor is not waited on — but its result is dropped.
+    """
+    deadline = perf_counter() + (MODEL_PING_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds)
+    unique = list(dict.fromkeys(model for model in models if model and model.strip()))
+    if not unique:
+        return []
+    executor = ThreadPoolExecutor(max_workers=max(1, min(MODEL_PING_MAX_WORKERS, len(unique))))
+    try:
+        futures = {model: executor.submit(ping_model, provider, model) for model in unique}
+        results = []
+        for model, future in futures.items():
+            try:
+                results.append(future.result(timeout=max(0.0, deadline - perf_counter())))
+            except FutureTimeoutError:
+                future.cancel()
+                results.append({
+                    "model": model,
+                    "ok": False,
+                    "latency_ms": None,
+                    "reply": "",
+                    "error": "Timed out waiting for a response",
+                })
+        return results
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
 
 def list_openai_compatible_models(base_url: str, api_key: str, timeout: float = 15) -> dict[str, dict]:

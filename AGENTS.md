@@ -248,7 +248,7 @@ that will bite you again if forgotten.
 |---|---|---|
 | `main.py` (1469 lines) | FastAPI app, all REST endpoints, chat job orchestration, background threads, file upload, streaming, pipeline telemetry | `_process_chat_impl()` (line 361-610) — main chat pipeline; `_run_chat_job()` — background worker; `_pipeline_event_metadata()` — telemetry; `create_chat_job()` (line 916) — job creation endpoint |
 | `agentic_pipeline.py` (865 lines) | LLM planner, agentic pipeline with dynamic source_limit, planned web answer, evidence validation, fallback paths | `run_agentic_pipeline()` — main entry; `_plan_with_llm()` — LLM planner with JSON schema; `_plan_from_json()` — extract source_limit/route/entities; `_execute_plan()` — dispatch with `effective_limit=min(plan.source_limit, user_source_limit)`; `_planned_web_answer()` — use LLM queries + dynamic source_limit; `_web_fallback()` — broad fallback; `_validate_evidence_with_llm()` — LLM evidence filter |
-| `llm.py` (682 lines) | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction, unrestricted/jailbreak pipeline | `enhance_question()` (line 373) — query planner; `generate_answer()` (line 482) — main answer gen; `verify_response()` (line 449) — quality check; `repair_response()` (line 466) — answer repair; `answer_planned_question()` (line ~590) — full pipeline; `generate_unrestricted_answer()` — jailbreak pipeline with 7 strategies + auto-rephrase; `clean_final_answer()` (line 398) — post-processing; `get_llm_client()` — provider factory |
+| `llm.py` (682 lines) | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction, unrestricted/jailbreak pipeline | `enhance_question()` (line 373) — query planner; `generate_answer()` (line 482) — main answer gen; `verify_response()` (line 449) — quality check; `repair_response()` (line 466) — answer repair; `answer_planned_question()` (line ~590) — full pipeline; `generate_unrestricted_answer()` — jailbreak pipeline with 7 strategies + auto-rephrase; `clean_final_answer()` (line 398) — post-processing; `get_llm_client()` — provider factory; `ping_model()` / `ping_models()` — Settings connectivity ping (one-word completion per model, parallel, wall-clock capped) |
 | `modes.py` | Reasoning mode configs: light, thinking, deep_summary, ticket_analysis, web_research, unrestricted | `MODE_CONFIG` dict, `ModeConfig` dataclass |
 | `auth.py` | Phase 1 sign-in gate: one shared password, stateless HMAC tokens, brute-force throttle. Off unless `LOCUS_AUTH_PASSWORD` is set | `require_auth()` — middleware, registered before CORS; `issue_token()`, `token_expiry()`, `is_public_path()`, `PUBLIC_PATHS` |
 
@@ -329,6 +329,7 @@ that will bite you again if forgotten.
 | `Sidebar.jsx` / `Header.jsx` / `Logo.jsx` | App shell chrome |
 | `SplashScreen.jsx` | Boot screen with real load progress |
 | `ModelControl.jsx` | Provider + model picker |
+| `ModelTable.jsx` | Settings model table: search / free-only / responded-only filters, sortable columns, per-model Show checkbox, and the ping test bar (Test N models, Select all respondents, Clear all selection) |
 | `PipelineActivity.jsx` / `DirectStreamTrace.jsx` | Live pipeline and stream telemetry |
 | `AssistantMarkdown.jsx` / `CodeBlock.jsx` / `MermaidBlock.jsx` / `DiagramLightbox.jsx` / `AnswerToc.jsx` | Answer rendering. All react-markdown `components` overrides live in one `useMemo` — a new identity remounts the code renderer and restarts in-flight Mermaid renders. Overrides must drop the `node` prop instead of spreading it onto the DOM |
 | `AnswerSection.jsx` | One collapsible answer section (h2 + its content). Starts expanded; collapsing sets `data-collapsed` and CSS hides the body, so children are never restructured |
@@ -481,6 +482,7 @@ guest-eligible on its next share link but a returning host does not lose their r
 | `backend/tests/test_100step_conversation.py` | 100-step conversations: persistence, history growth, truncation, cancellation |
 | `backend/tests/test_deep_stress.py` | Mode switching mid-chat, 200-step rapid fire, file ops mid-chat, job lifecycle, concurrency |
 | `backend/tests/test_litellm_gateway.py` | LiteLLM gateway wiring |
+| `backend/tests/test_model_ping.py` | Model connectivity ping: success/failure/empty-reply results, dedupe, batch timeout, `/api/llm/models/test` |
 | `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |
 | `backend/tests/test_tabular_files.py` | CSV/XLSX profiling |
 | `scripts/evaluate_ticket_taxonomy.py` | CLI taxonomy accuracy evaluation against CSV |

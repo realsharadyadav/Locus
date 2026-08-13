@@ -50,11 +50,11 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, llm_call_cache, llm_provider_context, ping_models, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
 from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
 from .providers import PROVIDER_ORDER, PROVIDERS
-from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
+from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, ModelPingRequest, ModelPingResponse, ModelPingResult, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from . import telegram_bridge
 from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
@@ -690,6 +690,23 @@ def llm_config():
         "using_fallback_models": using_fallback,
         "model_meta": build_model_meta(provider_models, gateway_metadata),
     }
+
+
+@app.post("/api/llm/models/test", response_model=ModelPingResponse)
+def test_llm_models(payload: ModelPingRequest):
+    """Ping a provider's models and report which ones actually answered.
+
+    Settings shows every model a provider advertises, but a listed model can still be gated,
+    retired, or out of quota. This gives the model table a real answered/failed signal to
+    filter on before the user enables anything.
+    """
+    results = ping_models(payload.provider, payload.models, timeout_seconds=payload.timeout_seconds)
+    return ModelPingResponse(
+        provider=payload.provider,
+        tested=len(results),
+        responded=sum(1 for result in results if result["ok"]),
+        results=[ModelPingResult(**result) for result in results],
+    )
 
 
 @app.get("/api/preferences/{key}", response_model=UserPreferenceRead)

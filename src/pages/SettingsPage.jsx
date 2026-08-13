@@ -38,6 +38,11 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [savingProviders, setSavingProviders] = useState(false);
   const [enabledModels, setEnabledModels] = useState(null);
   const [savingModels, setSavingModels] = useState(false);
+  // Ping results live per provider ({ provider: { modelId: result } }) so switching providers
+  // in the picker doesn't throw away a test run you just waited on.
+  const [testResults, setTestResults] = useState({});
+  const [testing, setTesting] = useState(false);
+  const [testProgress, setTestProgress] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,6 +131,51 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       }
       return { ...current, [provider]: baseSet };
     });
+  };
+
+  // Pinged in small batches rather than one big request: results land in the table as they
+  // arrive, and one slow model can only stall its own batch instead of the whole run.
+  const TEST_BATCH_SIZE = 12;
+
+  const runModelTest = async (provider, modelIds) => {
+    if (!modelIds.length) return;
+    setTesting(true);
+    setTestProgress({ done: 0, total: modelIds.length });
+    let responded = 0;
+    let failed = 0;
+    try {
+      for (let start = 0; start < modelIds.length; start += TEST_BATCH_SIZE) {
+        const batch = modelIds.slice(start, start + TEST_BATCH_SIZE);
+        const response = await api.testModels(provider, batch, 90);
+        responded += response.responded;
+        failed += response.tested - response.responded;
+        setTestResults(current => {
+          const merged = { ...(current[provider] || {}) };
+          for (const result of response.results) merged[result.model] = result;
+          return { ...current, [provider]: merged };
+        });
+        setTestProgress({ done: Math.min(start + batch.length, modelIds.length), total: modelIds.length });
+      }
+      toast(`${responded} of ${responded + failed} models responded`, responded ? 'success' : 'error');
+    } catch (error) {
+      toast(error.message || 'Could not test these models', 'error');
+    } finally {
+      setTesting(false);
+      setTestProgress(null);
+    }
+  };
+
+  const selectRespondents = (provider) => {
+    const respondents = Object.values(testResults[provider] || {}).filter(result => result.ok).map(result => result.model);
+    if (!respondents.length) return;
+    setModelsEnabled(provider, respondents, true);
+    toast(`${respondents.length} responding model${respondents.length === 1 ? '' : 's'} selected`, 'success');
+  };
+
+  // Unlike ModelTable's Deselect all, this ignores the search/free-only filters — it empties the
+  // provider's whole selection, which is the natural starting point before Select all respondents.
+  const clearModelSelection = (provider) => {
+    setEnabledModels(current => ({ ...current, [provider]: new Set() }));
   };
 
   const saveEnabledModels = async () => {
@@ -297,6 +347,12 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
               enabledModelIds={enabledModels[draft.provider] || null}
               onToggleEnabled={id => toggleModelEnabled(draft.provider, id)}
               onSetEnabled={(ids, enabled) => setModelsEnabled(draft.provider, ids, enabled)}
+              testResults={testResults[draft.provider] || null}
+              testing={testing}
+              testProgress={testProgress}
+              onTest={ids => runModelTest(draft.provider, ids)}
+              onSelectRespondents={() => selectRespondents(draft.provider)}
+              onClearSelection={() => clearModelSelection(draft.provider)}
             />
             <div className="settings-save-bar settings-save-bar-inline">
               <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>

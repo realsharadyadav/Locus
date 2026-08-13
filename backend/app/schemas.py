@@ -436,6 +436,31 @@ class SecretChatAutopilotDecisionResult(BaseModel):
     status: str = "missing"
 
 
+class ModelPingRequest(BaseModel):
+    provider: str = Field(default_factory=llm_provider)
+    # Capped so a 300-model gateway catalog can't be turned into 300 billable calls by one click;
+    # the UI pings whatever the table currently shows, which stays well under this.
+    models: list[str] = Field(min_length=1, max_length=200)
+    timeout_seconds: float = Field(default=45, ge=5, le=300)
+
+    _check_provider = field_validator("provider")(_require_known_provider)
+
+
+class ModelPingResult(BaseModel):
+    model: str
+    ok: bool
+    latency_ms: float | None = None
+    reply: str = ""
+    error: str | None = None
+
+
+class ModelPingResponse(BaseModel):
+    provider: str
+    tested: int
+    responded: int
+    results: list[ModelPingResult]
+
+
 class AuthStatusRead(BaseModel):
     auth_required: bool
     authenticated: bool = False

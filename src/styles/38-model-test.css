@@ -1,0 +1,56 @@
+/* Model connectivity test: the "Test N models" bar above the model table plus the per-row
+   responded/failed badge. Lives in its own layer so 31-model-table.css stays the base sheet. */
+
+.model-table-test-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.settings-test-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid var(--violet);
+  background: var(--violet);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity .12s, filter .12s;
+}
+.settings-test-button:hover:not(:disabled) { filter: brightness(1.06); }
+.settings-test-button:disabled { opacity: .6; cursor: default; }
+
+.model-test-spin { animation: model-test-spin 900ms linear infinite; }
+@keyframes model-test-spin { to { transform: rotate(360deg); } }
+
+.model-table-test-summary {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.model-table .mt-col-test { white-space: nowrap; }
+.model-table thead th.mt-col-test { width: 110px; }
+
+.mt-test-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+.mt-test-badge.ok { background: rgba(34,160,110,.14); color: #1a8054; }
+.mt-test-badge.failed { background: rgba(214,72,72,.14); color: #b03a3a; }
+
+html[data-theme='dark'] .mt-test-badge.ok { background: rgba(52,199,143,.16); color: #58d9a5; }
+html[data-theme='dark'] .mt-test-badge.failed { background: rgba(255,107,107,.16); color: #ff8b8b; }
