@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 from threading import Event, Thread
 import pytest
+from sqlalchemy import select
 
 from fastapi.testclient import TestClient
 
@@ -15,7 +16,7 @@ from backend.app.main import app
 import backend.app.main as main_module
 import backend.app.web_research as web_research_module
 from backend.app.modes import MODE_CONFIG
-from backend.app.models import ChatJob, ChatMessage, ChatSession
+from backend.app.models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile
 from backend.app.schemas import ChatResponse
 
 
@@ -392,6 +393,73 @@ def test_delete_store_and_its_files():
         response = client.delete(f"/api/collections/{store['id']}")
         assert response.status_code == 204
         assert all(file["store_id"] != store["id"] for file in client.get("/api/files").json())
+
+
+def test_uploaded_file_is_removed_from_disk_after_upload():
+    with TestClient(app) as client:
+        store = client.post("/api/collections", json={"title": "Upload cleanup store"}).json()
+        uploaded = client.post(
+            "/api/files",
+            data={"store_id": store["id"]},
+            files={"file": ("cleanup-after-upload.txt", b"text committed to the database before the raw file is deleted", "text/plain")},
+        ).json()
+    with SessionLocal() as db:
+        stored_name = db.get(StoredFile, uploaded["id"]).stored_name
+    assert not (main_module.UPLOAD_DIR / stored_name).exists()
+
+
+def test_startup_sweep_deletes_dead_uploaded_files():
+    with SessionLocal() as db:
+        store_id = db.scalars(select(Collection.id)).first()
+        if store_id is None:
+            store = Collection(title="Sweep store", description="", color="violet")
+            db.add(store)
+            db.commit()
+            store_id = store.id
+        extracted = StoredFile(
+            name="sweep-extracted.txt",
+            stored_name="sweep-extracted.txt",
+            content_type="text/plain",
+            size=12,
+            extracted_text="already extracted before this change shipped",
+            embedding_status="embedded",
+            embedding_chunks=3,
+            embedding_model="local-hash-embedding-v1",
+            store_id=store_id,
+        )
+        pending = StoredFile(
+            name="sweep-pending.txt",
+            stored_name="sweep-pending.txt",
+            content_type="text/plain",
+            size=12,
+            extracted_text="",
+            embedding_status="embedded",
+            embedding_chunks=3,
+            embedding_model="local-hash-embedding-v1",
+            store_id=store_id,
+        )
+        db.add_all([extracted, pending])
+        db.commit()
+        row_ids = [extracted.id, pending.id]
+    extracted_path = main_module.UPLOAD_DIR / "sweep-extracted.txt"
+    pending_path = main_module.UPLOAD_DIR / "sweep-pending.txt"
+    orphan_path = main_module.UPLOAD_DIR / "orphaned-sweep-leftover.bin"
+    for path in (extracted_path, pending_path, orphan_path):
+        path.write_bytes(b"stale bytes")
+    try:
+        main_module._startup_maintenance()
+        assert not extracted_path.exists(), "file with extracted text should be swept"
+        assert not orphan_path.exists(), "file with no StoredFile row should be swept"
+        assert pending_path.exists(), "file whose extraction never completed must be kept"
+    finally:
+        for path in (extracted_path, pending_path, orphan_path):
+            path.unlink(missing_ok=True)
+        with SessionLocal() as db:
+            for row_id in row_ids:
+                row = db.get(StoredFile, row_id)
+                if row:
+                    db.delete(row)
+            db.commit()
 
 
 def test_general_question_does_not_require_file_context(monkeypatch):

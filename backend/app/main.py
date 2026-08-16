@@ -277,6 +277,11 @@ def _startup_maintenance():
                     continue
                 extension = Path(stored_file.name).suffix.lower()
                 stored_path = UPLOAD_DIR / stored_file.stored_name
+                # A fully-extracted tabular file can no longer be re-processed after a future
+                # profiling-version bump: the raw file is deleted right after upload (and by the
+                # dead-file sweep below), so this re-read only works while the bytes still exist.
+                # Accepted tradeoff — the exists() guard below degrades gracefully by keeping
+                # whatever text is already stored.
                 if extension in TABULAR_EXTENSIONS and "Profile version: 3" not in stored_file.extracted_text and stored_path.exists():
                     stored_file.extracted_text = extract_text_from_path(stored_file.name, stored_path)
                     db.commit()
@@ -293,12 +298,49 @@ def _startup_maintenance():
         except Exception as exception:  # noqa: BLE001 - one bad file must not stop the sweep
             failed += 1
             diagnostic_event("startup.maintenance_file_failed", file_id=file_id, error=str(exception)[:500])
+
+    # Dead-file sweep. Uploads are now unlinked right after extraction+indexing (the text is
+    # committed to the DB before indexing runs), so anything still on disk is dead weight —
+    # uploads made before that rule shipped, or orphans left by a past crash between a DB
+    # delete and the disk unlink. It runs AFTER the loop above on purpose: that loop may still
+    # re-read a tabular file's raw bytes off disk for this restart's re-profiling, and the
+    # sweep must not delete them first. Idempotent by design — a second run finds nothing left
+    # and just lists the directory.
+    dead_files_removed = 0
+    dead_bytes_freed = 0
+    try:
+        with SessionLocal() as db:
+            stored_text = dict(db.execute(select(StoredFile.stored_name, StoredFile.extracted_text)).all())
+    except Exception as exception:  # noqa: BLE001 - a restart must not die over cleanup
+        diagnostic_event("startup.dead_file_sweep_failed", error=str(exception)[:500])
+    else:
+        try:
+            disk_files = list(UPLOAD_DIR.iterdir())
+        except Exception as exception:  # noqa: BLE001 - a restart must not die over cleanup
+            diagnostic_event("startup.dead_file_sweep_failed", error=str(exception)[:500])
+            disk_files = []
+        for disk_file in disk_files:
+            try:
+                if not disk_file.is_file():
+                    continue
+                extracted_text = stored_text.get(disk_file.name)
+                # Delete when there is no row at all (orphan) or the row's text is already
+                # extracted. Keep when extraction never completed — a later pass may still need
+                # the bytes to extract or index.
+                if extracted_text is None or extracted_text:
+                    dead_bytes_freed += disk_file.stat().st_size
+                    disk_file.unlink(missing_ok=True)
+                    dead_files_removed += 1
+            except Exception as exception:  # noqa: BLE001 - one bad file must not stop the sweep
+                diagnostic_event("startup.dead_file_sweep_failed", name=disk_file.name, error=str(exception)[:500])
     diagnostic_event(
         "startup.maintenance_complete",
         files=len(file_ids),
         profiles_refreshed=refreshed,
         files_indexed=indexed,
         files_failed=failed,
+        dead_files_removed=dead_files_removed,
+        dead_bytes_freed=dead_bytes_freed,
     )
 
 
@@ -345,7 +387,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Locus API", version="0.1.0", lifespan=lifespan)
-UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads"
+# LOCUS_UPLOAD_DIR lets tests (see conftest.py) point this at an isolated directory. Without
+# it, the startup maintenance dead-file sweep and a real local dev tree would share one
+# physical folder, so running the test suite against an isolated test database would see every
+# real uploaded file as an "orphan" (no matching row in that empty test DB) and delete it.
+UPLOAD_DIR = Path(os.getenv("LOCUS_UPLOAD_DIR") or (Path(__file__).resolve().parents[1] / "uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Set LOCUS_STARTUP_MAINTENANCE=0 to skip the post-restart re-extract/re-index sweep entirely
 # — useful on a memory-tight instance, at the cost of files staying unindexed until re-uploaded.
@@ -671,6 +717,10 @@ async def upload_file(store_id: int = Form(...), file: UploadFile = File(...), d
     db.commit()
     db.refresh(stored_file)
     await asyncio.to_thread(_index_stored_file, db, stored_file)
+    # The extracted text was committed to the DB before indexing even ran (it is set in the
+    # StoredFile constructor above), so the raw upload is dead weight now — whether indexing
+    # succeeded or failed, nothing will ever read these bytes back off disk. Unconditional.
+    stored_path.unlink(missing_ok=True)
     db.refresh(stored_file)
     return stored_file
 
