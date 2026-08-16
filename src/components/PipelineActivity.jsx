@@ -17,6 +17,9 @@ export function PipelineActivity({ pipeline, model, provider, events, startedAt,
     ['gathering', 'Gather', Database, 'Collecting evidence'],
     ['drafting', 'Compose', PenLine, 'Building the answer'],
   ];
+  const actionStages = [
+    ['action', 'Apply', Zap, 'Applying changes'],
+  ];
   const directStages = [
     ['drafting', 'Chat', Cpu, 'Direct model chat'],
   ];
@@ -24,7 +27,9 @@ export function PipelineActivity({ pipeline, model, provider, events, startedAt,
     ['verifying', 'Verify', ShieldCheck, 'Checking quality'],
     ['repairing', 'Refine', Sparkles, 'Resolving gaps'],
   ];
-  const stages = directModelChat ? directStages : ['thinking', 'deep_summary'].includes(reasoningMode) ? [...responseStages, ...qualityStages] : responseStages;
+  const stages = pipeline.stage === 'action'
+    ? actionStages
+    : directModelChat ? directStages : ['thinking', 'deep_summary'].includes(reasoningMode) ? [...responseStages, ...qualityStages] : responseStages;
   const current = stages.findIndex(([id]) => id === pipeline.stage);
   const activeIndex = Math.max(0, current);
   const [elapsed, setElapsed] = useState(0);
@@ -39,6 +44,7 @@ export function PipelineActivity({ pipeline, model, provider, events, startedAt,
     reduce: ['REDUCE', GitBranchIcon],
     synthesis: ['MERGE', Sparkles],
     quality: ['QA', ShieldCheck],
+    tool: ['TOOL', Zap],
     heartbeat: ['PING', Activity],
     complete: ['DONE', CircleCheck],
     error: ['ERR', X],

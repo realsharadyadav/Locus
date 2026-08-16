@@ -92,6 +92,11 @@ class ChatResponse(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    # Platform actions Ask executed for this exchange ({tool, summary, result}), empty for a
+    # normal answer. Rides in the job result so the frontend can apply the side effects
+    # (theme change, model change) and show what happened; the summary text is also baked
+    # into the assistant message itself so it survives a reload.
+    actions_taken: list[dict] = []
 
 
 class SuggestionsRequest(BaseModel):

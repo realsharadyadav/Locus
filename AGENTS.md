@@ -316,6 +316,7 @@ that will bite you again if forgotten.
 | File | Purpose | Key Functions |
 |---|---|---|
 | `ai_defaults.py` | The one provider/model default, read from the `explore_ai` preference with `.env` as the fallback. Every entry point that needs a model resolves it here | `preferred_ai()` |
+| `assistant_tools.py` | Self-aware Ask: a whitelist of platform actions Ask can run directly from natural language ("switch to dark mode", "make X the default model", "run a model health test", "what are my settings"). Classification only ever sees the user's own question (never evidence/web content); writes go through the same preference rows Settings uses; executed actions ride in `ChatResponse.actions_taken` | `classify_platform_action()`, `execute_action()`, `_validate_tool_call()` |
 | `auto_select.py` | Auto-select on failure: picks the healthiest tested model when the saved default errors mid-job (`auto_select_model` toggle on Settings), retries capped at 3, records the switch | `enabled()`, `choose_fallback()`, `record_switch()`, keys `AUTO_SELECT_PREFERENCE_KEY` / `MODEL_HEALTH_PREFERENCE_KEY` / `ENABLED_MODELS_PREFERENCE_KEY` / `LAST_SWITCH_PREFERENCE_KEY` |
 | `config.py` | Loads `.env`, exposes all env-based config | `llm_provider()`, `configured_model()`, `GroqSettings`, `groq_settings()`, `SEMANTIC_*`, `WEB_RESEARCH_*` |
 | `diagnostics.py` | Per-job diagnostic event logging to JSONL with secret sanitization | `diagnostic_event()` — log event; `initialize_job_log()` — create log file; `sanitize()` — redact secrets |
@@ -502,6 +503,7 @@ guest-eligible on its next share link but a returning host does not lose their r
 | `backend/tests/test_groq.py` | Groq auth, timeout clamp, rate-limit, retry, model listing |
 | `backend/tests/test_intent_deep.py` | `intent.py` keyword fallback across every domain, context persistence, output validation |
 | `backend/tests/test_agentic_pipeline.py` | Planner routing, dynamic source_limit, evidence validation, broad-retry before the no-evidence dead end |
+| `backend/tests/test_assistant_tools.py` | Self-aware Ask: deterministic classification (theme/model/health/settings), LLM-guided JSON + whitelist rejection, preference persistence, prompt-injection guard, action job e2e |
 | `backend/tests/test_comprehensive_chat.py` | Light mode, web search routing, output formats, streaming, edge cases, gap-retrieval rounds and answer-shape wiring |
 | `backend/tests/test_100step_conversation.py` | 100-step conversations: persistence, history growth, truncation, cancellation |
 | `backend/tests/test_deep_stress.py` | Mode switching mid-chat, 200-step rapid fire, file ops mid-chat, job lifecycle, concurrency |

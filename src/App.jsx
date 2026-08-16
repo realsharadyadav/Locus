@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from './api';
 import { clearAuthToken, getAuthToken, onUnauthorized } from './auth';
 import { readStorage, writeStorage } from './brand';
@@ -10,7 +10,7 @@ import { LoginPage } from './components/LoginPage';
 import { Sidebar } from './components/Sidebar';
 import { SplashScreen } from './components/SplashScreen';
 import { ToastStack } from './components/Toast';
-import { APP_DATA_CACHE_KEY, APP_PAGES, normalizePageId, readCachedAppData } from './lib/appState';
+import { AI_PREFERENCE_STORAGE_KEY, APP_DATA_CACHE_KEY, APP_PAGES, normalizePageId, readCachedAppData } from './lib/appState';
 import { ExplorePage } from './pages/ExplorePage';
 import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
@@ -50,6 +50,13 @@ export function App({ initialSecretChatToken = null }) {
   const [newChatSignal, setNewChatSignal] = useState(0);
   const [theme, setTheme] = useState(() => readStorage('theme') || 'dark');
   const [secretImagesConfigured, setSecretImagesConfigured] = useState(false);
+  // Bumped when a chat action changes the default model, so Ask re-reads the preference it
+  // displays in its header instead of showing a stale model for the rest of the session.
+  const [settingsVersion, setSettingsVersion] = useState(0);
+  // Job ids whose platform-action side effects have already been applied. Jobs that are
+  // already completed when the app boots are pre-marked in loadData — their actions were
+  // applied by the preferences boot just read, so they must not toast again.
+  const appliedActionJobs = useRef(new Set());
 
   const toast = (message, type = 'success') => {
     const id = crypto.randomUUID();
@@ -74,17 +81,26 @@ export function App({ initialSecretChatToken = null }) {
     try {
       // Track the boot requests individually so the splash bar reflects real
       // progress rather than an animated guess.
-      const bootRequests = [api.files(), api.collections(), api.chats(), api.chatJobs(), api.preference('layout')];
+      const bootRequests = [api.files(), api.collections(), api.chats(), api.chatJobs(), api.preference('layout'), api.preference('theme')];
       let settled = 0;
       const countSettled = () => setBootProgress(Math.round((++settled / bootRequests.length) * 100));
       bootRequests.forEach(request => request.then(countSettled, countSettled));
 
-      const [nextFiles, nextCollections, nextChats, nextJobs, layoutPreference] = await Promise.all(bootRequests);
+      const [nextFiles, nextCollections, nextChats, nextJobs, layoutPreference, themePreference] = await Promise.all(bootRequests);
       const savedLayout = layoutPreference.value || {};
       setFiles(nextFiles);
       setCollections(nextCollections);
       setChats(nextChats);
       setJobs(nextJobs);
+      // A theme saved server-side (by a chat "switch to dark mode", or this tab) wins over the
+      // local cache; localStorage stays as the offline fast path. Existing completed action jobs
+      // have already taken effect through this preference, so they must not toast on boot.
+      const savedTheme = themePreference?.value?.theme;
+      if (savedTheme === 'light' || savedTheme === 'dark') {
+        setTheme(savedTheme);
+        writeStorage('theme', savedTheme);
+      }
+      nextJobs.forEach(job => { if (job.status === 'completed') appliedActionJobs.current.add(job.id); });
       window.localStorage.setItem(APP_DATA_CACHE_KEY, JSON.stringify({
         files: nextFiles,
         collections: nextCollections,
@@ -105,6 +121,7 @@ export function App({ initialSecretChatToken = null }) {
         setCollections(cached.collections || []);
         setChats(cached.chats || []);
         setJobs(cached.jobs || []);
+        (cached.jobs || []).forEach(job => { if (job.status === 'completed') appliedActionJobs.current.add(job.id); });
       }
       setApiError('Backend is offline. Start it with npm run dev:api');
     } finally {
@@ -182,7 +199,13 @@ export function App({ initialSecretChatToken = null }) {
       document.head.appendChild(meta);
     }
     meta.setAttribute('content', themeColor);
-  }, [theme]);
+    // The server copy is what a chat "switch to dark mode" writes and what a second device
+    // reads; keep it in sync. Skipped until boot has loaded the saved value so the initial
+    // effect run (which may set the server's own theme) does not write it straight back.
+    if (preferencesLoaded) {
+      api.updatePreference('theme', { theme }).catch(() => {});
+    }
+  }, [theme, preferencesLoaded]);
 
   useEffect(() => {
     // Polling before sign-in would just 401 twice a second.
@@ -191,6 +214,12 @@ export function App({ initialSecretChatToken = null }) {
       try {
         const nextJobs = await refreshJobs();
         if (nextJobs.some(job => ['queued', 'running'].includes(job.status))) await refreshChats();
+        nextJobs.forEach(job => {
+          if (job.status === 'completed' && !appliedActionJobs.current.has(job.id) && (job.result?.actions_taken || []).length) {
+            appliedActionJobs.current.add(job.id);
+            applyJobActions(job);
+          }
+        });
       } catch {
         // The main offline banner handles connectivity; polling resumes automatically.
       }
@@ -304,6 +333,29 @@ export function App({ initialSecretChatToken = null }) {
     } catch {
       setJobs(current => current.map(job => job.id === id ? { ...job, seen: false } : job));
     }
+  };
+
+  // A completed job that executed platform actions (Ask's "switch to dark mode", "make gpt-4o
+  // the default model", ...) applies those side effects here. The server already persisted
+  // them; this is the live half — flip the theme, refresh Ask's model display, toast what
+  // happened. Run once per job id (see appliedActionJobs).
+  const applyJobActions = job => {
+    (job.result?.actions_taken || []).forEach(action => {
+      const result = action.result || {};
+      if (action.tool === 'set_theme' && (result.theme === 'light' || result.theme === 'dark')) {
+        setTheme(result.theme);
+        toast(`Theme set to ${result.theme === 'dark' ? 'Dark' : 'Light'}`);
+      } else if (action.tool === 'set_default_model' && result.provider && result.model) {
+        try {
+          const saved = JSON.parse(window.localStorage.getItem(AI_PREFERENCE_STORAGE_KEY) || '{}');
+          window.localStorage.setItem(AI_PREFERENCE_STORAGE_KEY, JSON.stringify({ ...saved, provider: result.provider, model: result.model }));
+        } catch { /* localStorage is best-effort; the server copy is authoritative */ }
+        setSettingsVersion(value => value + 1);
+        toast(`Default model set to ${result.model}`);
+      } else if (action.tool === 'run_model_health_test') {
+        toast((action.summary || 'Model health test finished').replace(/\*\*/g, ''));
+      }
+    });
   };
 
   const secretChatUnread = useSecretChatUnread();
@@ -434,6 +486,7 @@ export function App({ initialSecretChatToken = null }) {
             openMenu={() => setMobileOpen(true)}
             historyCollapsed={historyCollapsed}
             setHistoryCollapsed={setHistoryCollapsed}
+            settingsVersion={settingsVersion}
           />
         )}
         {page === 'secret-chat' && (

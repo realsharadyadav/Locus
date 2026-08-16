@@ -34,6 +34,7 @@ from .config import (
     configured_model, gateway_settings, llm_provider,
 )
 from .ai_defaults import preferred_ai
+from .assistant_tools import classify_platform_action, execute_action, tool_label
 from .auto_select import MODEL_HEALTH_PREFERENCE_KEY, choose_fallback, record_switch
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
@@ -831,6 +832,35 @@ def _answer_shape_guidance(reasoning_mode: str) -> str:
     return ANSWER_SHAPE_INSTRUCTION
 
 
+def _handle_platform_action(payload: ChatRequest, db: Session, session: ChatSession, notify, action_call: dict) -> ChatResponse:
+    """Run a whitelisted platform action and answer with the outcome.
+
+    The action's summary text becomes the assistant message (so it survives a reload), and
+    the structured record rides in `actions_taken` on the response — which the job result
+    carries to the frontend, where the theme/model side effects get applied live.
+    """
+    name = action_call["tool"]
+    arguments = action_call["arguments"]
+    notify("action", f"Executing platform action: {tool_label(name)}")
+    record = execute_action(db, name, arguments, payload.provider, payload.model)
+    answer = record["summary"]
+    db.add_all([
+        ChatMessage(session_id=session.id, role="user", content=payload.question),
+        ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits=0, web_queries=0), model=payload.model, provider=payload.provider),
+    ])
+    db.commit()
+    notify("complete", "Platform action completed")
+    return ChatResponse(
+        answer=answer,
+        sources=[],
+        model=payload.model,
+        conversation_id=session.id,
+        llm_hits=0,
+        web_queries=0,
+        actions_taken=[record],
+    )
+
+
 def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, detail: None, cancelled=lambda: False, on_answer_token=lambda text: None):
     def ensure_not_cancelled():
         if cancelled():
@@ -888,6 +918,13 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         db.commit()
         notify("complete", "Answer ready")
         return ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=1, web_queries=0)
+    # Self-aware Ask: a settings/platform request ("switch to dark mode", "make gpt-4o the
+    # default model", "run a model health test") is handled as a whitelisted platform action
+    # instead of a retrieval question. Classification only ever sees the user's own question —
+    # never retrieved evidence or web content — so a poisoned document cannot steer it.
+    action_call = classify_platform_action(payload.question, payload.model)
+    if action_call:
+        return _handle_platform_action(payload, db, session, notify, action_call)
     effective_web_search = _effective_web_search(payload)
     if effective_web_search:
         web_mode = "web research"
@@ -1501,6 +1538,7 @@ def _pipeline_event_metadata(stage: str, detail: str) -> dict:
     stage_methods = {
         "starting": "run_chat_job()",
         "understanding": "enhance_question()",
+        "action": "execute_assistant_tool()",
         "gathering": "extract_evidence()",
         "drafting": "answer_planned_question()",
         "verifying": "verify_response()",
@@ -1509,6 +1547,8 @@ def _pipeline_event_metadata(stage: str, detail: str) -> dict:
         "failed": "raise_pipeline_error()",
     }
     metadata["method"] = stage_methods.get(stage, metadata["method"])
+    if stage == "action":
+        metadata.update(type="tool", direction="outbound", method="execute_assistant_tool()", payload_preview=detail)
     if "directly; no files selected" in lowered:
         metadata.update(type="llm_call", direction="outbound", method="generate_answer()", payload_preview=detail)
     if "calling " in lowered:

@@ -48,6 +48,7 @@ export function ExplorePage({
   files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat,
   requestDeleteAllChats, hasActiveJobs, refreshChats, refreshJobs, openMenu, newChatSignal,
   historyCollapsed = false, setHistoryCollapsed,
+  settingsVersion = 0,
 }) {
   const savedAiPreference = readSavedAiPreference();
   const [question, setQuestion] = useState('');
@@ -192,10 +193,14 @@ export function ExplorePage({
       const nextProvider = saved.provider || config.provider || 'ollama';
       setProvider(nextProvider);
       setModel(saved.model || (nextProvider === config.provider ? config.model : DEFAULT_PROVIDER_MODELS[nextProvider]));
-      setReasoningMode(saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'));
+      // settingsVersion re-runs this when a chat action changes the default model (so the
+      // header shows the new one), but the effort dial is Ask's own and stays untouched then.
+      if (!aiPreferenceReady.current) {
+        setReasoningMode(saved.reasoning_mode === 'web_research' ? 'light' : (saved.reasoning_mode || 'light'));
+      }
       aiPreferenceReady.current = true;
     }).catch(() => {});
-  }, []);
+  }, [settingsVersion]);
 
   useEffect(() => {
     if (!aiPreferenceReady.current) return undefined;

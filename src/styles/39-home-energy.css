@@ -1,0 +1,192 @@
+/* 39 — Home energy: "What Locus can do" strip + livelier stat cards.
+ *
+ * The capability chips mirror 34-glass's "controls stay glassy but denser" treatment
+ * (glass-inset fill, hairline edge, soft blur) with a violet radial glow that fades in
+ * on hover and a staggered rise-in on mount. Everything here is presentational — the
+ * numbers are rendered by HomePage from live /api/llm/config and preference data, never
+ * hardcoded here. Dark theme gets its own violet-tinted pass; prefers-reduced-motion is
+ * handled by the global override in 10-activity.css. */
+
+.capabilities-strip { margin-bottom: 26px; }
+
+.capabilities-head {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 13px;
+}
+.capabilities-head h2 {
+  margin: 0;
+  font-family: 'Manrope', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: .02em;
+}
+.capabilities-head p { margin: 0; font-size: 11.5px; color: var(--muted); }
+
+.capabilities-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+  gap: 12px;
+}
+
+.cap-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 96px;
+  padding: 14px;
+  border: 1px solid var(--glass-edge-soft);
+  border-radius: 15px;
+  background: var(--glass-inset);
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft);
+  backdrop-filter: var(--glass-blur-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  color: var(--ink);
+  text-align: left;
+  overflow: hidden;
+  animation: homeCardIn .5s ease backwards;
+  animation-delay: var(--cap-delay, 0s);
+  transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+.cap-chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(130% 120% at 12% 0%, rgba(139, 92, 246, .16), transparent 55%),
+    radial-gradient(110% 110% at 95% 100%, rgba(139, 92, 246, .09), transparent 52%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.cap-chip:hover {
+  transform: translateY(-3px);
+  border-color: rgba(139, 92, 246, .4);
+  box-shadow: inset 0 1px 0 var(--glass-edge-soft), 0 14px 34px rgba(109, 40, 217, .16);
+}
+.cap-chip:hover::before { opacity: 1; }
+.cap-chip:focus-visible {
+  outline: 2px solid var(--violet);
+  outline-offset: 2px;
+}
+
+.cap-chip-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  color: var(--violet);
+  background: rgba(139, 92, 246, .12);
+  border: 1px solid rgba(139, 92, 246, .28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35);
+}
+.cap-chip-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.cap-chip-sub {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Reasoning-mode chips take their own accent colour (from SLASH_COMMANDS in lib/ask.js) */
+.cap-chip.accent .cap-chip-icon {
+  color: var(--chip-accent);
+  background: color-mix(in srgb, var(--chip-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--chip-accent) 34%, transparent);
+}
+.cap-chip.accent .cap-chip-title { color: var(--chip-accent); }
+
+.cap-chip-skeleton {
+  min-height: 96px;
+  border-radius: 15px;
+  border: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(139, 92, 246, .06), rgba(139, 92, 246, .14), rgba(139, 92, 246, .06));
+  background-size: 200% 100%;
+  animation: homeShimmer 1.3s ease-in-out infinite;
+}
+
+/* Dark theme */
+html[data-theme='dark'] .cap-chip {
+  background: rgba(124, 58, 237, .1);
+  border-color: var(--glass-hairline);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+html[data-theme='dark'] .cap-chip::before {
+  background:
+    radial-gradient(130% 120% at 12% 0%, rgba(124, 58, 237, .3), transparent 55%),
+    radial-gradient(110% 110% at 95% 100%, rgba(139, 92, 246, .16), transparent 52%);
+}
+html[data-theme='dark'] .cap-chip:hover {
+  border-color: rgba(167, 139, 250, .42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06), 0 14px 34px rgba(0, 0, 0, .3);
+}
+html[data-theme='dark'] .cap-chip-title { color: var(--dark-heading); }
+html[data-theme='dark'] .cap-chip-sub { color: var(--dark-muted); }
+html[data-theme='dark'] .cap-chip-skeleton {
+  border-color: var(--dark-border);
+  background: linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .18), rgba(124, 58, 237, .08));
+  background-size: 200% 100%;
+}
+
+/* Stat cards: violet glow wash on hover, staggered rise on mount */
+.stat-grid article {
+  position: relative;
+  overflow: hidden;
+  animation: homeCardIn .5s ease backwards;
+}
+.stat-grid article:nth-child(1) { animation-delay: .05s; }
+.stat-grid article:nth-child(2) { animation-delay: .13s; }
+.stat-grid article:nth-child(3) { animation-delay: .21s; }
+.stat-grid article::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 140% at 18% 0%, rgba(139, 92, 246, .18), transparent 58%);
+  opacity: 0;
+  transition: opacity .25s ease;
+  pointer-events: none;
+}
+.stat-grid article:hover::before { opacity: 1; }
+.stat-grid article:hover {
+  border-color: rgba(139, 92, 246, .45) !important;
+  box-shadow: 0 18px 44px rgba(109, 40, 217, .2), inset 0 1px 0 rgba(255, 255, 255, .16) !important;
+}
+html[data-theme='dark'] .stat-grid article:hover {
+  border-color: rgba(167, 139, 250, .5) !important;
+  box-shadow: 0 18px 44px rgba(109, 40, 217, .3), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+}
+.stat-grid article:hover .stat-icon { color: var(--violet); }
+
+/* Welcome mark: a slow violet halo breathing behind the logo */
+.welcome-mark { position: relative; }
+.welcome-mark::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 22px;
+  background: radial-gradient(circle, rgba(139, 92, 246, .32), transparent 68%);
+  z-index: -1;
+  opacity: 0;
+  animation: homeMarkHalo 3.4s ease-in-out infinite;
+}
+
+@keyframes homeCardIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes homeShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes homeMarkHalo {
+  0%, 100% { opacity: 0; transform: scale(.88); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
