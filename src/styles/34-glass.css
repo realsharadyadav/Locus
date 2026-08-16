@@ -208,6 +208,16 @@ html[data-theme='dark'] .pipeline-card {
   border: 1px solid var(--glass-edge-soft) !important;
 }
 
+/* The glass-fill pass above applies to every bubble, including the user's own — left alone,
+   that puts white text (set for the old solid-navy bubble) on a near-white glass background.
+   Light mode needs its own opaque-enough fill here; dark mode gets one below. */
+.chat-message.user .message-body > p {
+  background: linear-gradient(145deg, #7c6cff, #6d28d9) !important;
+  color: #fff !important;
+  border-color: rgba(255, 255, 255, .18) !important;
+  box-shadow: 0 10px 24px rgba(109, 40, 217, .18), inset 0 1px 0 rgba(255, 255, 255, .18) !important;
+}
+
 html[data-theme='dark'] .chat-message.user .message-body > p {
   background: linear-gradient(145deg, rgba(139, 92, 246, .72), rgba(109, 40, 217, .78)) !important;
   border-color: rgba(196, 181, 253, .35) !important;
@@ -398,17 +408,6 @@ html[data-theme='dark'] .chat-rail {
 html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .chat-history-item:hover,
 html[data-theme='dark'] .app-shell.explore-active .chat-history:not(.collapsed) .chat-history-item.active {
   background: rgba(124, 58, 237, .2) !important;
-}
-
-/* Ticket analysis page shell if present */
-.ticket-analysis-page,
-.ticket-settings-panel,
-.ticket-live-stage {
-  background: var(--glass-fill) !important;
-  border-color: var(--glass-edge-soft) !important;
-  box-shadow: var(--glass-shadow) !important;
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
 }
 
 /* Softer hairlines everywhere glass meets glass */

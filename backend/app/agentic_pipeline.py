@@ -637,10 +637,11 @@ def _planned_web_answer(
     collected: list[EvidenceItem] = []
     seen = set()
     # Each query here runs a full nested web_research pipeline (its own search
-    # rounds + LLM calls), so this scales modestly with source_limit rather than
-    # a flat 6 — a 200-source deep-research plan gets more planned queries, but
-    # capped well below source_limit to avoid an explosion of nested pipelines.
-    max_queries = max(6, min(12, source_limit // 15))
+    # rounds + LLM calls), so this scales with source_limit rather than a flat
+    # count — Normal's low ceiling gets a couple of planned queries, Max's full
+    # ceiling gets the full dozen, capped well below source_limit to avoid an
+    # explosion of nested pipelines.
+    max_queries = max(3, min(12, source_limit // 10))
     selected_queries = queries[:max_queries]
     progress("gathering", f"Fetch Agent: running {len(selected_queries)} planned quer{'y' if len(selected_queries) == 1 else 'ies'}")
     for query in selected_queries:

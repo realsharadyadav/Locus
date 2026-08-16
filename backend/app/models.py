@@ -88,19 +88,6 @@ class ChatJob(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
-class TicketAnalysisResult(Base):
-    __tablename__ = "ticket_analysis_results"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    file_id: Mapped[int] = mapped_column(ForeignKey("stored_files.id"), index=True)
-    file_name: Mapped[str] = mapped_column(String(255))
-    manifest: Mapped[dict] = mapped_column(JSON)
-    groups: Mapped[list] = mapped_column(JSON)
-    taxonomy_suggestions: Mapped[list] = mapped_column(JSON, default=list)
-    config: Mapped[dict] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-
-
 class UserPreference(Base):
     __tablename__ = "user_preferences"
 

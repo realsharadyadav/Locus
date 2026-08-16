@@ -37,18 +37,12 @@ import {
   PROVIDER_LABELS,
   readSavedAiPreference,
 } from '../lib/appState';
-import { SLASH_COMMANDS, shouldAutoWebSearch } from '../lib/ask';
+import { EFFORT_WEB_SOURCE_LIMIT, SLASH_COMMANDS, shouldAutoWebSearch } from '../lib/ask';
 import { fileMetaLine, jobFailureMessage } from '../lib/format';
 import { tip } from '../lib/ui';
 import { parseServerTime } from '../utils';
 import TextareaAutosize from 'react-textarea-autosize';
 import { useStickToBottom } from 'use-stick-to-bottom';
-
-const STARTER_PROMPTS = [
-  'Give me a concise summary',
-  'Find the key risks and open questions',
-  'Compare the selected files',
-];
 
 export function ExplorePage({
   files, stores, chats, jobs, createChatJob, markJobSeen, initialChatId, clearInitialChat, onOpenStore, toast, requestDeleteChat,
@@ -66,7 +60,9 @@ export function ExplorePage({
   const [provider, setProvider] = useState(savedAiPreference.provider || 'ollama');
   const [allowGeneralKnowledge, setAllowGeneralKnowledge] = useState(true);
   const [reasoningMode, setReasoningMode] = useState(savedAiPreference.reasoning_mode === 'web_research' ? 'light' : (savedAiPreference.reasoning_mode || 'light'));
-  const [webSourceLimit] = useState(savedAiPreference.web_source_limit || 200);
+  // Effort-driven, not a standalone setting: how far web research is allowed to go tracks
+  // the same Normal/High/Max dial as file inspection, so switching effort changes both at once.
+  const webSourceLimit = EFFORT_WEB_SOURCE_LIMIT[reasoningMode] || EFFORT_WEB_SOURCE_LIMIT.light;
   const [selectedFileIds, setSelectedFileIds] = useState([]);
   const [selectFilesOpen, setSelectFilesOpen] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -107,26 +103,12 @@ export function ExplorePage({
     setExpandedSources(prev => ({ ...prev, [messageIndex]: !prev[messageIndex] }));
   };
   const selectedCount = selectedFileIds === null ? files.length : selectedFileIds.length;
-  const selectedFiles = selectedFileIds === null
-    ? files
-    : files.filter(file => selectedFileIds.includes(file.id));
-  const selectedContextLabel = selectedFileIds === null
-    ? (files.length ? `All ${files.length} library files` : 'No library files')
-    : selectedFileIds.length
-      ? `${selectedFileIds.length} selected file${selectedFileIds.length === 1 ? '' : 's'}`
-      : 'General knowledge';
-  const selectedContextDetail = selectedFileIds === null
-    ? 'Search across your uploaded library'
-    : selectedFiles.length
-      ? selectedFiles.slice(0, 2).map(file => file.name).join(', ') + (selectedFiles.length > 2 ? ` +${selectedFiles.length - 2} more` : '')
-      : 'Add files when you want answers grounded in your library';
   // Header identity: the conversation's own title, with the model and mode as the second line.
   // On a phone this replaces the row of labels and stat pills that used to wrap over the thread.
   const activeChatTitle = chats.find(item => item.id === activeChat)?.title || 'New chat';
   const activeModeCommand = SLASH_COMMANDS.find(command => command.id === reasoningMode);
   const modeLabel = activeModeCommand?.friendlyLabel || activeModeCommand?.label.slice(1) || reasoningMode;
   const headerSubtitle = [model, modeLabel].filter(Boolean).join(' · ');
-  const welcomeModes = SLASH_COMMANDS.filter(command => command.id !== 'unrestricted');
   // `jobs` comes back newest-first (see api.chatJobs), so matching on conversation_id and status
   // together in one .find() is a trap: if this conversation's latest job has already completed,
   // .find() keeps scanning past it and can surface an *older* job for the same conversation that
@@ -168,7 +150,8 @@ export function ExplorePage({
   };
 
   const previewReasoningMode = getReasoningMode(question.trim());
-  const autoWebSearchPreview = shouldAutoWebSearch(question.trim().replace(/^\/\w+\s*/, ''), previewReasoningMode);
+  const noFilesSelected = selectedFileIds !== null && selectedFileIds.length === 0;
+  const autoWebSearchPreview = shouldAutoWebSearch(question.trim().replace(/^\/\w+\s*/, ''), previewReasoningMode, noFilesSelected);
   const activeModeLabel = SLASH_COMMANDS.find(command => command.id === previewReasoningMode)?.friendlyLabel
     || (previewReasoningMode === 'web_research' ? 'Web research' : previewReasoningMode);
   const displayedModeLabel = autoWebSearchPreview
@@ -455,12 +438,7 @@ export function ExplorePage({
     const mode = getReasoningMode(value);
     const cleanText = stripSlashPrefix(value);
     if (!cleanText) { toast('Ask a question', 'error'); return; }
-    const effectiveWebSearch = shouldAutoWebSearch(cleanText, mode);
-    if (mode === 'ticket_analysis' && (selectedFileIds === null || selectedFileIds.length !== 1)) {
-      toast('Ticket Analysis requires exactly one selected ticket file', 'error');
-      setSelectFilesOpen(true);
-      return;
-    }
+    const effectiveWebSearch = shouldAutoWebSearch(cleanText, mode, selectedFileIds !== null && selectedFileIds.length === 0);
     setQuestion('');
     // Keep the composer focused so the mobile keyboard does not collapse on send, and
     // re-arm stick-to-bottom in case the landing screen released it.
@@ -679,27 +657,6 @@ export function ExplorePage({
     setSlashOpen(false);
     setSlashIndex(-1);
     composerRef.current?.focus();
-  };
-
-  const selectReasoningMode = (cmd) => {
-    setReasoningMode(cmd.id);
-    setModePickerOpen(false);
-    setQuestion(current => current.startsWith(`${cmd.label} `) ? current.slice(cmd.label.length + 1) : current);
-    window.setTimeout(() => composerRef.current?.focus(), 0);
-  };
-
-  const fillStarterPrompt = (prompt) => {
-    setQuestion(prompt);
-    setSlashOpen(false);
-    setSlashIndex(-1);
-    window.setTimeout(() => composerRef.current?.focus(), 0);
-  };
-
-  const startFromStore = (store) => {
-    const storeFileIds = files.filter(file => file.store_id === store.id).map(file => file.id);
-    setSelectedFileIds(storeFileIds);
-    setReasoningMode('light');
-    fillStarterPrompt(`What are the key ideas in ${store.title}?`);
   };
 
   const handleComposerInput = (event) => {
@@ -982,10 +939,6 @@ export function ExplorePage({
                 </div>
               )}
             </div>
-            <div className="chat-top-model desktop-controls" {...tip(`Answers use the default set in Settings: ${PROVIDER_LABELS[provider] || provider} / ${model || 'none selected'}`)}>
-              <Cpu size={13} />
-              <span className="chat-top-model-name">{model || 'No model set'}</span>
-            </div>
           </div>
         </div>
 
@@ -1000,92 +953,7 @@ export function ExplorePage({
               <div className="chat-empty" ref={emptyStateRef}>
                 <div className="chat-empty-intro">
                   <div className="chat-orb"><Sparkles size={29} /></div>
-                  <span className="chat-empty-kicker">YOUR RESEARCH DESK</span>
                   <h2>What are you working on?</h2>
-                  <p>Ask a question, choose your sources, and let Locus turn them into a clear answer.</p>
-                </div>
-
-                <div className="ask-context-panel">
-                  <div className="ask-context-copy">
-                    <span className="ask-section-label">ANSWER FROM</span>
-                    <strong>{selectedContextLabel}</strong>
-                    <small>{selectedContextDetail}</small>
-                  </div>
-                  <button type="button" className="ask-context-action" onClick={() => setSelectFilesOpen(true)}>
-                    {selectedCount > 0 ? 'Change files' : 'Choose files'}
-                    <FileText size={14} />
-                  </button>
-                </div>
-
-                {stores.length > 0 && (
-                  <div className="ask-library-section">
-                    <div className="ask-section-heading">
-                      <span>Start with a library</span>
-                      <small>Pick a source to scope your question</small>
-                    </div>
-                    <div className="quick-start-chips">
-                      {stores.slice(0, 3).map(store => {
-                        const storeFileCount = files.filter(file => file.store_id === store.id).length;
-                        return (
-                          <button
-                            key={store.id}
-                            type="button"
-                            className="quick-start-chip"
-                            onClick={() => startFromStore(store)}
-                          >
-                            <Folder size={14} />
-                            <span>{store.title}</span>
-                            <small>{storeFileCount} file{storeFileCount === 1 ? '' : 's'}</small>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                <div className="ask-starter-section">
-                  <div className="ask-section-heading">
-                    <span>Try a starter question</span>
-                    <small>Click to edit before sending</small>
-                  </div>
-                  <div className="starter-prompts">
-                    {STARTER_PROMPTS.map(prompt => (
-                      <button type="button" key={prompt} onClick={() => fillStarterPrompt(prompt)}>
-                        <Sparkles size={13} />
-                        <span>{prompt}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="ask-mode-section">
-                  <div className="ask-section-heading">
-                    <span>How should Locus answer?</span>
-                    <small>Change this any time below</small>
-                  </div>
-                  <div className="mode-card-grid">
-                    {welcomeModes.map(cmd => {
-                      const Icon = cmd.icon;
-                      const active = reasoningMode === cmd.id;
-                      return (
-                        <button
-                          type="button"
-                          key={cmd.id}
-                          className={`mode-card ${active ? 'active' : ''}`}
-                          onClick={() => selectReasoningMode(cmd)}
-                          aria-pressed={active}
-                        >
-                          <span className="mode-card-icon" style={{ color: cmd.color }}><Icon size={15} /></span>
-                          <span className="mode-card-copy">
-                            <strong>{cmd.friendlyLabel}</strong>
-                            <small>{cmd.friendlyDesc}</small>
-                          </span>
-                          {active && <Check size={15} className="mode-card-check" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <small className="ask-advanced-note">Advanced answer mode is available from the mode picker below.</small>
                 </div>
               </div>
             )}
@@ -1233,14 +1101,14 @@ export function ExplorePage({
                   className={`composer-tool-btn mode-picker-trigger mode-${previewReasoningMode}`}
                   onClick={() => setModePickerOpen(v => !v)}
                   aria-expanded={modePickerOpen}
-                  aria-label="Choose reasoning mode"
+                  aria-label="Choose answer effort"
                 >
                   {(() => { const Icon = (SLASH_COMMANDS.find(c => c.id === previewReasoningMode)?.icon) || Radio; return <Icon size={13} />; })()}
                   <span>{displayedModeLabel}</span>
                   <ChevronDown size={11} />
                 </button>
                 {modePickerOpen && (
-                  <div className="mode-picker-menu" role="listbox" aria-label="Reasoning mode menu">
+                  <div className="mode-picker-menu" role="listbox" aria-label="Answer effort menu">
                     {SLASH_COMMANDS.map(cmd => {
                       const Icon = cmd.icon;
                       const active = cmd.id === reasoningMode;
@@ -1295,8 +1163,7 @@ export function ExplorePage({
                 {...tip(`Answering with ${model || 'the default model'} (change it in Settings). Click to turn general knowledge ${allowGeneralKnowledge ? 'off' : 'on'}.`)}
               >
                 <Cpu size={13} />
-                <span className="composer-tool-label composer-knowledge-label">{allowGeneralKnowledge ? 'Model knowledge' : 'Files only'}</span>
-                <span className="composer-tool-label composer-model-label">{model || 'Set a model in Settings'}</span>
+                <span className="composer-tool-label">{allowGeneralKnowledge ? (model || 'Set a model in Settings') : 'Files only'}</span>
                 <span className={`tool-dot ${allowGeneralKnowledge ? 'on' : ''}`} />
               </button>
             </div>

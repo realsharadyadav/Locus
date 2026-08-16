@@ -1,28 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import {
-  AlertTriangle,
   BookOpen,
   Check,
-  CircleCheck,
-  Database,
   Info,
   KeyRound,
+  Loader2,
   LogOut,
   Radio,
   Sparkles,
-  Zap,
 } from 'lucide-react';
 import { api } from '../api';
 import { BRAND, writeStorage } from '../brand';
 import { ModelTable } from '../components/ModelTable';
 import { PROVIDER_LABELS, PROVIDER_META, PROVIDER_ORDER, readSavedAiPreference } from '../lib/appState';
+import { displayTime } from '../utils';
+
+// Mirrors MODEL_TEST_MAX_MODELS in backend/app/schemas.py — the most models one test request
+// will accept for a single provider.
+const MODEL_TEST_BATCH = 40;
+// How many of those batches run at once. Each one already does 4 concurrent pings server-side
+// (MODEL_TEST_CONCURRENCY in main.py), so this caps total concurrent outbound calls rather than
+// firing every batch in the catalogue at a provider simultaneously.
+const TEST_BATCH_CONCURRENCY = 3;
 
 export const REASONING_MODE_META = [
-  { id: 'light', label: 'Light', icon: Radio, desc: 'Fast direct chat — default mode' },
-  { id: 'unrestricted', label: 'Unrestricted', icon: Zap, desc: 'Expert mode — direct, low-fluff answers' },
-  { id: 'thinking', label: 'Thinking', icon: Sparkles, desc: 'Deep analysis — inspects all selected content' },
-  { id: 'deep_summary', label: 'Deep Summary', icon: BookOpen, desc: 'Complete section-by-section doc coverage' },
-  { id: 'ticket_analysis', label: 'Ticket Analysis', icon: Database, desc: 'Group incidents by problem pattern' },
+  { id: 'light', label: 'Normal', icon: Radio, desc: 'Fast, everyday answers — default effort' },
+  { id: 'thinking', label: 'High', icon: Sparkles, desc: 'Reads everything selected and reasons across it' },
+  { id: 'deep_summary', label: 'Max', icon: BookOpen, desc: 'Exhaustive section-by-section document coverage' },
 ];
 
 export function SettingsPage({ toast, authRequired = false, onSignOut }) {
@@ -34,19 +38,18 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const [limits, setLimits] = useState(null);
   const [limitInput, setLimitInput] = useState('');
   const [savingLimit, setSavingLimit] = useState(false);
-  const [enabledProviders, setEnabledProviders] = useState(null);
-  const [savingProviders, setSavingProviders] = useState(false);
   const [enabledModels, setEnabledModels] = useState(null);
   const [savingModels, setSavingModels] = useState(false);
-  // Which provider's catalogue is on screen in the visibility section. Deliberately separate
-  // from draft.provider: browsing what a provider offers is not the same act as changing the
-  // default, and conflating the two is what made this page confusing.
-  const [catalogProvider, setCatalogProvider] = useState(null);
   // Which models actually answered a probe, keyed provider -> model. Saved server-side by the
   // test endpoint, so the tags are still there on the next visit.
   const [health, setHealth] = useState({});
   const [respondingOnly, setRespondingOnly] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testProgress, setTestProgress] = useState({ done: 0, total: 0 });
+  // Auto-select on failure: a toggle saved as `auto_select_model`, plus the record of the
+  // last automatic switch (`auto_select_last_switch`) so the page can explain it.
+  const [autoSelect, setAutoSelect] = useState(false);
+  const [lastSwitch, setLastSwitch] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,22 +57,15 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       api.llmConfig(),
       api.preference('explore_ai').catch(() => ({ value: {} })),
       api.systemLimits().catch(() => null),
-      api.preference('enabled_providers').catch(() => ({ value: {} })),
       api.preference('enabled_models').catch(() => ({ value: {} })),
       api.preference('model_health').catch(() => ({ value: {} })),
+      api.preference('auto_select_model').catch(() => ({ value: {} })),
+      api.preference('auto_select_last_switch').catch(() => ({ value: {} })),
     ])
-      .then(([llmConfig, preference, systemLimits, enabledProvidersPref, enabledModelsPref, modelHealthPref]) => {
+      .then(([llmConfig, preference, systemLimits, enabledModelsPref, modelHealthPref, autoSelectPref, lastSwitchPref]) => {
         if (cancelled) return;
         setConfig(llmConfig);
         const saved = { ...readSavedAiPreference(), ...(preference.value || {}) };
-        // Open the catalogue on a provider that actually has models to show — landing on the
-        // default's provider is useless when that provider isn't connected, which is exactly
-        // when you want to go looking at what else is available.
-        const stocked = Object.entries(llmConfig.providers || {}).find(([, models]) => models.length);
-        const preferredCatalog = saved.provider || llmConfig.provider || 'ollama';
-        setCatalogProvider(
-          (llmConfig.providers?.[preferredCatalog] || []).length ? preferredCatalog : (stocked?.[0] || preferredCatalog)
-        );
         setDraft({
           provider: saved.provider || llmConfig.provider || 'ollama',
           model: saved.model || llmConfig.model || '',
@@ -80,48 +76,29 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           setLimits(systemLimits);
           setLimitInput(String(systemLimits.upload_max_mb));
         }
-        const knownProviders = Object.keys(llmConfig.providers || {});
-        const savedEnabled = enabledProvidersPref.value?.providers;
-        // No preference saved yet means nothing has ever been hidden — default to everything on.
-        setEnabledProviders(new Set(
-          Array.isArray(savedEnabled) && savedEnabled.length
-            ? savedEnabled.filter(id => knownProviders.includes(id))
-            : knownProviders
-        ));
         // Only providers the user has actually customized get an entry here — a provider with
-        // no entry means "every one of its models is enabled" (same default-on semantics as
-        // enabledProviders above), so most providers never need a stored list at all.
+        // no entry means "every one of its models is enabled" (models default to shown), so
+        // most providers never need a stored list at all.
         const initialEnabledModels = {};
         for (const [provider, ids] of Object.entries(enabledModelsPref.value || {})) {
           if (Array.isArray(ids)) initialEnabledModels[provider] = new Set(ids);
         }
         setEnabledModels(initialEnabledModels);
         setHealth(modelHealthPref.value || {});
+        const autoSelectValue = autoSelectPref.value;
+        setAutoSelect(typeof autoSelectValue === 'boolean' ? autoSelectValue : Boolean(autoSelectValue?.enabled));
+        const switchRecord = lastSwitchPref.value;
+        setLastSwitch(
+          switchRecord && typeof switchRecord === 'object' && switchRecord.model && !switchRecord.acknowledged
+            ? switchRecord
+            : null,
+        );
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
 
-  const toggleProviderEnabled = (provider) => {
-    setEnabledProviders(current => {
-      const next = new Set(current);
-      if (next.has(provider)) next.delete(provider);
-      else next.add(provider);
-      return next;
-    });
-  };
-
-  const saveEnabledProviders = async () => {
-    setSavingProviders(true);
-    try {
-      await api.updatePreference('enabled_providers', { providers: Array.from(enabledProviders) });
-      toast('Enabled providers saved', 'success');
-    } catch (error) {
-      toast(error.message || 'Could not save enabled providers', 'error');
-    } finally {
-      setSavingProviders(false);
-    }
-  };
+  const isModelEnabled = (provider, modelId) => !enabledModels[provider] || enabledModels[provider].has(modelId);
 
   const toggleModelEnabled = (provider, modelId) => {
     setEnabledModels(current => {
@@ -135,15 +112,24 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   };
 
   // Bulk version of the same logic, used by ModelTable's Select all / Deselect all — those act
-  // on whatever the search/free-only filters currently leave visible, not the whole provider.
-  const setModelsEnabled = (provider, modelIds, enabled) => {
+  // on whatever the search/provider/responding filters currently leave visible, which can span
+  // several providers at once now that the catalogue is one merged table.
+  const setRowsEnabled = (rows, enabled) => {
+    const idsByProvider = {};
+    for (const { provider, id } of rows) {
+      (idsByProvider[provider] ||= []).push(id);
+    }
     setEnabledModels(current => {
-      const baseSet = current[provider] ? new Set(current[provider]) : new Set(config?.providers?.[provider] || []);
-      for (const modelId of modelIds) {
-        if (enabled) baseSet.add(modelId);
-        else baseSet.delete(modelId);
+      const next = { ...current };
+      for (const [provider, ids] of Object.entries(idsByProvider)) {
+        const baseSet = next[provider] ? new Set(next[provider]) : new Set(config?.providers?.[provider] || []);
+        for (const modelId of ids) {
+          if (enabled) baseSet.add(modelId);
+          else baseSet.delete(modelId);
+        }
+        next[provider] = baseSet;
       }
-      return { ...current, [provider]: baseSet };
+      return next;
     });
   };
 
@@ -163,19 +149,53 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
-  const testModels = async (models) => {
-    if (!models.length) return;
+  // Rows can span multiple providers now, so one "Test" click fans out into one request per
+  // provider represented in the selection and merges every result back into `health`.
+  // One implementation for both "test whatever's visible" (ModelTable's own button, rows
+  // already capped at 40) and "test every model in the catalogue" (the section-level button
+  // below, which can hand this hundreds of rows). Splits into batches the backend will accept
+  // (MODEL_TEST_MAX_MODELS in schemas.py) and runs a bounded number of batches at a time so a
+  // full-catalogue test does not fire hundreds of requests at once.
+  const testModels = async (rows) => {
+    if (!rows.length) return;
+    const idsByProvider = {};
+    for (const { provider, id } of rows) {
+      (idsByProvider[provider] ||= []).push(id);
+    }
+    const batches = [];
+    for (const [provider, ids] of Object.entries(idsByProvider)) {
+      for (let i = 0; i < ids.length; i += MODEL_TEST_BATCH) {
+        batches.push({ provider, ids: ids.slice(i, i + MODEL_TEST_BATCH) });
+      }
+    }
     setTesting(true);
+    setTestProgress({ done: 0, total: rows.length });
+    let responded = 0;
+    let total = 0;
+    const failedProviders = new Set();
     try {
-      const result = await api.testModels(catalogProvider, models);
-      setHealth(current => ({
-        ...current,
-        [catalogProvider]: { ...(current[catalogProvider] || {}), ...result.results },
-      }));
-      const responding = Object.values(result.results).filter(item => item.ok).length;
-      toast(`${responding} of ${models.length} model${models.length === 1 ? '' : 's'} responded`, responding ? 'success' : 'error');
-    } catch (error) {
-      toast(error.message || 'Could not test these models', 'error');
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < batches.length) {
+          const batch = batches[cursor++];
+          try {
+            const result = await api.testModels(batch.provider, batch.ids);
+            setHealth(current => ({
+              ...current,
+              [batch.provider]: { ...(current[batch.provider] || {}), ...result.results },
+            }));
+            responded += Object.values(result.results).filter(item => item.ok).length;
+            total += Object.keys(result.results).length;
+          } catch {
+            failedProviders.add(batch.provider);
+          } finally {
+            setTestProgress(current => ({ done: current.done + batch.ids.length, total: current.total }));
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(TEST_BATCH_CONCURRENCY, batches.length) }, worker));
+      if (total) toast(`${responded} of ${total} model${total === 1 ? '' : 's'} responded`, responded ? 'success' : 'error');
+      if (failedProviders.size) toast(`Could not test ${[...failedProviders].map(id => PROVIDER_LABELS[id] || id).join(', ')}`, 'error');
     } finally {
       setTesting(false);
     }
@@ -198,7 +218,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     }
   };
 
-  if (loading || !draft || !enabledProviders || !enabledModels || !catalogProvider) {
+  if (loading || !draft || !enabledModels) {
     return (
       <div className="page settings-page">
         <div className="loading-grid">
@@ -214,6 +234,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const providerModels = provider => config?.providers?.[provider] || [];
   const providerReady = provider => provider === 'ollama' ? providerModels('ollama').length > 0 : providerModels(provider).length > 0;
   const modelMeta = config?.model_meta || {};
+  const allModelEntries = providers.flatMap(provider => providerModels(provider).map(id => ({ provider, id })));
 
   // Every model that could be the default, grouped by the provider that offers it. The
   // provider is never chosen by hand any more — it is read off the model you pick, and shown
@@ -234,9 +255,9 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
   const applyCustomModel = () => {
     const value = customModel.trim();
     if (!value) return;
-    // A hand-typed id belongs to whichever provider's catalogue is open — nothing else can
-    // say where it should be routed.
-    setDraft(current => ({ ...current, provider: catalogProvider, model: value }));
+    // A hand-typed id runs on whichever provider the Model dropdown above is currently set to —
+    // this field overrides the id, not the provider.
+    setDraft(current => ({ ...current, model: value }));
   };
 
   const selectReasoningMode = (mode) => {
@@ -248,11 +269,38 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
     try {
       await api.updatePreference('explore_ai', draft);
       writeStorage('explore-ai', JSON.stringify(draft));
+      // The user just took the wheel — a prior automatic switch note is stale now.
+      if (lastSwitch) {
+        setLastSwitch(null);
+        await api.updatePreference('auto_select_last_switch', { ...lastSwitch, acknowledged: true }).catch(() => {});
+      }
       toast('Default provider, model, and mode saved', 'success');
     } catch (error) {
       toast(error.message || 'Could not save settings', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleAutoSelect = async () => {
+    const next = !autoSelect;
+    setAutoSelect(next);
+    try {
+      await api.updatePreference('auto_select_model', { enabled: next });
+      toast(next ? 'Auto-select on failure is on' : 'Auto-select on failure is off', 'success');
+    } catch (error) {
+      setAutoSelect(!next);
+      toast(error.message || 'Could not save the auto-select setting', 'error');
+    }
+  };
+
+  const dismissLastSwitch = async () => {
+    const record = lastSwitch;
+    setLastSwitch(null);
+    try {
+      await api.updatePreference('auto_select_last_switch', { ...record, acknowledged: true });
+    } catch {
+      // Hiding the note for this session is enough if the write fails.
     }
   };
 
@@ -262,7 +310,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
         <div>
           <span className="kicker">SETTINGS</span>
           <h1>Providers & models</h1>
-          <p>{BRAND.name} answers with one model everywhere — Ask, Ticket Analysis and Private Chats. Choose it here.</p>
+          <p>{BRAND.name} answers with one model everywhere — Ask and Private Chats. Choose it here.</p>
         </div>
       </div>
 
@@ -308,6 +356,24 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
           <span>Runs on <strong>{PROVIDER_LABELS[draft.provider] || draft.provider}</strong> — taken from the model you picked.</span>
         </div>
 
+        {lastSwitch && (
+          <div className="settings-auto-switch-note">
+            <span>
+              Auto-switched to <strong>{PROVIDER_LABELS[lastSwitch.provider] || lastSwitch.provider} / {lastSwitch.model}</strong>
+              {' '}— {lastSwitch.previous_model} wasn't responding{lastSwitch.timestamp ? ` at ${displayTime(lastSwitch.timestamp)}` : ''}. It is now the default; this note just explains the change.
+            </span>
+            <button type="button" onClick={dismissLastSwitch}>Got it</button>
+          </div>
+        )}
+
+        <label className="settings-auto-select-toggle">
+          <input type="checkbox" checked={autoSelect} onChange={toggleAutoSelect} />
+          <span>
+            <strong>Auto-select a working model if the default fails</strong>
+            <small>If the saved default errors out during a request, Locus retries once with the fastest model that passed a health check and, if that works, keeps it as the new default. Untested or disabled models are never chosen.</small>
+          </span>
+        </label>
+
         {!providerReady(draft.provider) && (
           <div className="settings-hint">
             <Info size={14} />
@@ -341,86 +407,46 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
 
       <section className="settings-section">
         <div className="settings-section-head">
-          <h3>Available providers & models</h3>
+          <div className="settings-section-head-row">
+            <h3>Available models</h3>
+            <button
+              type="button"
+              className="settings-test-all-btn"
+              onClick={() => testModels(allModelEntries)}
+              disabled={testing || allModelEntries.length === 0}
+              title={`Send one tiny prompt to every model across every provider (${allModelEntries.length} total) and tag the ones that answer. Runs in batches, so this takes a while.`}
+            >
+              {testing
+                ? <><Loader2 size={13} className="spin" /> Testing {testProgress.done}/{testProgress.total}...</>
+                : `Test all ${allModelEntries.length} models`}
+            </button>
+          </div>
           <p className="settings-hint-text">Housekeeping only: what stays in this catalogue. Unticking something never changes the default above.</p>
         </div>
-        <div className="settings-provider-grid">
-          {providers.map(provider => {
-            const meta = PROVIDER_META[provider];
-            const ready = providerReady(provider);
-            const browsing = catalogProvider === provider;
-            const enabled = enabledProviders.has(provider);
-            return (
-              <div key={provider} className={`settings-provider-card ${browsing ? 'active' : ''} ${enabled ? '' : 'disabled'}`}>
-                <button
-                  type="button"
-                  className="settings-provider-card-select"
-                  onClick={() => setCatalogProvider(provider)}
-                >
-                  <span className="settings-provider-icon">{meta.icon}</span>
-                  <span className="settings-provider-info">
-                    <strong>{PROVIDER_LABELS[provider]}</strong>
-                    <small>{meta.blurb}</small>
-                  </span>
-                  <span className={`settings-provider-status ${ready ? 'ready' : 'idle'}`}>
-                    {ready ? <CircleCheck size={13} /> : <AlertTriangle size={13} />}
-                    {ready ? `${providerModels(provider).length} model${providerModels(provider).length === 1 ? '' : 's'}` : 'Not connected'}
-                  </span>
-                </button>
-                <label className="settings-provider-toggle">
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={() => toggleProviderEnabled(provider)}
-                  />
-                  <span>Show in {BRAND.name}</span>
-                </label>
-              </div>
-            );
-          })}
-        </div>
+        <ModelTable
+          entries={allModelEntries}
+          modelMeta={modelMeta}
+          providerOptions={providers.map(provider => ({
+            id: provider,
+            label: PROVIDER_LABELS[provider] || provider,
+            icon: PROVIDER_META[provider]?.icon,
+            count: providerModels(provider).length,
+            ready: providerReady(provider),
+            envHint: PROVIDER_META[provider]?.envHint,
+          }))}
+          selectedProvider={draft.provider}
+          selectedModel={draft.model}
+          onSelect={(provider, model) => { setDraft(current => ({ ...current, provider, model })); setCustomModel(''); }}
+          isEnabled={isModelEnabled}
+          onToggleEnabled={toggleModelEnabled}
+          onSetEnabled={setRowsEnabled}
+          health={health}
+        />
         <div className="settings-save-bar settings-save-bar-inline">
-          <button type="button" className="btn-primary" onClick={saveEnabledProviders} disabled={savingProviders}>
-            {savingProviders ? 'Saving...' : 'Save enabled providers'}
+          <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>
+            {savingModels ? 'Saving...' : 'Save enabled models'}
           </button>
         </div>
-
-        <div className="settings-model-header">
-          <h4>{PROVIDER_LABELS[catalogProvider]} models</h4>
-          <label className="settings-provider-filter">
-            <span>Provider</span>
-            <select value={catalogProvider} onChange={e => setCatalogProvider(e.target.value)}>
-              {providers.map(provider => (
-                <option key={provider} value={provider}>
-                  {PROVIDER_LABELS[provider]} ({providerModels(provider).length})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {providerModels(catalogProvider).length === 0 ? (
-          <p className="settings-empty-note">No models detected yet for {PROVIDER_LABELS[catalogProvider]}.</p>
-        ) : (
-          <>
-            <ModelTable
-              models={providerModels(catalogProvider)}
-              modelMeta={modelMeta}
-              selectedModel={catalogProvider === draft.provider ? draft.model : ''}
-              onSelect={model => { setDraft(current => ({ ...current, provider: catalogProvider, model })); setCustomModel(''); }}
-              health={health[catalogProvider] || {}}
-              onTest={testModels}
-              testing={testing}
-              enabledModelIds={enabledModels[catalogProvider] || null}
-              onToggleEnabled={id => toggleModelEnabled(catalogProvider, id)}
-              onSetEnabled={(ids, enabled) => setModelsEnabled(catalogProvider, ids, enabled)}
-            />
-            <div className="settings-save-bar settings-save-bar-inline">
-              <button type="button" className="btn-primary" onClick={saveEnabledModels} disabled={savingModels}>
-                {savingModels ? 'Saving...' : 'Save enabled models'}
-              </button>
-            </div>
-          </>
-        )}
       </section>
 
       {limits && (
@@ -444,7 +470,7 @@ export function SettingsPage({ toast, authRequired = false, onSignOut }) {
       )}
 
       <section className="settings-section">
-        <h3>Default reasoning mode</h3>
+        <h3>Default answer effort</h3>
         <div className="settings-mode-grid">
           {REASONING_MODE_META.map(mode => {
             const Icon = mode.icon;

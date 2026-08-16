@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Compass, FileText, Folder, Home, LockKeyhole, Search, Settings2 } from 'lucide-react';
+import { Compass, FileText, Folder, Home, LockKeyhole, Search, Settings2 } from 'lucide-react';
 
 function formatFileSize(bytes = 0) {
   const size = Number(bytes) || 0;
@@ -17,7 +17,6 @@ const pages = [
   { id: 'home', label: 'Home', icon: Home, keywords: 'dashboard welcome' },
   { id: 'library', label: 'Library', icon: Folder, keywords: 'stores files upload library' },
   { id: 'ask', label: 'Ask', icon: Compass, keywords: 'chat ask ai question' },
-  { id: 'ticket-analysis', label: 'Patterns', icon: BarChart3, keywords: 'ticket pattern analysis incidents pipeline okf hdbscan clustering' },
   { id: 'secret-chat', label: 'Private', icon: LockKeyhole, keywords: 'secret private encrypted chat' },
   { id: 'settings', label: 'Settings', icon: Settings2, keywords: 'settings provider model default config preferences' },
 ];

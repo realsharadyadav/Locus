@@ -59,58 +59,12 @@ class ChatRequest(BaseModel):
     model: str | None = Field(default=None, min_length=1, max_length=200)
     provider: str | None = None
     allow_general_knowledge: bool = True
-    reasoning_mode: Literal["light", "thinking", "deep_summary", "ticket_analysis", "web_research", "unrestricted"] = "light"
+    reasoning_mode: Literal["light", "thinking", "deep_summary", "web_research"] = "light"
     web_search: bool = False
     web_source_limit: int = Field(default=200, ge=3, le=200)
     file_ids: list[int] | None = None
 
     _check_provider = field_validator("provider")(_require_known_provider)
-
-
-class TicketAnalysisRequest(BaseModel):
-    fileId: int
-    maxGroups: int | None = Field(default=None, ge=1, le=100)
-    minGroupSize: int | None = Field(default=None, ge=1, le=1000)
-    useLlmFallback: bool = False
-    model: str | None = Field(default=None, min_length=1, max_length=200)
-    embeddingMethod: Literal["tfidf", "neural_hash", "hybrid"] = "tfidf"
-    clusteringMethod: Literal["taxonomy_semantic", "agglomerative", "kmeans", "hdbscan_lite", "google_kwikbucks"] = "taxonomy_semantic"
-    problemGroupStrategy: Literal["taxonomy_then_cluster", "cluster_only", "taxonomy_only", "okf_first", "cluster_first", "okf_only"] = "taxonomy_then_cluster"
-    similarityThreshold: float | None = Field(default=None, ge=0.05, le=0.95)
-    targetClusters: int | None = Field(default=None, ge=2, le=200)
-    hdbscanMinSamples: int | None = Field(default=None, ge=1, le=200)
-    representativeCount: int | None = Field(default=None, ge=1, le=25)
-    includeTelemetry: bool = True
-    includeDebugSamples: bool = True
-    useLlmLabels: bool = False
-    suggestTaxonomyRules: bool = False
-    llmProvider: str | None = None
-    pauseOkfTaxonomy: bool = False
-    taxonomyRules: list[dict[str, Any]] | None = None
-
-    _check_provider = field_validator("llmProvider")(_require_known_provider)
-
-
-class TicketAnalysisHistoryCreate(BaseModel):
-    fileId: int
-    fileName: str = Field(min_length=1, max_length=255)
-    manifest: dict[str, Any]
-    groups: list[dict[str, Any]]
-    taxonomySuggestions: list[dict[str, Any]] = []
-    config: dict[str, Any] = {}
-
-
-class TicketAnalysisHistoryRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    file_id: int
-    file_name: str
-    manifest: dict[str, Any]
-    groups: list[dict[str, Any]] = []
-    taxonomy_suggestions: list[dict[str, Any]] = []
-    config: dict[str, Any] = {}
-    created_at: datetime
 
 
 class ChatSource(BaseModel):
@@ -144,7 +98,7 @@ class SuggestionsRequest(BaseModel):
     question: str = Field(min_length=1, max_length=8000)
     # generate_followup_questions() only ever uses the first 4000 chars of this (see
     # answer_excerpt in llm.py), so this ceiling exists purely to reject abusive payloads, not
-    # to gate normal answers. 20000 was tight enough that a genuinely long unrestricted/web
+    # to gate normal answers. 20000 was tight enough that a genuinely long web
     # research/deep_summary answer (tens of thousands of chars once sources and formatting are
     # included) got a 422 here before generate_followup_questions ever ran — invisible to the
     # try/except in the endpoint below, since Pydantic validation happens before that code runs

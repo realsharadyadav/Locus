@@ -28,7 +28,6 @@ Major frontend surfaces:
 - LLM providers and calls: `backend/app/llm.py`
 - Reasoning mode config: `backend/app/modes.py`
 - Deep summary: `backend/app/deep_summary.py`
-- Ticket analysis: `backend/app/ticket_analysis.py`
 - Local semantic retrieval: `backend/app/vector_store.py`
 - Diagnostics logging: `backend/app/diagnostics.py`
 

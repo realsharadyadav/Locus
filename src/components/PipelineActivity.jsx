@@ -11,7 +11,7 @@ import { parseServerTime } from '../utils';
 import { GitBranchIcon } from './icons';
 
 export function PipelineActivity({ pipeline, model, provider, events, startedAt, reasoningMode, webSearch, fileCount, question, liveLlmHits = 0, liveWebQueries = 0, liveTotalTokens = 0 }) {
-  const directModelChat = !webSearch && ((reasoningMode === 'light' && fileCount === 0) || reasoningMode === 'unrestricted');
+  const directModelChat = !webSearch && reasoningMode === 'light' && fileCount === 0;
   const responseStages = [
     ['understanding', 'Plan', BrainCircuit, 'Understanding intent'],
     ['gathering', 'Gather', Database, 'Collecting evidence'],
@@ -53,8 +53,8 @@ export function PipelineActivity({ pipeline, model, provider, events, startedAt,
     : 0;
   const progress = Math.max(8, ((activeIndex + .35) / stages.length) * 100);
   const modeLabel = webSearch
-    ? reasoningMode === 'unrestricted' ? 'Unrestricted Web Research' : 'Web Research'
-    : directModelChat ? 'Direct chat' : reasoningMode === 'unrestricted' ? 'Unrestricted' : reasoningMode === 'ticket_analysis' ? 'Ticket Analysis' : reasoningMode === 'deep_summary' ? 'Deep Summary' : reasoningMode === 'thinking' ? 'Full library' : reasoningMode === 'web_research' ? 'Web Research' : 'Focused retrieval';
+    ? 'Web Research'
+    : directModelChat ? 'Direct chat' : reasoningMode === 'deep_summary' ? 'Max effort' : reasoningMode === 'thinking' ? 'High effort' : reasoningMode === 'web_research' ? 'Web Research' : 'Normal effort';
   const llmHitKey = event => {
     const preview = event.payload_preview || event.detail || '';
     const normalizedPreview = preview.toLowerCase();

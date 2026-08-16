@@ -2,7 +2,7 @@
 
 Settings is the only place a provider and model are chosen; it stores the choice under the
 `explore_ai` user preference. No other module carries its own picker any more, so every entry
-point that needs a provider/model resolves it here — Ask, Ticket Analysis and the private-chat
+point that needs a provider/model resolves it here — Ask and the private-chat
 copilot alike — and falls back to the `.env` defaults when Settings has never been saved.
 """
 

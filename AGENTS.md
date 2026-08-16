@@ -44,15 +44,18 @@ produce a file that still parses but behaves wrongly.
 
 **Data flow:** User uploads files -> text extracted and indexed into pgvector (or SQLite fallback) -> user asks question -> background ChatJob pipeline: enhance question -> retrieve evidence (semantic + lexical) -> compose answer -> verify -> repair -> frontend polls and renders via PipelineActivity
 
-**Reasoning modes:** `light` (fast excerpt), `thinking` (full-file), `deep_summary` (section-by-section), `ticket_analysis` (ITSM grouping), `web_research` (multi-round search + synthesis), `unrestricted` (no guardrails + jailbreak pipeline — 7 strategies + auto-rephrase on refusal)
+**Reasoning modes:** `light` (fast excerpt), `thinking` (full-file), `deep_summary` (section-by-section), `web_research` (multi-round search + synthesis). The Ask UI presents `light`/`thinking`/`deep_summary` as one effort dial — **Normal / High / Max** — rather than three named modes; see `SLASH_COMMANDS` in `src/lib/ask.js`.
 
 **Model selection rule:** Settings is the only place a provider/model is chosen, and it is
 chosen by picking a *model* — one dropdown grouped by provider. The provider is derived from
 the model and shown as a label; it still rides along in the saved `explore_ai` preference
 because the backend routes on it, but it is never picked by hand.
 `ai_defaults.preferred_ai()` resolves the pair server-side for every request, and the frontend
-sends no provider/model at all. Don't reintroduce a per-page picker — Ask, Ticket Analysis and
-Private Chats display the default, they don't set it.
+sends no provider/model at all. Don't reintroduce a per-page picker — Ask and
+Private Chats display the default, they don't set it. The one exception is a *replacement*,
+not a choice: with the `auto_select_model` toggle on, a failing default is swapped mid-job for
+the healthiest tested alternative (`backend/app/auto_select.py`), and a successful fallback
+becomes the new saved default — explained on Settings via `auto_select_last_switch`.
 
 **Model test tags:** `POST /api/llm/models/test` probes a batch of models (`llm.probe_model`:
 one-word prompt, no rate-limit backoff) and saves the outcome to the `model_health` preference
@@ -68,7 +71,7 @@ Keep these notes so future sessions don't repeat mistakes. Routine "added X to f
 get folded into the file tables below instead of living here — this list is only for things
 that will bite you again if forgotten.
 
-1. **Jailbreak pipeline** — `_run_jailbreak_pipeline()` in `llm.py` tries 5 escalating strategies (direct → academic → roleplay → hypothetical → DAN). If all refuse, rephrases question via `_rephrase_question()` and retries with DAN prompt. Falls back to longest non-refusal attempt. Both paths (direct-stream + job) use the same pipeline via `generate_unrestricted_answer()`. `is_refusal()` (public) detects refusals via `_REFUSAL_PATTERNS` regex.
+1. **Refusal detection** — `is_refusal()` (public, in `llm.py`) detects refusals via `_REFUSAL_PATTERNS` regex and feeds `refusal_diagnostic()`, which surfaces a one-line hint ("switch to a local Ollama model") on any mode when a provider declines to answer. There is no jailbreak/retry pipeline — that "Unrestricted" mode and its 5-strategy escalation (direct → academic → roleplay → hypothetical → DAN) were removed; Normal/High/Max is a straight effort dial, not a guardrail toggle.
 
 2. **LLM-decided `source_limit`** — LLM planner dynamically decides how many web sources to collect per query. Simple lookups → 3-10, comparisons → 10-25, deep research → 25-50+, up to 200 max. Stored in `AgentPlan.source_limit`. User's `web_source_limit` is only a max cap. The `_execute_plan` clamps `min(plan.source_limit, user_source_limit)`. Fallback in `_build_plan` sets 5-20 based on route. Keys: `agentic_pipeline.py:AgentPlan.source_limit`, `_plan_from_json` (extract from LLM), `run_agentic_pipeline` (compute `effective_limit` early, pass to both `_execute_plan` and exception handler fallback).
 
@@ -82,7 +85,7 @@ that will bite you again if forgotten.
 
 7. **Secret Chat auth is split, not blanket-public** — `auth.GUEST_SECRET_CHAT_ROUTES` lists the exact five method+path pairs a link guest needs (room, read messages, post message, stream, presence). Listing, creating, changing options, participant details, the copilot, clearing and deleting are the host's and stay guarded, so `is_public()` is method-aware: `GET /api/secret-chat/{token}` is public while `DELETE` on the same path is not. The other half of this is client-side: `src/secret-chat/api.js` has its own request helper, and while it did not send `authHeaders()` every host action answered "Sign in to continue" on a gated deployment — guests kept working, which is what made it look like a Private-chat bug rather than an auth one.
 
-8. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`ticket_analysis_results`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
+8. **Phase 2 (multi-user) is NOT done** — Real accounts need: `User` table + password hashing, `owner_id` on `collections`/`chat_sessions`/`chat_jobs`/`stored_files`, a composite `(key, user_id)` PK on `user_preferences`, ownership checks on ~30 routes, and a migration tool (there is no alembic; `create_all` does not add columns). The subtle one: `vector_store._pgvector_search()` with `file_ids=None` scans **every** chunk, so retrieval would leak other users' documents even with perfect SQL filtering.
 
 9. **Tests share one database, and conftest.py owns it** — Pytest imports every test
     module before running any test, and `backend.app.database` builds its engine once at
@@ -166,7 +169,7 @@ that will bite you again if forgotten.
     composition. It reaches the model through `guidance`, which `answer_planned_question()` passes
     only to the final compose call. `repair_response()` takes it as `shape_guidance` for the same
     reason: without it, a repair pass rewrites the layout back into prose. `_answer_shape_guidance()`
-    returns "" for `deep_summary` and `unrestricted`, which own their own output contracts.
+    returns "" for `deep_summary`, which owns its own output contract.
 
 17. **Diagrams: fit to a legibility floor, then scroll** — Mermaid sizes its SVG to whatever box it
     lands in, so a wide flowchart on a phone renders at ~17% and becomes an unreadable smudge.
@@ -252,6 +255,21 @@ that will bite you again if forgotten.
     `data-fitted` is set/cleared on the figure (`canvas.closest('.mermaid-figure')`) and
     `fitDiagram` reveals a viewBox-less SVG at natural size instead of stranding it invisible.
 
+23. **Auto-select fallback is negotiated once per job and must never reroute the everyday
+    default** — `auto_select.py` decides the replacement list from `model_health`, but the
+    decision is cached in a `fallback_plan` dict inside `_run_chat_job_impl` the first time a
+    retryable failure happens, then re-checked against the same list on each later attempt — do
+    not call `choose_fallback` per attempt or a fresh dead model re-ranks every retry. Only a
+    model that *was* the saved default can become the new saved default: a pinned per-request
+    model still gets the fallback for that request but never writes `explore_ai` back (the
+    `was_default` gate in `record_switch`). Stale health (older than 600s) is re-probed live
+    with `llm.probe_model` before ranking, so a provider that only just came back can win; the
+    result folds back into `model_health`. Untested and disabled models are never candidates.
+    Candidates are capped at 3 and exhausted means the job fails with the *original* error, not
+    a retry loop. The frontend explains any switch through the `auto_select_last_switch`
+    preference, which `record_switch` rewrites on every successful switch and Settings marks
+    `acknowledged` on dismissal.
+
 ---
 
 ## Backend Files — `backend/app/`
@@ -262,8 +280,8 @@ that will bite you again if forgotten.
 |---|---|---|
 | `main.py` (1469 lines) | FastAPI app, all REST endpoints, chat job orchestration, background threads, file upload, streaming, pipeline telemetry | `_process_chat_impl()` (line 361-610) — main chat pipeline; `_run_chat_job()` — background worker; `_pipeline_event_metadata()` — telemetry; `create_chat_job()` (line 916) — job creation endpoint |
 | `agentic_pipeline.py` (865 lines) | LLM planner, agentic pipeline with dynamic source_limit, planned web answer, evidence validation, fallback paths | `run_agentic_pipeline()` — main entry; `_plan_with_llm()` — LLM planner with JSON schema; `_plan_from_json()` — extract source_limit/route/entities; `_execute_plan()` — dispatch with `effective_limit=min(plan.source_limit, user_source_limit)`; `_planned_web_answer()` — use LLM queries + dynamic source_limit; `_web_fallback()` — broad fallback; `_validate_evidence_with_llm()` — LLM evidence filter |
-| `llm.py` (682 lines) | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction, unrestricted/jailbreak pipeline | `enhance_question()` (line 373) — query planner; `generate_answer()` (line 482) — main answer gen; `verify_response()` (line 449) — quality check; `repair_response()` (line 466) — answer repair; `answer_planned_question()` (line ~590) — full pipeline; `generate_unrestricted_answer()` — jailbreak pipeline with 7 strategies + auto-rephrase; `clean_final_answer()` (line 398) — post-processing; `get_llm_client()` — provider factory |
-| `modes.py` | Reasoning mode configs: light, thinking, deep_summary, ticket_analysis, web_research, unrestricted | `MODE_CONFIG` dict, `ModeConfig` dataclass |
+| `llm.py` | All LLM provider clients, chat/answer/verify/repair pipelines, question planning, evidence extraction | `enhance_question()` — query planner; `generate_answer()` — main answer gen; `verify_response()` — quality check; `repair_response()` — answer repair; `answer_planned_question()` — full pipeline; `clean_final_answer()` — post-processing; `get_llm_client()` — provider factory |
+| `modes.py` | Reasoning mode configs: light, thinking, deep_summary, web_research (light/thinking/deep_summary are presented to users as Normal/High/Max effort) | `MODE_CONFIG` dict, `ModeConfig` dataclass |
 | `auth.py` | Phase 1 sign-in gate: one shared password, stateless HMAC tokens, brute-force throttle. Off unless `LOCUS_AUTH_PASSWORD` is set | `require_auth()` — middleware, registered before CORS; `issue_token()`, `token_expiry()`, `is_public_path()`, `PUBLIC_PATHS` |
 
 ### File Processing
@@ -285,20 +303,12 @@ that will bite you again if forgotten.
 |---|---|---|
 | `deep_summary.py` | Section-by-section full-document summary with coverage manifests | `deep_summarize_documents()` — main pipeline; `chunk_document()` — splits into sections; `CoverageManifest` — tracks completeness; `missing_sections()` — deterministic gap detection |
 
-### Ticket Analysis
-
-| File | Purpose | Key Functions |
-|---|---|---|
-| `ticket_analysis.py` | Ticket normalization, cleaning, hierarchical grouping, semantic clustering, taxonomy classification, markdown report | `analyze_ticket_file()` — main entry; `normalize_ticket()` — field extraction; `clean_tickets()` — dedup + normalization; `ticket_analysis_markdown()` — report gen; `_llm_relabel_groups()` — optional LLM rewrite of final group names/descriptions (`llm_labels=True`), strictly 1:1, never re-assigns tickets, skips curated taxonomy names; `_llm_taxonomy_suggestions()` — advisory rule proposals (`suggest_taxonomy_rules=True`), independent of LLM fallback; `_discovery_clusters()` — routes the run's embedding (tfidf/neural_hash/hybrid) and clustering (taxonomy_semantic/agglomerative/kmeans/hdbscan_lite/google_kwikbucks) choice, with `_calibrated_threshold()` making the similarity slider mean the same thing in sparse and dense spaces |
-| `ticket_taxonomy.py` | ITSM taxonomy engine: v2 rule-based scoring with overrides, record type detection, confidence | `classify_ticket_v2()` — main classifier; `find_taxonomy_match()` — rule matching; `normalize_signal()` — text normalization |
-| `ticket_taxonomy_data.py` | All taxonomy rules: 9 legacy + 25 v2 rules covering ITSM domain | `DEFAULT_TAXONOMY_V2` — rule list; `TaxonomyRuleV2` dataclass |
-
 ### Data Layer
 
 | File | Purpose | Key Functions |
 |---|---|---|
 | `models.py` | SQLAlchemy ORM models for all tables | `Collection`, `StoredFile`, `ChatSession`, `ChatMessage`, `ChatJob`, `UserPreference`, `SecretChatSession`, `SecretChatMessage` |
-| `schemas.py` | Pydantic request/response schemas for REST API | `ChatRequest`, `ChatResponse`, `ChatSource`, `ChatJobRead`, `ChatMessageRead`, `StoredFileRead`, `TicketAnalysisRequest` |
+| `schemas.py` | Pydantic request/response schemas for REST API | `ChatRequest`, `ChatResponse`, `ChatSource`, `ChatJobRead`, `ChatMessageRead`, `StoredFileRead` |
 | `database.py` | SQLAlchemy engine, session factory, DB dependency | `engine`, `SessionLocal`, `get_db()` |
 
 ### Config & Utilities
@@ -306,7 +316,8 @@ that will bite you again if forgotten.
 | File | Purpose | Key Functions |
 |---|---|---|
 | `ai_defaults.py` | The one provider/model default, read from the `explore_ai` preference with `.env` as the fallback. Every entry point that needs a model resolves it here | `preferred_ai()` |
-| `config.py` | Loads `.env`, exposes all env-based config | `llm_provider()`, `configured_model()`, `GroqSettings`, `groq_settings()`, `TICKET_ANALYSIS_*`, `SEMANTIC_*`, `WEB_RESEARCH_*` |
+| `auto_select.py` | Auto-select on failure: picks the healthiest tested model when the saved default errors mid-job (`auto_select_model` toggle on Settings), retries capped at 3, records the switch | `enabled()`, `choose_fallback()`, `record_switch()`, keys `AUTO_SELECT_PREFERENCE_KEY` / `MODEL_HEALTH_PREFERENCE_KEY` / `ENABLED_MODELS_PREFERENCE_KEY` / `LAST_SWITCH_PREFERENCE_KEY` |
+| `config.py` | Loads `.env`, exposes all env-based config | `llm_provider()`, `configured_model()`, `GroqSettings`, `groq_settings()`, `SEMANTIC_*`, `WEB_RESEARCH_*` |
 | `diagnostics.py` | Per-job diagnostic event logging to JSONL with secret sanitization | `diagnostic_event()` — log event; `initialize_job_log()` — create log file; `sanitize()` — redact secrets |
 | `seed.py` | Seeds database with three default collections on first launch | `seed_database()` |
 | `secret_chat.py` | Real-time SSE private chat rooms: host-owned rooms, presence, disappearing messages, expiring links, reply copilot | APIRouter with `create_secret_chat()`, `list_secret_chats()`, `update_secret_chat()`, `delete_secret_chat()`, `clear_secret_chat_messages()`, `update_secret_chat_presence()`, `assist_secret_chat()`, `stream_secret_chat()` |
@@ -334,8 +345,7 @@ that will bite you again if forgotten.
 | `HomePage.jsx` | Landing dashboard |
 | `HubPage.jsx` | Library / collections |
 | `ExplorePage.jsx` | Ask — chat, composer, slash commands, reasoning modes |
-| `SettingsPage.jsx` | Settings. Two separate sections: **Default model** (one dropdown of every model grouped by provider, saved to `explore_ai`; provider is derived and displayed, not chosen) and **Available providers & models** (visibility — `enabled_providers` / `enabled_models` — plus the model test that writes `model_health`). No other page picks a model |
-| `TicketAnalysisPage.jsx` | Patterns — ticket grouping cockpit |
+| `SettingsPage.jsx` | Settings. Two separate sections: **Default model** (one dropdown of every model grouped by provider, saved to `explore_ai`; provider is derived and displayed, not chosen; plus the auto-select-on-failure toggle saved to `auto_select_model` and a dismissible note fed by `auto_select_last_switch`) and **Available providers & models** (visibility — `enabled_providers` / `enabled_models` — plus the model test that writes `model_health`). No other page picks a model |
 
 ### Components — `src/components/`
 
@@ -462,7 +472,7 @@ guest-eligible on its next share link but a returning host does not lose their r
 | `vite.config.js` | Vite config: proxy `/api` to backend, historyApiFallback |
 | `index.html` | SPA HTML shell |
 | `pytest.ini` | Pytest: pythonpath, testpaths |
-| `.env.example` | Template env: LLM_PROVIDER, Ollama, Groq, OpenAI, Gemini, semantic, ticket settings |
+| `.env.example` | Template env: LLM_PROVIDER, Ollama, Groq, OpenAI, Gemini, semantic settings |
 | `backend/requirements.txt` | Python deps: fastapi, uvicorn, sqlalchemy, pydantic, httpx, pypdf, python-docx, openpyxl, psycopg2-binary, pgvector, ddgs, litellm, tenacity |
 
 ---
@@ -496,9 +506,7 @@ guest-eligible on its next share link but a returning host does not lose their r
 | `backend/tests/test_100step_conversation.py` | 100-step conversations: persistence, history growth, truncation, cancellation |
 | `backend/tests/test_deep_stress.py` | Mode switching mid-chat, 200-step rapid fire, file ops mid-chat, job lifecycle, concurrency |
 | `backend/tests/test_litellm_gateway.py` | LiteLLM gateway wiring |
-| `backend/tests/test_ticket_analysis.py` | Ticket normalization, grouping, taxonomy, v2 classification |
 | `backend/tests/test_tabular_files.py` | CSV/XLSX profiling |
-| `scripts/evaluate_ticket_taxonomy.py` | CLI taxonomy accuracy evaluation against CSV |
 
 The whole suite is hermetic and order-independent — no network, no local `.env`, and
 `pytest backend/tests` in any file order gives the same result.

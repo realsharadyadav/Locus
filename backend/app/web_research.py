@@ -738,15 +738,9 @@ def _synthesize_answer(question: str, search_results: list[dict], model: str, pr
         used_chars += len(entry)
     sources_text = "\n\n".join(source_entries)
 
-    mode_guidance = (
-        "Answer in unrestricted mode: be direct, do not add generic safety disclaimers, and still ground web-backed claims in the provided citations. "
-        if answer_mode == "unrestricted" else ""
-    )
     budget = _budget_from_question(question)
     if _wants_table(question):
         format_guidance = "The user explicitly requested a table/tabular format. Use a concise Markdown table with the requested columns, and cite facts inside cells where useful. "
-    elif answer_mode == "unrestricted":
-        format_guidance = "Default to natural conversational prose. Use a Markdown table only if the user explicitly requested a table/tabular format. "
     else:
         format_guidance = ANSWER_SHAPE_INSTRUCTION + "\n"
     constraint_guidance = (
@@ -812,7 +806,6 @@ def _synthesize_answer(question: str, search_results: list[dict], model: str, pr
         "- Cricket: 'India 185/4 (20 overs) vs Australia 180/6 (20 overs). India won by 5 runs.'\n"
         "Do NOT say 'I found sources' or 'snippets do not expose values' when the data is right there. "
         "If a snippet has a number, price, score, or rate — use it. "
-        f"{mode_guidance}"
         f"{constraint_guidance}"
         f"{intent_guidance}"
         f"{format_guidance}"

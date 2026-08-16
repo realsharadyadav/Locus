@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.app.database import SessionLocal
-from backend.app.llm import clean_final_answer, is_refusal, _rephrase_question, stream_answer
+from backend.app.llm import clean_final_answer, is_refusal, stream_answer
 from backend.app.main import app
 import backend.app.main as main_module
 import backend.app.web_research as web_research_module
@@ -365,9 +365,6 @@ class TestWebSearchAutoDetect:
     def test_auto_web_search_does_not_trigger_on_generic_questions(self, question):
         assert main_module.should_auto_web_search(question, "light") is False
 
-    def test_auto_web_search_disabled_for_ticket_analysis(self):
-        assert main_module.should_auto_web_search("search for latest tickets", "ticket_analysis") is False
-
     def test_auto_web_search_disabled_for_deep_summary(self):
         assert main_module.should_auto_web_search("search for current trends", "deep_summary") is False
 
@@ -546,16 +543,6 @@ class TestWebSearchIntegration:
             r = chat(c, question="Search the latest React 19 features", reasoning_mode="light")
             assert r["answer"] == "Auto web answer"
 
-    def test_unrestricted_web_search_mode(self, monkeypatch):
-        captured = {}
-        def fake_web(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
-            captured["answer_mode"] = answer_mode
-            return {"answer": "Unrestricted web answer", "sources": [], "model": model}
-        monkeypatch.setattr("backend.app.main.web_research", fake_web)
-        with TestClient(app) as c:
-            chat(c, question="Research freely", reasoning_mode="unrestricted", web_search=True)
-            assert captured["answer_mode"] == "unrestricted"
-
     def test_web_search_with_conversation_history(self, monkeypatch):
         captured = {}
         monkeypatch.setattr("backend.app.main.run_agentic_pipeline", fake_agentic(captured))
@@ -605,7 +592,9 @@ class TestHistoryManagement:
             return {"enhanced_question": question, "subquestions": [], "answer_format": "Clear answer", "supporting_details": [], "visualization": "none", "completeness_criteria": ["Answer"], "requires_full_relevant_files": False, "aggregation_operation": "none", "entity_type": None}
         monkeypatch.setattr("backend.app.main.enhance_question", fake_enhance)
         with TestClient(app) as c:
-            chat(c, question="first", reasoning_mode="thinking", file_ids=[])
+            # file_ids=None (whole library, empty here), not file_ids=[] (explicit no-files) —
+            # the latter now routes thinking mode to web research instead of enhance_question.
+            chat(c, question="first", reasoning_mode="thinking", file_ids=None)
             assert captured["history_len"] == 0
 
     def test_long_conversation_with_files(self, monkeypatch):
@@ -806,7 +795,7 @@ class TestModeSwitching:
 
     def test_mode_configurations_are_distinct(self):
         modes = list(MODE_CONFIG.keys())
-        assert len(modes) == 6
+        assert len(modes) == 4
         # At least light should differ from thinking in key ways
         assert MODE_CONFIG["light"].inspect_all_chunks != MODE_CONFIG["thinking"].inspect_all_chunks
         assert MODE_CONFIG["light"].use_quality_layer != MODE_CONFIG["thinking"].use_quality_layer
@@ -830,18 +819,8 @@ class TestModeSwitching:
         assert cfg.inspect_all_chunks is True
         assert cfg.use_quality_layer is True
 
-    def test_ticket_analysis_mode_config(self):
-        cfg = MODE_CONFIG["ticket_analysis"]
-        assert cfg.inspect_all_chunks is True
-        assert cfg.extract_evidence_from_every_chunk is False
-
     def test_web_research_mode_config(self):
         cfg = MODE_CONFIG["web_research"]
-        assert cfg.use_initial_retrieval_only is True
-        assert cfg.inspect_all_chunks is False
-
-    def test_unrestricted_mode_config(self):
-        cfg = MODE_CONFIG["unrestricted"]
         assert cfg.use_initial_retrieval_only is True
         assert cfg.inspect_all_chunks is False
 
@@ -849,7 +828,9 @@ class TestModeSwitching:
         verify_calls = []
         monkeypatch.setattr("backend.app.main.verify_response", lambda *a, **k: verify_calls.append(1) or {"complete": True, "missing": [], "quality_score": 100})
         with TestClient(app) as c:
-            chat(c, question="Think about this", reasoning_mode="thinking", file_ids=[])
+            # file_ids=None, not [] — an explicit empty selection at High effort now researches
+            # the web instead of running the local quality-layer pipeline this test checks.
+            chat(c, question="Think about this", reasoning_mode="thinking", file_ids=None)
             assert verify_calls
 
     def test_light_mode_no_quality_layer(self, monkeypatch):
@@ -860,24 +841,7 @@ class TestModeSwitching:
             chat(c, question="Quick question", reasoning_mode="light", file_ids=[])
             assert verify_calls == []
 
-    def test_unrestricted_mode_with_files(self, monkeypatch):
-        monkeypatch.setattr("backend.app.main.generate_unrestricted_answer", lambda *a, **k: ("unrestricted answer", "m"))
-        with TestClient(app) as c:
-            s = c.post("/api/collections", json={"title": "U"}).json()
-            f = _upload_text(c, s["id"], "doc.txt", "Some content")
-            r = chat(c, question="Tell me everything", reasoning_mode="unrestricted", file_ids=[f["id"]])
-            assert r["answer"] == "unrestricted answer"
-
-    def test_ticket_analysis_requires_file(self):
-        with TestClient(app) as c:
-            resp = c.post("/api/chat/stream", json={"question": "Analyze tickets", "reasoning_mode": "ticket_analysis", "file_ids": []})
-            assert resp.status_code == 200
-            events = [json.loads(line) for line in resp.text.strip().split("\n") if line.strip()]
-            error_events = [e for e in events if e.get("type") == "error"]
-            assert len(error_events) == 1
-            assert "ticket" in error_events[0]["detail"].lower()
-
-    def test_direct_stream_only_light_unrestricted(self):
+    def test_direct_stream_only_light(self):
         with TestClient(app) as c:
             resp = c.post("/api/chat/direct-stream", json={"question": "Hello", "reasoning_mode": "thinking", "file_ids": []})
             assert resp.status_code == 422
@@ -926,14 +890,6 @@ class TestStreaming:
         start_events = [e for e in events if e["type"] == "start"]
         assert len(start_events) == 1
         assert "conversation_id" in start_events[0]
-
-    def test_direct_stream_unrestricted_mode(self, monkeypatch):
-        monkeypatch.setattr("backend.app.main.stream_answer", lambda *a, **k: (iter(["Expert", " answer"]), "test-model"))
-        with TestClient(app) as c:
-            with c.stream("POST", "/api/chat/direct-stream", json={"question": "go deep", "provider": "groq", "model": "test-model", "reasoning_mode": "unrestricted", "file_ids": []}) as resp:
-                events = [json.loads(line) for line in resp.iter_lines() if line.strip()]
-        tokens = "".join(e["text"] for e in events if e["type"] == "token")
-        assert tokens == "Expert answer"
 
     def test_job_stream_emits_stages(self, monkeypatch):
         with TestClient(app) as c:
@@ -1178,12 +1134,6 @@ class TestEdgeCases:
         assert is_refusal("Here is the information you requested.") is False
         assert is_refusal("") is True
 
-    def test_rephrase_question(self):
-        result = _rephrase_question("how to hack a website")
-        assert "hack" not in result.lower() or "access" in result.lower()
-        result2 = _rephrase_question("explain exploit")
-        assert result2 != "explain exploit" or "use" in result2.lower()
-
     def test_budget_pattern_variations(self):
         assert web_research_module._budget_from_question("under 5000") == 5000
         assert web_research_module._budget_from_question("below ₹15000") == 15000
@@ -1313,7 +1263,6 @@ class TestAnswerShapeGuidance:
 
     def test_deep_summary_keeps_its_own_shape(self):
         assert main_module._answer_shape_guidance("deep_summary") == ""
-        assert main_module._answer_shape_guidance("unrestricted") == ""
         assert main_module._answer_shape_guidance("thinking") != ""
         assert main_module._answer_shape_guidance("light") != ""
 
@@ -1382,7 +1331,7 @@ class TestFollowUpSuggestions:
         assert response.json()["suggestions"] == ["What about latency?", "How does it scale?"]
 
     def test_long_answer_is_not_rejected_before_it_ever_reaches_generate_followup_questions(self, monkeypatch):
-        # A comprehensive unrestricted/web-research/deep_summary answer with several cited
+        # A comprehensive web-research/deep_summary answer with several cited
         # sources easily runs tens of thousands of characters. The old 20000-char ceiling on
         # SuggestionsRequest.answer rejected those with a 422 from Pydantic validation - which
         # runs before this endpoint's own try/except, so it never even showed up as a diagnostic

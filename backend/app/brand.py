@@ -52,10 +52,8 @@ CREATOR_BIO_ANSWERS = [
 ]
 CAPABILITY_ANSWER_INTRO = (
     "Here's what I can do:\n\n"
-    "- **Ask** — chat with your own uploaded files (or general knowledge too), with Light, "
-    "Unrestricted, Thinking (deep multi-step reasoning), and Deep Summary modes.\n"
-    "- **Patterns** — turn a ticket/incident export into ranked, explainable problem groups "
-    "with a live pipeline view of what's happening.\n"
+    "- **Ask** — chat with your own uploaded files (or general knowledge too), with a "
+    "Normal / High / Max effort dial for how deep it reasons.\n"
     "- **Private Chat** — spin up a separate, shareable, ephemeral chat outside your main workspace.\n"
     "- **Library** — organize and search across everything you've uploaded, across multiple LLM "
     "providers (Ollama, Groq, OpenAI, Gemini)."
@@ -73,14 +71,14 @@ CAPABILITY_JOKE_CLOSERS = [
 # Locus (see the "who built locus" incident this replaced). If it's not in the doc, the model is
 # told to say so rather than fill the gap from outside knowledge.
 _LOCUS_FEATURE_NAMES = (
-    r"upload|ask(?:\s+module|\s+page)?|store|stores|library|patterns|private\s+chat|ticket(?:s|\s+analysis)?"
-    r"|reasoning\s+modes?|hub|share|command\s+palette|light\s+mode|thinking\s+mode|unrestricted\s+mode|deep\s?summary"
+    r"upload|ask(?:\s+module|\s+page)?|store|stores|library|private\s+chat"
+    r"|reasoning\s+modes?|hub|share|command\s+palette|light\s+mode|thinking\s+mode|deep\s?summary"
 )
 ABOUT_LOCUS_QUESTION_PATTERN = re.compile(
     r"\blocus\b[^?.!]{0,40}\b(is|do|does|work|works|use|used|feature|features|help|guide|about|mean|means|for)\b"
     r"|\b(tell me about|what\s+is|what'?s|explain|describe)\b[^?.!]{0,15}\blocus\b"
     r"|\bhow\s+(do|can|does|is|are)\s+(the\s+|a\s+)?(i|you|locus|" + _LOCUS_FEATURE_NAMES + r")\b[^?.!]{0,60}"
-    r"\b(upload|ask|store|stores|library|patterns|private\s+chat|ticket|reasoning\s+modes?|hub|share|work|works)\b"
+    r"\b(upload|ask|store|stores|library|private\s+chat|reasoning\s+modes?|hub|share|work|works)\b"
     r"|\bwhat\s+(is|are)\b[^?.!]{0,25}\b(" + _LOCUS_FEATURE_NAMES + r")\b"
     r"|\b(user\s+guide|self.?help|getting\s+started|how\s+does\s+locus\s+work)\b",
     re.IGNORECASE,
@@ -89,8 +87,8 @@ ABOUT_LOCUS_QUESTION_PATTERN = re.compile(
 # read by developers too) rather than a separate hand-maintained description here — one place
 # to update, and the self-help answers can't drift out of sync with the real feature list.
 _FEATURES_FALLBACK = (
-    "Ask: chat over your uploaded files (Library) with Light/Thinking/Deep Summary/Ticket "
-    "Analysis reasoning modes. Patterns: turn ticket exports into ranked problem groups. "
+    "Ask: chat over your uploaded files (Library) with Light/Thinking/Deep Summary "
+    "reasoning modes. "
     "Private: a separate shareable ephemeral chat. Multiple LLM providers: Ollama, Groq, "
     "OpenAI, Gemini."
 )

@@ -29,12 +29,12 @@ from .database import Base, SessionLocal, engine, get_db
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 
 from .config import (
-    EMBEDDING_BATCH_SIZE, GROQ_MODEL_PRESETS, TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-    MAX_UPLOAD_FILE_MB, SEMANTIC_MIN_SCORE, TICKET_ANALYSIS_ENABLED, TICKET_ANALYSIS_MAX_GROUPS,
-    TICKET_ANALYSIS_MIN_GROUP_SIZE, TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
+    EMBEDDING_BATCH_SIZE, GROQ_MODEL_PRESETS,
+    MAX_UPLOAD_FILE_MB, SEMANTIC_MIN_SCORE,
     configured_model, gateway_settings, llm_provider,
 )
 from .ai_defaults import preferred_ai
+from .auto_select import MODEL_HEALTH_PREFERENCE_KEY, choose_fallback, record_switch
 from .diagnostics import delete_job_log, diagnostic_event, diagnostic_job, initialize_job_log
 from .agentic_pipeline import run_agentic_pipeline
 from .brand import (
@@ -52,15 +52,13 @@ from .web_research import web_research, web_search_tracker
 from .intent import _fallback_classify
 from .deep_summary import deep_summarize_documents, is_full_summary_intent, is_summary_intent, missing_sections
 from .files import IMAGE_EXTENSIONS, SUPPORTED_EXTENSIONS, TABULAR_EXTENSIONS, extract_text_from_path, relevant_excerpt
-from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, generate_unrestricted_answer, is_refusal, list_groq_models, list_openai_compatible_models, probe_model, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
+from .llm import ANSWER_SHAPE_INSTRUCTION, LLMProviderError, answer_planned_question, build_model_meta, clean_final_answer, enhance_question, extract_shared_evidence, generate_answer, generate_followup_questions, list_groq_models, list_openai_compatible_models, probe_model, llm_call_cache, llm_provider_context, refusal_diagnostic, repair_response, stream_answer, token_usage_tracker, verify_response
 from .modes import MODE_CONFIG
-from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, TicketAnalysisResult, UserPreference
+from .models import ChatJob, ChatMessage, ChatSession, Collection, StoredFile, UserPreference
 from .providers import PROVIDER_ORDER, PROVIDERS
-from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, ModelTestRequest, ModelTestResponse, StoredFileRead, SuggestionsRequest, SuggestionsResponse, TicketAnalysisHistoryCreate, TicketAnalysisHistoryRead, TicketAnalysisRequest, UserPreferenceRead, UserPreferenceUpdate
+from .schemas import ChatJobRead, ChatMessageRead, ChatRequest, ChatResponse, ChatSessionRead, ChatSource, CollectionCreate, CollectionRead, ModelTestRequest, ModelTestResponse, StoredFileRead, SuggestionsRequest, SuggestionsResponse, UserPreferenceRead, UserPreferenceUpdate
 from .seed import seed_database
 from . import telegram_bridge
-from .ticket_analysis import clean_tickets, read_ticket_rows, analyze_ticket_file, ticket_analysis_markdown
-from .ticket_taxonomy_data import DEFAULT_TAXONOMY, DEFAULT_TAXONOMY_V2, TaxonomyRule
 from .vector_store import EMBEDDING_MODEL, VectorStoreUnavailable, active_embedding_model, delete_file_embeddings, ensure_vector_schema, index_file_with_status, search as semantic_search
 
 
@@ -229,199 +227,6 @@ def _prune_dataless_secret_images() -> None:
     """
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM secret_images WHERE data IS NULL"))
-
-
-def _first_matching_field(headers: list[str], aliases: tuple[str, ...]) -> str | None:
-    normalized = {re.sub(r"[_\s-]+", " ", header.strip().lower()): header for header in headers}
-    for alias in aliases:
-        match = normalized.get(re.sub(r"[_\s-]+", " ", alias.strip().lower()))
-        if match:
-            return match
-    return None
-
-
-def _detect_ticket_fields(rows: list[dict]) -> dict:
-    headers = list(dict.fromkeys(header for row in rows[:25] for header in row.keys()))
-    detected = {
-        "id": _first_matching_field(headers, ("ticket_id", "ticket id", "number", "incident_number", "incident number", "incident_no", "incident no", "sys_id", "sys id")),
-        "title": _first_matching_field(headers, ("short_description", "short description", "title", "summary")),
-        "description": _first_matching_field(headers, ("description", "details")),
-        "category": _first_matching_field(headers, ("category", "record_type", "record type", "type")),
-        "subcategory": _first_matching_field(headers, ("subcategory", "assignment_group", "assignment group", "business_service", "business service", "service")),
-    }
-    primary = {value for value in detected.values() if value}
-    detected["metadata"] = [header for header in headers if header not in primary][:16]
-    detected["all"] = headers
-    return detected
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _group_source(group: dict) -> str:
-    reason = str(group.get("matched_reason") or "").lower()
-    if "llm fallback" in reason:
-        return "LLM fallback"
-    if "semantic" in reason:
-        return "semantic cluster"
-    if "category fallback" in reason or "structured" in reason:
-        return "metadata"
-    if "taxonomy" in reason or "okf" in reason or "rule" in reason or "post-processing taxonomy" in reason:
-        return "taxonomy"
-    return "semantic cluster"
-
-
-def _build_group_explainability(groups: list[dict], total: int, use_llm_labels: bool) -> list[dict]:
-    enriched = []
-    for index, group in enumerate(groups, 1):
-        source = _group_source(group)
-        llm_named = bool(use_llm_labels and group.get("llm_named"))
-        count = int(group.get("incidentCount") or 0)
-        reason = group.get("matched_reason") or "Created by deterministic Patterns grouping."
-        enriched.append({
-            **group,
-            "id": f"group_{index:02d}",
-            "rank": index,
-            "source": "LLM naming" if llm_named and source != "LLM fallback" else source,
-            "taxonomy_parent": group.get("groupName") if source == "taxonomy" else group.get("subcategory"),
-            "matched_rule": reason if source == "taxonomy" else None,
-            "cluster_id": f"cluster_{index:02d}" if "cluster" in source.lower() else None,
-            "why": f"{count} ticket(s) became this group because {reason}.",
-            "recommended_action": "Review representative tickets, confirm ownership, and promote durable patterns into OKF taxonomy when repeated.",
-            "confidence_breakdown": {
-                "rule_or_cluster": group.get("confidence", 0),
-                "coverage": round((count / total), 3) if total else 0,
-                "human_review": 0.35 if group.get("manual_review_recommended") else 0,
-            },
-            "original_values": {
-                "subcategory": group.get("subcategory"),
-                "evidence": group.get("evidence") or [],
-                "group_name": group.get("llm_original_name"),
-            },
-            "llm_naming_applied": llm_named,
-        })
-    return enriched
-
-
-def _build_pipeline_trace(
-    *,
-    run_id: str,
-    path: Path,
-    stored_file: StoredFile,
-    rows: list[dict],
-    valid_tickets: int,
-    manifest: dict,
-    groups: list[dict],
-    taxonomy_suggestions: list[dict],
-    options: dict,
-    pipeline: list[dict],
-    file_hash: str,
-    field_detection: dict,
-    started: float,
-) -> dict:
-    stored_file_name = getattr(stored_file, "name", getattr(stored_file, "stored_name", "Unknown file"))
-    stored_file_size = getattr(stored_file, "size", path.stat().st_size if path.exists() else 0)
-    total_rows = int(manifest.get("totalRows") or len(rows))
-    valid = int(manifest.get("validTickets") or valid_tickets)
-    okf_paused = bool(options.get("pauseOkfTaxonomy") or manifest.get("okfTaxonomyPaused"))
-    taxonomy_matched = 0 if okf_paused else sum(int(group.get("incidentCount") or 0) for group in groups if _group_source(group) in {"taxonomy", "metadata"})
-    llm_assisted = sum(int(group.get("incidentCount") or 0) for group in groups if _group_source(group) == "LLM fallback")
-    clustered = max(0, valid - taxonomy_matched - llm_assisted)
-    unresolved = sum(int(group.get("incidentCount") or 0) for group in groups if group.get("groupName") == "Other Service Issues")
-    cache_key = hashlib.sha1("|".join([
-        file_hash,
-        str(options.get("embeddingMethod")),
-        str(options.get("clusteringMethod")),
-        str(options.get("similarityThreshold")),
-        str(options.get("problemGroupStrategy")),
-    ]).encode("utf-8")).hexdigest()
-
-    stage_by_name = {event.get("stage"): event for event in pipeline}
-
-    def stage(key: str, label: str, input_count: int, output_count: int, explanation: str, details: dict | None = None, status: str = "completed"):
-        event = stage_by_name.get(key) or {}
-        return {
-            "key": key,
-            "label": label,
-            "status": status,
-            "input_count": input_count,
-            "output_count": output_count,
-            "duration_ms": event.get("elapsedMs", 0),
-            "explanation": explanation,
-            "details": details or event.get("meta", {}),
-        }
-
-    stages = [
-        stage("select_file", "Select File", 1 if stored_file else 0, 1 if stored_file else 0, "The run is bound to one uploaded ticket file.", {"file_name": stored_file_name, "size": stored_file_size}),
-        stage("parse_clean", "Parse & Clean", total_rows, valid, "Rows were parsed, normalized, deduplicated, and empty records removed.", {
-            "input_rows": total_rows,
-            "valid_tickets": valid,
-            "duplicates_removed": manifest.get("duplicatesRemoved", 0),
-            "empty_removed": manifest.get("emptyTicketsRemoved", 0),
-        }),
-        stage("field_mapping", "Field Mapping", len(field_detection.get("all") or []), len([value for key, value in field_detection.items() if key != "all" and value]), "Detected standard ticket fields from source headers.", field_detection),
-        stage("metadata_grouping", "Metadata Grouping", valid, taxonomy_matched, "Structured category and subcategory values were used when they formed durable groups.", {"metadata_fields": field_detection.get("metadata", []), "paused": okf_paused}, status="skipped" if okf_paused else "completed"),
-        stage("okf_taxonomy", "OKF Taxonomy Match", valid, taxonomy_matched, "OKF taxonomy was paused; tickets moved directly into clustering." if okf_paused else "Tickets were matched against OKF/ITSM taxonomy rules before semantic fallback.", {"rules_available": manifest.get("taxonomyRules", 0), "matched_tickets": taxonomy_matched, "paused": okf_paused}, status="skipped" if okf_paused else "completed"),
-        stage("unmatched", "Unmatched Tickets", valid, max(0, valid - taxonomy_matched), "Records not confidently assigned by metadata or taxonomy moved into discovery.", {"unmatched_tickets": max(0, valid - taxonomy_matched)}),
-        stage("vectorization", "Vectorization / Embedding", max(0, valid - taxonomy_matched), max(0, valid - taxonomy_matched), "Fresh vectors were generated from this file and selected embedding configuration.", {
-            "method": options.get("embeddingMethod"),
-            "fresh": True,
-            "cache_key": cache_key,
-            "message": "Fresh vectors generated for this run.",
-        }),
-        stage("semantic_clustering", "Semantic Clustering", max(0, valid - taxonomy_matched), clustered, "Unmatched ticket text was grouped by selected similarity strategy.", {
-            "method": options.get("clusteringMethod"),
-            "threshold": options.get("similarityThreshold"),
-            "target_clusters": options.get("targetClusters"),
-            "min_samples": options.get("hdbscanMinSamples"),
-            "noise_tickets": unresolved if options.get("clusteringMethod") == "hdbscan_lite" else 0,
-        }),
-        stage("llm", "LLM Fallback / LLM Naming", clustered, llm_assisted, "LLM assistance was applied only where enabled by run settings.", {
-            "fallback_enabled": options.get("useLlmFallback"),
-            "naming_enabled": options.get("useLlmLabels"),
-            "naming_status": options.get("llmLabelStatus", "disabled"),
-            "groups_renamed": sum(1 for group in groups if group.get("llm_named")),
-            "taxonomy_suggestions_generated": len(taxonomy_suggestions),
-        }, status="completed" if options.get("useLlmFallback") or options.get("useLlmLabels") else "skipped"),
-        stage("consolidation", "Consolidation", len(groups), len(groups), "Duplicate labels were merged, ranked, capped, and prepared with evidence.", {"final_groups": len(groups), "overflow_groups_capped": any(group.get("groupName") == "Other Service Issues" for group in groups)}),
-        stage("final_groups", "Final Problem Groups", valid, len(groups), "Ranked business problem groups are ready for review.", {"top_groups": [group.get("groupName") for group in groups[:3]]}),
-        stage("taxonomy_suggestions", "Taxonomy Suggestions", len(groups), len(taxonomy_suggestions), "Suggested rules are generated only from recurring unmatched clusters.", {"suggestions": len(taxonomy_suggestions)}, status="completed" if taxonomy_suggestions else "skipped"),
-    ]
-    return {
-        "run_id": run_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "input": {
-            "file_name": stored_file_name,
-            "file_hash": file_hash,
-            "total_rows": total_rows,
-            "valid_tickets": valid,
-            "detected_fields": field_detection,
-        },
-        "config": options,
-        "fingerprint": f"{stored_file_name}:{file_hash[:12]}:{options.get('embeddingMethod')}:{options.get('clusteringMethod')}:{options.get('similarityThreshold')}:{options.get('problemGroupStrategy')}",
-        "vectorization": {
-            "fresh": True,
-            "cache_key": cache_key,
-            "duration_ms": stage_by_name.get("embed", {}).get("elapsedMs", 0),
-            "message": "Fresh vectors generated for this run.",
-        },
-        "stages": stages,
-        "coverage": {
-            "taxonomy_matched": taxonomy_matched,
-            "clustered": clustered,
-            "llm_assisted": llm_assisted,
-            "unresolved": unresolved,
-        },
-        "problem_groups": _build_group_explainability(groups, valid, bool(options.get("useLlmLabels"))),
-        "taxonomy_suggestions": taxonomy_suggestions,
-        "duration_ms": int((time.perf_counter() - started) * 1000),
-        "status": "completed",
-    }
 
 
 def _index_stored_file(db: Session, stored_file: StoredFile) -> None:
@@ -694,7 +499,6 @@ def llm_config():
     }
 
 
-MODEL_HEALTH_PREFERENCE_KEY = "model_health"
 # Probes are network-bound, so a handful at a time finishes a page of models quickly without
 # looking like a burst of abuse to a provider's rate limiter.
 MODEL_TEST_CONCURRENCY = 4
@@ -882,409 +686,6 @@ def delete_file(file_id: int, db: Session = Depends(get_db)):
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _ticket_analysis_for_file(
-    stored_file: StoredFile,
-    max_groups: int | None = None,
-    min_group_size: int | None = None,
-    llm_fallback: bool = False,
-    llm_model: str | None = None,
-    embedding_method: str = "tfidf",
-    clustering_method: str = "taxonomy_semantic",
-    problem_group_strategy: str = "taxonomy_then_cluster",
-    similarity_threshold: float | None = None,
-    target_clusters: int | None = None,
-    hdbscan_min_samples: int | None = None,
-    representative_count: int | None = None,
-    include_telemetry: bool = True,
-    include_debug_samples: bool = True,
-    use_llm_labels: bool = False,
-    suggest_taxonomy_rules: bool = False,
-    llm_provider_name: str | None = None,
-    pause_okf_taxonomy: bool = False,
-    taxonomy_rules: tuple[TaxonomyRule, ...] | None = None,
-    progress=None,
-):
-    if not TICKET_ANALYSIS_ENABLED:
-        raise HTTPException(status_code=404, detail="Ticket Analysis is disabled")
-    path = UPLOAD_DIR / stored_file.stored_name
-    started = time.perf_counter()
-    run_id = uuid4().hex
-    try:
-        file_hash = _file_sha256(path)
-        rows = read_ticket_rows(path)
-        tickets, _, _ = clean_tickets(rows)
-        field_detection = _detect_ticket_fields(rows)
-    except (ValueError, json.JSONDecodeError) as exception:
-        raise HTTPException(status_code=422, detail=str(exception)) from exception
-    pipeline: list[dict] = []
-    # An explicitly empty rule set is a real choice ("group by clustering alone"),
-    # so only a missing one falls back to the shipped taxonomy.
-    active_taxonomy = DEFAULT_TAXONOMY if taxonomy_rules is None else taxonomy_rules
-    taxonomy_source = "custom" if taxonomy_rules is not None else "default_v2"
-    normalized_strategy = _normalize_ticket_strategy(problem_group_strategy)
-
-    def event(stage: str, detail: str, meta: dict | None = None):
-        payload = {
-            "stage": stage,
-            "detail": detail,
-            "elapsedMs": int((time.perf_counter() - started) * 1000),
-            "meta": meta or {},
-        }
-        pipeline.append(payload)
-        if progress:
-            progress(stage, detail)
-
-    event("ingest", "Read uploaded ticket file and detected tabular records", {
-        "fileId": getattr(stored_file, "id", 0),
-        "fileName": getattr(stored_file, "name", stored_file.stored_name),
-        "size": getattr(stored_file, "size", 0),
-        "chunks": getattr(stored_file, "embedding_chunks", 0),
-    })
-    try:
-        event("clean", "Normalize ticket ids, title/description fields, categories, and duplicate candidates")
-        event("embed", f"Create fresh run-scoped {embedding_method} signatures for the selected file", {
-            "embeddingMethod": embedding_method,
-            "freshEmbeddings": True,
-        })
-        event("strategy", f"Use {normalized_strategy} problem-group strategy", {
-            "problemGroupStrategy": normalized_strategy,
-            "targetClusters": target_clusters,
-            "okfTaxonomyPaused": pause_okf_taxonomy,
-        })
-        event(
-            "taxonomy",
-            "OKF/ITSM taxonomy paused; all tickets continue to clustering" if pause_okf_taxonomy else "Check tickets against approved OKF/ITSM taxonomy before fallback grouping",
-            {"paused": pause_okf_taxonomy, "taxonomySource": taxonomy_source, "rules": len(active_taxonomy)},
-        )
-        event("cluster", f"Run {clustering_method} grouping for unresolved or selected records", {
-            "clusteringMethod": clustering_method,
-            "similarityThreshold": similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-            "hdbscanMinSamples": hdbscan_min_samples,
-        })
-        # The selected provider has to be active for the whole run: every LLM
-        # step inside the pipeline resolves its provider from this context.
-        provider_scope = llm_provider_context(llm_provider_name) if llm_provider_name else nullcontext()
-        with provider_scope:
-            result = analyze_ticket_file(
-                path,
-                max_groups=max_groups or TICKET_ANALYSIS_MAX_GROUPS,
-                min_group_size=min_group_size or TICKET_ANALYSIS_MIN_GROUP_SIZE,
-                similarity_threshold=similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-                representative_count=representative_count or TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
-                taxonomy=active_taxonomy,
-                pause_okf_taxonomy=pause_okf_taxonomy,
-                strategy=normalized_strategy,
-                embedding_method=embedding_method,
-                clustering_method=clustering_method,
-                target_clusters=target_clusters,
-                hdbscan_min_samples=hdbscan_min_samples or TICKET_ANALYSIS_MIN_GROUP_SIZE,
-                llm_fallback=llm_fallback,
-                llm_labels=use_llm_labels,
-                llm_model=llm_model,
-                suggest_taxonomy_rules=suggest_taxonomy_rules,
-                progress=lambda stage, detail: event(stage, detail),
-            )
-        if llm_fallback:
-            event("llm_fallback", "LLM fallback evaluated unknown clusters", {
-                "model": llm_model or configured_model(),
-                "provider": llm_provider_name or llm_provider(),
-                "status": result.get("manifest", {}).get("llmFallbackStatus"),
-            })
-        else:
-            event("fallback", "Deterministic fallback handled unresolved records without LLM")
-        if use_llm_labels:
-            event("llm_labels_result", "LLM group-name editor rewrote final labels", {
-                "provider": llm_provider_name or llm_provider(),
-                "model": llm_model or configured_model(),
-                "status": result.get("manifest", {}).get("llmLabelStatus"),
-                "groupsRenamed": result.get("manifest", {}).get("llmGroupsRenamed", 0),
-            })
-        event("consolidate", "Merged duplicate labels, ranked by incident count, and prepared evidence samples", {
-            "groups": result.get("manifest", {}).get("problemGroups", 0),
-            "debugSamples": include_debug_samples,
-        })
-        event("complete", "Patterns analysis complete", {
-            "durationMs": int((time.perf_counter() - started) * 1000),
-            "validTickets": result.get("manifest", {}).get("validTickets", 0),
-        })
-        result["analysisOptions"] = {
-            "runId": run_id,
-            "embeddingMethod": embedding_method,
-            "clusteringMethod": clustering_method,
-            "problemGroupStrategy": normalized_strategy,
-            "similarityThreshold": similarity_threshold or TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD,
-            "targetClusters": target_clusters,
-            "hdbscanMinSamples": hdbscan_min_samples,
-            "representativeCount": representative_count or TICKET_ANALYSIS_REPRESENTATIVE_TICKETS,
-            "includeTelemetry": include_telemetry,
-            "includeDebugSamples": include_debug_samples,
-            "useLlmFallback": llm_fallback,
-            "useLlmLabels": use_llm_labels,
-            "suggestTaxonomyRules": suggest_taxonomy_rules,
-            "taxonomySuggestionStatus": result.get("manifest", {}).get("taxonomySuggestionStatus", "disabled"),
-            "llmProvider": llm_provider_name,
-            "pauseOkfTaxonomy": pause_okf_taxonomy,
-            "taxonomySource": taxonomy_source,
-            "taxonomyRulesConfigured": len(active_taxonomy),
-            "llmLabelStatus": result.get("manifest", {}).get("llmLabelStatus", "disabled"),
-            "llmGroupsRenamed": result.get("manifest", {}).get("llmGroupsRenamed", 0),
-            "freshVectorMessage": "Fresh vectors generated for this run.",
-            "detectedFields": field_detection,
-            "fileHash": file_hash,
-        }
-        result["pipeline"] = pipeline if include_telemetry else []
-        trace = _build_pipeline_trace(
-            run_id=run_id,
-            path=path,
-            stored_file=stored_file,
-            rows=rows,
-            valid_tickets=len(tickets),
-            manifest=result.get("manifest", {}),
-            groups=result.get("groups", []),
-            taxonomy_suggestions=result.get("taxonomySuggestions") or [],
-            options=result["analysisOptions"],
-            pipeline=pipeline,
-            file_hash=file_hash,
-            field_detection=field_detection,
-            started=started,
-        )
-        result["pipeline_trace"] = trace
-        result["groups"] = trace["problem_groups"]
-        return result
-    except (ValueError, json.JSONDecodeError) as exception:
-        raise HTTPException(status_code=422, detail=str(exception)) from exception
-
-
-def _ticket_analysis_ai(payload: TicketAnalysisRequest, db: Session) -> tuple[str, str]:
-    """The provider/model this run's LLM steps use: the Settings default unless the request
-    pinned its own, same rule the chat endpoints follow (see _validate_chat_request)."""
-    default_provider, default_model = preferred_ai(db)
-    provider = payload.llmProvider or default_provider
-    model = payload.model or (default_model if provider == default_provider else configured_model())
-    return provider, model
-
-
-@app.post("/api/ticket-analysis")
-def ticket_analysis(payload: TicketAnalysisRequest, db: Session = Depends(get_db)):
-    stored_file = db.get(StoredFile, payload.fileId)
-    if not stored_file:
-        raise HTTPException(status_code=404, detail="File not found")
-    taxonomy_rules = _parse_ticket_taxonomy_rules(payload.taxonomyRules)
-    llm_provider_name, llm_model = _ticket_analysis_ai(payload, db)
-    return _ticket_analysis_for_file(
-        stored_file,
-        payload.maxGroups,
-        payload.minGroupSize,
-        payload.useLlmFallback,
-        llm_model,
-        embedding_method=payload.embeddingMethod,
-        clustering_method=payload.clusteringMethod,
-        problem_group_strategy=payload.problemGroupStrategy,
-        similarity_threshold=payload.similarityThreshold,
-        target_clusters=payload.targetClusters,
-        hdbscan_min_samples=payload.hdbscanMinSamples,
-        representative_count=payload.representativeCount,
-        include_telemetry=payload.includeTelemetry,
-        include_debug_samples=payload.includeDebugSamples,
-        use_llm_labels=payload.useLlmLabels,
-        suggest_taxonomy_rules=payload.suggestTaxonomyRules,
-        llm_provider_name=llm_provider_name,
-        pause_okf_taxonomy=payload.pauseOkfTaxonomy,
-        taxonomy_rules=taxonomy_rules,
-    )
-
-
-@app.post("/api/ticket-analysis/stream")
-def ticket_analysis_stream(payload: TicketAnalysisRequest, db: Session = Depends(get_db)):
-    """Same run as /api/ticket-analysis, streamed stage by stage.
-
-    The pipeline already emits progress events; this endpoint forwards them as
-    they happen so the UI can show which stage is actually running instead of
-    guessing on a timer. The final message carries the identical result payload,
-    so a client that only cares about the answer can ignore the stage events.
-    """
-    stored_file = db.get(StoredFile, payload.fileId)
-    if not stored_file:
-        raise HTTPException(status_code=404, detail="File not found")
-    taxonomy_rules = _parse_ticket_taxonomy_rules(payload.taxonomyRules)
-    # Resolved here rather than inside run(): that runs on its own thread, after this
-    # request's session is gone.
-    llm_provider_name, llm_model = _ticket_analysis_ai(payload, db)
-    detached = SimpleNamespace(
-        id=stored_file.id,
-        name=stored_file.name,
-        stored_name=stored_file.stored_name,
-        size=stored_file.size,
-        embedding_chunks=stored_file.embedding_chunks,
-    )
-
-    def event_stream():
-        events: Queue = Queue()
-
-        def run():
-            try:
-                result = _ticket_analysis_for_file(
-                    detached,
-                    payload.maxGroups,
-                    payload.minGroupSize,
-                    payload.useLlmFallback,
-                    llm_model,
-                    embedding_method=payload.embeddingMethod,
-                    clustering_method=payload.clusteringMethod,
-                    problem_group_strategy=payload.problemGroupStrategy,
-                    similarity_threshold=payload.similarityThreshold,
-                    target_clusters=payload.targetClusters,
-                    hdbscan_min_samples=payload.hdbscanMinSamples,
-                    representative_count=payload.representativeCount,
-                    include_telemetry=payload.includeTelemetry,
-                    include_debug_samples=payload.includeDebugSamples,
-                    use_llm_labels=payload.useLlmLabels,
-                    suggest_taxonomy_rules=payload.suggestTaxonomyRules,
-                    llm_provider_name=llm_provider_name,
-                    pause_okf_taxonomy=payload.pauseOkfTaxonomy,
-                    taxonomy_rules=taxonomy_rules,
-                    progress=lambda stage, detail: events.put({"type": "stage", "stage": stage, "detail": detail}),
-                )
-                events.put({"type": "result", "data": result})
-            except HTTPException as exception:
-                events.put({"type": "error", "detail": exception.detail})
-            except Exception as exception:  # noqa: BLE001 - surfaced to the client
-                events.put({"type": "error", "detail": str(exception)})
-            finally:
-                events.put(None)
-
-        def run_guarded():
-            # Same invariant as the chat streams: run() only queues its sentinel once it
-            # is inside its try block, so anything failing before that would leave the
-            # consumer below blocked on an empty queue forever.
-            try:
-                run()
-            except BaseException as exception:  # noqa: BLE001 - surfaced to the client
-                events.put({"type": "error", "detail": str(exception)})
-            finally:
-                events.put(None)
-
-        Thread(target=run_guarded, daemon=True).start()
-        while True:
-            event = events.get()
-            if event is None:
-                break
-            yield json.dumps(event) + "\n"
-
-    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
-
-
-def _string_list(value, *, limit: int = 80, max_items: int = 80) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    values = value if isinstance(value, list) else [value]
-    cleaned = []
-    for item in values:
-        text = re.sub(r"\s+", " ", str(item or "")).strip()
-        if text:
-            cleaned.append(text[:limit])
-    return tuple(dict.fromkeys(cleaned[:max_items]))
-
-
-def _parse_ticket_taxonomy_rules(raw_rules: list[dict] | None) -> tuple[TaxonomyRule, ...] | None:
-    if raw_rules is None:
-        return None
-    if not raw_rules:
-        return ()
-    if len(raw_rules) > 200:
-        raise HTTPException(status_code=422, detail="Custom taxonomy supports up to 200 rules")
-    rules: list[TaxonomyRule] = []
-    for index, raw in enumerate(raw_rules, start=1):
-        if not isinstance(raw, dict):
-            raise HTTPException(status_code=422, detail=f"Taxonomy rule #{index} must be an object")
-        name = re.sub(r"\s+", " ", str(raw.get("name") or raw.get("groupName") or "")).strip()
-        description = re.sub(r"\s+", " ", str(raw.get("description") or "")).strip()
-        patterns = _string_list(raw.get("patterns") or raw.get("includes") or raw.get("signals"), max_items=120)
-        if not name or not patterns:
-            raise HTTPException(status_code=422, detail=f"Taxonomy rule #{index} needs a name and at least one pattern/include")
-        rules.append(TaxonomyRule(
-            name=name[:140],
-            description=description[:500] or f"Tickets matching {name}.",
-            patterns=patterns,
-            category_aliases=_string_list(raw.get("categoryAliases") or raw.get("contexts") or raw.get("assignmentHints"), max_items=40),
-            excludes=_string_list(raw.get("excludes"), max_items=40),
-        ))
-    return tuple(rules)
-
-
-def _normalize_ticket_strategy(strategy: str | None) -> str:
-    mapping = {
-        "okf_first": "taxonomy_then_cluster",
-        "taxonomy_semantic": "taxonomy_then_cluster",
-        "cluster_first": "cluster_only",
-        "okf_only": "taxonomy_only",
-    }
-    value = mapping.get(strategy or "", strategy or "taxonomy_then_cluster")
-    if value not in {"taxonomy_then_cluster", "cluster_only", "taxonomy_only"}:
-        raise HTTPException(status_code=422, detail="Unsupported problem group strategy")
-    return value
-
-
-@app.get("/api/ticket-analysis/okf-taxonomy")
-def ticket_analysis_okf_taxonomy():
-    return {
-        "version": "default_v2",
-        "ruleCount": len(DEFAULT_TAXONOMY_V2),
-        "rules": [
-            {
-                "name": rule.name,
-                "description": rule.description,
-                "includes": list(rule.includes),
-                "contexts": list(rule.contexts),
-                "excludes": list(rule.excludes),
-                "recordTypes": list(rule.record_types),
-                "subcategories": list(rule.subcategories),
-                "assignmentHints": list(rule.assignment_hints),
-            }
-            for rule in DEFAULT_TAXONOMY_V2
-        ],
-    }
-
-
-@app.get("/api/ticket-analysis/history", response_model=list[TicketAnalysisHistoryRead])
-def ticket_analysis_history(db: Session = Depends(get_db)):
-    return db.scalars(select(TicketAnalysisResult).order_by(TicketAnalysisResult.created_at.desc()).limit(50)).all()
-
-
-@app.get("/api/ticket-analysis/history/{result_id}", response_model=TicketAnalysisHistoryRead)
-def ticket_analysis_history_detail(result_id: int, db: Session = Depends(get_db)):
-    result = db.get(TicketAnalysisResult, result_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Analysis history not found")
-    return result
-
-
-@app.post("/api/ticket-analysis/history", response_model=TicketAnalysisHistoryRead)
-def save_ticket_analysis_history(payload: TicketAnalysisHistoryCreate, db: Session = Depends(get_db)):
-    result = TicketAnalysisResult(
-        file_id=payload.fileId,
-        file_name=payload.fileName,
-        manifest=payload.manifest,
-        groups=payload.groups,
-        taxonomy_suggestions=payload.taxonomySuggestions,
-        config=payload.config,
-    )
-    db.add(result)
-    db.commit()
-    db.refresh(result)
-    return result
-
-
-@app.delete("/api/ticket-analysis/history/{result_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_ticket_analysis_history(result_id: int, db: Session = Depends(get_db)):
-    result = db.get(TicketAnalysisResult, result_id)
-    if not result:
-        raise HTTPException(status_code=404, detail="Analysis history not found")
-    db.delete(result)
-    db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
 def _sources_with_meta(sources, llm_hits=0, web_queries=0, prompt_tokens=0, completion_tokens=0, total_tokens=0):
     """Append a metadata entry to sources so the frontend can extract llm_hits, web_queries, and token usage."""
     source_dicts = [s.model_dump() if isinstance(s, ChatSource) else s for s in sources]
@@ -1422,10 +823,10 @@ def _retrieve_for_gaps(
 def _answer_shape_guidance(reasoning_mode: str) -> str:
     """The scannable answer shape, or an empty string for the modes that must keep their own shape.
 
-    Deep Summary's whole contract is exhaustive section-by-section coverage tracked by a manifest, and
-    Unrestricted deliberately runs without added guardrails, so neither gets the summary-first layout.
+    Deep Summary's whole contract is exhaustive section-by-section coverage tracked by a manifest,
+    so it does not get the summary-first layout.
     """
-    if reasoning_mode in {"deep_summary", "unrestricted"}:
+    if reasoning_mode == "deep_summary":
         return ""
     return ANSWER_SHAPE_INSTRUCTION
 
@@ -1443,21 +844,6 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         session = ChatSession(title=payload.question.strip()[:70])
         db.add(session)
         db.flush()
-    if payload.reasoning_mode == "ticket_analysis":
-        if not payload.file_ids:
-            raise HTTPException(status_code=422, detail="Select one uploaded ticket file for Ticket Analysis")
-        stored_file = db.get(StoredFile, payload.file_ids[0])
-        if not stored_file:
-            raise HTTPException(status_code=404, detail="Selected file not found")
-        notify("gathering", f"Normalizing and grouping tickets from {stored_file.name}")
-        result = _ticket_analysis_for_file(stored_file, llm_fallback=True, llm_model=payload.model, progress=notify)
-        answer = ticket_analysis_markdown(result)
-        source = ChatSource(id=stored_file.id, name=stored_file.name, store_id=stored_file.store_id, excerpt=f"Processed all {result['manifest']['validTickets']} valid tickets with {result['manifest']['coverageStatus']} coverage.")
-        ensure_not_cancelled()
-        db.add_all([ChatMessage(session_id=session.id, role="user", content=payload.question), ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([source], llm_hits=1, web_queries=0), model="Ticket Analysis", provider=payload.provider)])
-        db.commit()
-        notify("complete", "Ticket Analysis ready")
-        return ChatResponse(answer=answer, sources=[source], model="Ticket Analysis", conversation_id=session.id, llm_hits=1, web_queries=0)
     # Answered deterministically instead of routed through the LLM/web-search pipeline: those
     # paths proved unreliable for this (e.g. web-search auto-trigger pulling in evidence about
     # an unrelated real company also named "Locus"). See brand.py for why.
@@ -1504,7 +890,7 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         return ChatResponse(answer=answer, sources=[], model=used_model, conversation_id=session.id, llm_hits=1, web_queries=0)
     effective_web_search = _effective_web_search(payload)
     if effective_web_search:
-        web_mode = "unrestricted web research" if payload.reasoning_mode == "unrestricted" else "web research"
+        web_mode = "web research"
         if not payload.web_search and payload.reasoning_mode != "web_research":
             notify("starting", f"Auto-enabled agentic {web_mode} for a search-intent question with {payload.model}")
         else:
@@ -1549,33 +935,6 @@ def _process_chat_impl(payload: ChatRequest, db: Session, notify=lambda stage, d
         notify("complete", "Agentic answer ready")
         return ChatResponse(answer=answer, sources=sources, model=result["model"], conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries)
     history = _load_chat_history(db, session.id)
-    if payload.reasoning_mode == "unrestricted":
-        notify("drafting", f"Unrestricted mode — trying to get answer for: {payload.question[:60]}")
-        stored_files = db.scalars(select(StoredFile).where(StoredFile.id.in_(payload.file_ids))).all() if payload.file_ids else []
-        sources_list = [(stored_file.name, stored_file.extracted_text or "") for stored_file in stored_files]
-        try:
-            answer, model = generate_unrestricted_answer(
-                payload.question,
-                sources_list,
-                history,
-                payload.model,
-                lambda detail: notify("drafting", detail),
-            )
-        except LLMProviderError as exception:
-            raise HTTPException(status_code=exception.status_code, detail=str(exception))
-        except RuntimeError as exception:
-            raise HTTPException(status_code=503, detail=str(exception))
-        ensure_not_cancelled()
-        source_data = [ChatSource(id=stored_file.id, name=stored_file.name, store_id=stored_file.store_id, excerpt="Referenced file in unrestricted mode.") for stored_file in stored_files]
-        llm_hits = 1
-        web_queries = 0
-        db.add_all([
-            ChatMessage(session_id=session.id, role="user", content=payload.question),
-            ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta(source_data, llm_hits, web_queries), model=model, provider=payload.provider),
-        ])
-        db.commit()
-        notify("complete", "Unrestricted answer ready")
-        return ChatResponse(answer=answer, sources=source_data, model=model, conversation_id=session.id, llm_hits=llm_hits, web_queries=web_queries)
     if payload.reasoning_mode == "light" and payload.file_ids == []:
         notify("understanding", "Selected tools: general chat, final text")
         notify("understanding", f"Starting agentic light pipeline with {payload.model}")
@@ -1925,7 +1284,7 @@ MIXED_LANGUAGE_WEB_SEARCH_KEYWORDS = [
 
 
 def should_auto_web_search(question: str, reasoning_mode: str = "light") -> bool:
-    if reasoning_mode in {"ticket_analysis", "deep_summary"}:
+    if reasoning_mode == "deep_summary":
         return False
     normalized = " ".join(question.lower().split())
     if not normalized:
@@ -1944,7 +1303,19 @@ def should_auto_web_search(question: str, reasoning_mode: str = "light") -> bool
 
 
 def _effective_web_search(payload: ChatRequest) -> bool:
-    return payload.web_search or payload.reasoning_mode == "web_research" or should_auto_web_search(payload.question, payload.reasoning_mode)
+    if payload.web_search or payload.reasoning_mode == "web_research":
+        return True
+    # High/Max effort (thinking/deep_summary) with no files selected means there is nothing to
+    # inspect locally, so "spend more effort" has to mean going and finding real sources instead
+    # of answering from the model's own memory — otherwise raising effort with no file context
+    # does nothing a user can see. By the time a question reaches here, the greeting/creator/
+    # about-Locus short-circuits earlier in _process_chat_impl have already caught anything
+    # trivial, so any question still in flight is worth grounding in evidence. This does not
+    # apply once files ARE selected: there, thinking/deep_summary's job is to inspect those
+    # files, not detour to the web, so the keyword-gated check below still applies.
+    if payload.reasoning_mode in ("thinking", "deep_summary") and payload.file_ids == []:
+        return True
+    return should_auto_web_search(payload.question, payload.reasoning_mode)
 
 
 @app.post("/api/chat/stream")
@@ -2005,8 +1376,8 @@ def chat_stream(payload: ChatRequest):
 @app.post("/api/chat/direct-stream")
 def chat_direct_stream(payload: ChatRequest):
     _validate_chat_request(payload)
-    if _effective_web_search(payload) or payload.reasoning_mode not in {"light", "unrestricted"} or payload.file_ids != []:
-        raise HTTPException(status_code=422, detail="Direct streaming is only available for Light or Unrestricted mode with no selected files and Web Search off")
+    if _effective_web_search(payload) or payload.reasoning_mode != "light" or payload.file_ids != []:
+        raise HTTPException(status_code=422, detail="Direct streaming is only available for Light mode with no selected files and Web Search off")
 
     def event_stream():
         # The work runs on its own thread and reports through a queue, exactly like
@@ -2056,18 +1427,9 @@ def chat_direct_stream(payload: ChatRequest):
                         answer = clean_final_answer("".join(answer_parts))
                         if not answer:
                             raise RuntimeError("The model returned an empty answer.")
-                        if payload.reasoning_mode == "unrestricted" and is_refusal(answer):
-                            events.put({"type": "token", "text": "\n\n_[Model initially refused. Running jailbreak pipeline…]_\n\n"})
-                            answer, used_model = generate_unrestricted_answer(
-                                payload.question,
-                                [],
-                                history,
-                                payload.model,
-                            )
-                        else:
-                            diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
-                            if diagnostic:
-                                events.put({"type": "diagnostic", "level": "warning", "detail": diagnostic})
+                        diagnostic = refusal_diagnostic(answer, payload.provider, used_model)
+                        if diagnostic:
+                            events.put({"type": "diagnostic", "level": "warning", "detail": diagnostic})
                     llm_hits = usage["calls"]
                     web_queries = 0
                     db.add(ChatMessage(session_id=session.id, role="assistant", content=answer, sources=_sources_with_meta([], llm_hits, web_queries, usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]), model=used_model, provider=payload.provider))
@@ -2147,16 +1509,10 @@ def _pipeline_event_metadata(stage: str, detail: str) -> dict:
         "failed": "raise_pipeline_error()",
     }
     metadata["method"] = stage_methods.get(stage, metadata["method"])
-    if "taxonomy fallback" in lowered:
-        metadata["method"] = "ticket_taxonomy_llm_fallback()"
     if "directly; no files selected" in lowered:
         metadata.update(type="llm_call", direction="outbound", method="generate_answer()", payload_preview=detail)
     if "calling " in lowered:
         metadata.update(type="llm_call", direction="outbound", payload_preview=detail)
-    elif "taxonomy fallback returned" in lowered or "taxonomy fallback skipped" in lowered:
-        metadata.update(type="llm_result", direction="inbound", response_preview=detail)
-        if "skipped" in lowered:
-            metadata["tags"].append("skipped")
     elif "analysis plan ready" in lowered:
         metadata.update(type="llm_result", direction="inbound", response_preview=detail)
         match = re.search(r"with (\d+) tasks?", detail)
@@ -2319,6 +1675,10 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
     completed_calls: dict = {}
     consecutive_failures = 0
     total_attempts = 0
+    # Built lazily on the first retryable failure, then frozen for the whole job: the
+    # fallback is decided once per ChatJob so later stages (and later retry rounds) all run
+    # against the same replacement instead of renegotiating a different model each time.
+    fallback_plan: dict | None = None
     while True:
         total_attempts += 1
         completed_before_attempt = len(completed_calls)
@@ -2350,6 +1710,22 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
                 error=None,
             )
             diagnostic_event("job.succeeded", attempts=total_attempts, completed_llm_calls=len(completed_calls))
+            # The job recovered through an auto-selected fallback model: make the switch
+            # permanent so the next request does not fail the same way. Only when the failed
+            # model was the saved default — a model pinned for this one request still falls
+            # back for the request, but the user's default is not rewritten behind their back.
+            if fallback_plan and fallback_plan["switched"] and fallback_plan["was_default"]:
+                with SessionLocal() as db:
+                    record_switch(
+                        db,
+                        fallback_plan["original_provider"],
+                        fallback_plan["original_model"],
+                        payload.provider,
+                        payload.model,
+                        fallback_plan["original_error"],
+                        job_id=job_id,
+                    )
+                diagnostic_event("job.auto_selected_model", job_id=job_id, previous_model=fallback_plan["original_model"], fallback_provider=payload.provider, fallback_model=payload.model)
             delete_job_log(job_id)
             return
         except ChatJobCancelled as exception:
@@ -2375,6 +1751,54 @@ def _run_chat_job_impl(job_id: str, payload: ChatRequest):
         made_progress = len(completed_calls) > completed_before_attempt
         consecutive_failures = 1 if made_progress else consecutive_failures + 1
         diagnostic_event("pipeline.attempt_failed", attempt=total_attempts, exception_type=exception_type, status_code=status_code, error=detail, traceback=failure_trace, retryable=retryable, made_progress=made_progress, cached_llm_calls=len(completed_calls), consecutive_failures=consecutive_failures)
+        # Auto-select: a retryable failure of the current model earns the job one run with
+        # the healthiest alternative before the old back-off-retry logic takes over. The
+        # candidate list is negotiated once (see the fallback_plan comment above) and capped
+        # at FALLBACK_CANDIDATE_LIMIT, so worst case is a handful of retries, not an endless
+        # tour of the catalogue. Once every alternative has also failed, the original error
+        # surfaces instead of retrying a dead model.
+        if retryable and fallback_plan is None:
+            with SessionLocal() as db:
+                try:
+                    default_provider, default_model = preferred_ai(db)
+                    candidates = choose_fallback(db, payload.provider, payload.model)
+                except Exception:  # noqa: BLE001 - a broken fallback plan must not hide the real error
+                    default_provider, default_model = payload.provider, payload.model
+                    candidates = []
+            fallback_plan = {
+                "candidates": candidates,
+                "index": 0,
+                "switched": False,
+                "original_error": detail,
+                "original_provider": payload.provider,
+                "original_model": payload.model,
+                "was_default": payload.provider == default_provider and payload.model == default_model,
+            }
+        if fallback_plan and fallback_plan["index"] < len(fallback_plan["candidates"]):
+            candidate_provider, candidate_model = fallback_plan["candidates"][fallback_plan["index"]]
+            fallback_plan["index"] += 1
+            fallback_plan["switched"] = True
+            payload.provider, payload.model = candidate_provider, candidate_model
+            consecutive_failures = 0
+            progress.update(stage="starting", detail=f"Auto-switching model to {candidate_model} after: {fallback_plan['original_error']}", ticks=0)
+            _update_chat_job(
+                job_id,
+                status="running",
+                stage="starting",
+                detail=f"{fallback_plan['original_model']} failed. Auto-switching to {candidate_model} and retrying.",
+                error=None,
+                partial_answer=None,
+            )
+            diagnostic_event("pipeline.fallback_attempt", job_id=job_id, attempt=total_attempts, previous_provider=fallback_plan["original_provider"], previous_model=fallback_plan["original_model"], fallback_provider=candidate_provider, fallback_model=candidate_model, reason=fallback_plan["original_error"])
+            continue
+        if fallback_plan and fallback_plan["switched"] and fallback_plan["index"] >= len(fallback_plan["candidates"]):
+            # Every alternative failed too; surface the failure that started all this rather
+            # than the last candidate's, and stop — there is nothing left to try.
+            stopped.set()
+            suffix = f" after {total_attempts} attempts" if total_attempts > 1 else ""
+            _update_chat_job(job_id, status="failed", stage="failed", detail=f"{fallback_plan['original_error']}{suffix}", error=f"{fallback_plan['original_error']}{suffix}")
+            diagnostic_event("job.failed", attempts=total_attempts, exception_type=exception_type, status_code=status_code, error=f"{fallback_plan['original_error']}{suffix}", cached_llm_calls=len(completed_calls), log_retained=True, fallback_candidates_exhausted=True)
+            return
         if retryable and consecutive_failures <= CHAT_JOB_MAX_RETRIES:
             delay = CHAT_JOB_RETRY_DELAY_SECONDS * (2 ** (consecutive_failures - 1))
             preserved = len(completed_calls)

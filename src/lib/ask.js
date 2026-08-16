@@ -1,55 +1,57 @@
 import React from 'react';
 import {
-  BookOpen, Database, Radio, Sparkles, Zap,
+  BookOpen, Radio, Sparkles,
 } from 'lucide-react';
 
+// One effort dial, three stops. Each stop is still backed by the same reasoning-mode id the
+// backend has always used (light / thinking / deep_summary) — only the product-facing label
+// changed, so MODE_CONFIG, the API contract, and every existing test stay put. Effort is a
+// straight line from "fast" to "exhaustive": with files selected, that means reading more of
+// them (light -> excerpts, thinking -> everything, deep_summary -> every section); with no
+// files selected, there's nothing local to read more of, so effort instead means digging
+// further into the web — more sources, more search rounds — rather than just answering from
+// the model's own memory. See EFFORT_WEB_SOURCE_LIMIT and shouldAutoWebSearch below.
 export const SLASH_COMMANDS = [
   {
     id: 'light',
-    label: '/light',
-    desc: 'Fast direct chat — default mode',
-    friendlyLabel: 'Quick answer',
-    friendlyDesc: 'A fast answer with the most useful context',
+    label: '/normal',
+    desc: 'Fast, everyday answers — default effort',
+    friendlyLabel: 'Normal',
+    friendlyDesc: 'Fast answer from the most relevant context',
     icon: Radio,
     color: '#7c6cff',
   },
   {
-    id: 'unrestricted',
-    label: '/unrestricted',
-    desc: 'Expert mode — direct, low-fluff answers',
-    friendlyLabel: 'Advanced answer',
-    friendlyDesc: 'Direct responses with fewer guardrails',
-    icon: Zap,
-    color: '#ff6b6b',
-  },
-  {
     id: 'thinking',
-    label: '/thinking',
-    desc: 'Deep analysis — inspects all selected content',
-    friendlyLabel: 'Deep analysis',
-    friendlyDesc: 'Compare and reason across selected content',
+    label: '/high',
+    desc: 'Reads everything selected and reasons across it',
+    friendlyLabel: 'High',
+    friendlyDesc: 'Inspects every selected file, or researches the web if none are selected',
     icon: Sparkles,
     color: '#a78bfa',
   },
   {
     id: 'deep_summary',
-    label: '/deepsummary',
-    desc: 'Complete section-by-section doc coverage',
-    friendlyLabel: 'Document summary',
-    friendlyDesc: 'Cover a document section by section',
+    label: '/max',
+    desc: 'Exhaustive section-by-section document coverage',
+    friendlyLabel: 'Max',
+    friendlyDesc: 'Covers every document section, or the widest web research if none are selected',
     icon: BookOpen,
     color: '#60a5fa',
   },
-  {
-    id: 'ticket_analysis',
-    label: '/ticketanalysis',
-    desc: 'Group incidents by problem pattern',
-    friendlyLabel: 'Ticket patterns',
-    friendlyDesc: 'Group incidents by recurring problems',
-    icon: Database,
-    color: '#34d399',
-  },
 ];
+
+// Effort governs more than file inspection: it also caps how far the web-research pipeline is
+// allowed to go. The backend's LLM planner already picks its own source count per query
+// (3-200, scaled to how complex the question looks — see agentic_pipeline.py) and clamps it to
+// this ceiling before running; number of search rounds scales off the same ceiling. Normal
+// keeps that clamp tight so a quick question can't balloon into a 50-source research pass; Max
+// removes the clamp entirely so a genuinely deep question gets everything the planner asks for.
+export const EFFORT_WEB_SOURCE_LIMIT = {
+  light: 20,
+  thinking: 60,
+  deep_summary: 200,
+};
 
 export const AUTO_WEB_SEARCH_PATTERNS = [
   /\b(search|browse|look\s*up|google|find\s+(?:me\s+)?(?:latest|current|recent|news|online|web|internet))\b/i,
@@ -86,8 +88,14 @@ export const AUTO_WEB_SEARCH_PATTERNS = [
   /\b(better|worse|best|worst|which\s+(?:one|is|should|do)|recommend(?:ed|ation)?|suggestion|pros?\s+and\s+cons?)\b/i,
 ];
 
-export const shouldAutoWebSearch = (text, mode = 'light') => {
-  if (['ticket_analysis', 'deep_summary'].includes(mode)) return false;
+// Mirrors backend/app/main.py's _effective_web_search: at High/Max effort with no files
+// selected, there's nothing local to inspect, so more effort has to mean going and finding
+// real sources rather than answering from the model's memory. `noFilesSelected` should be true
+// only when the user explicitly has zero files in scope (not "search my whole library").
+export const shouldAutoWebSearch = (text, mode = 'light', noFilesSelected = false) => {
   const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-  return Boolean(normalized) && AUTO_WEB_SEARCH_PATTERNS.some(pattern => pattern.test(normalized));
+  if (!normalized) return false;
+  if ((mode === 'thinking' || mode === 'deep_summary') && noFilesSelected) return true;
+  if (mode === 'deep_summary') return false;
+  return AUTO_WEB_SEARCH_PATTERNS.some(pattern => pattern.test(normalized));
 };

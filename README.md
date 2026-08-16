@@ -21,7 +21,7 @@ Locus is a local-first research workspace: upload files, ask questions, and insp
 - **Library** — create stores, upload PDF/DOCX/XLSX/CSV/TXT/MD/JSON/code files, and organize them into collections.
 - **Ask** — question your files with selectable evidence scope (all files, none, or specific ones); reopen or delete past chats.
 - **Suggested follow-ups** — after each answer, Locus proposes a few relevant next questions as one-click chips.
-- **Reasoning modes** — `light` (fast excerpt answers), `thinking` (deep inspection), `deep_summary` (section-by-section), `ticket_analysis` (group incidents by pattern), and more.
+- **Reasoning modes** — `light` (fast excerpt answers), `thinking` (deep inspection), `deep_summary` (section-by-section), and more.
 - **Multi-provider models** — switch between Ollama (local), Groq, OpenAI, and Gemini, with model presets or custom model IDs.
 - **Pipeline trace** — a live developer view of retrieval, request/response previews, and stage-by-stage progress, since Locus is built for people who want to see how the answer was made, not just the answer.
 - **Semantic search** — embeddings via fastembed, vector search via pgvector on Postgres (falls back to a plain-cosine SQLite index if no Postgres is configured), no external vector DB required.

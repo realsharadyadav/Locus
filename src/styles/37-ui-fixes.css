@@ -88,7 +88,6 @@ html[data-theme='dark'] {
    checkbox with `appearance: auto` ignores, so they stayed bright system
    blue-on-white. Draw them properly instead — same radius, border and accent
    as the rest of the form controls, and large enough to hit on a phone. */
-.settings-provider-toggle input[type='checkbox'],
 .model-table .mt-col-show input[type='checkbox'] {
   appearance: none;
   -webkit-appearance: none;
@@ -104,7 +103,6 @@ html[data-theme='dark'] {
   transition: background .15s ease, border-color .15s ease;
 }
 
-.settings-provider-toggle input[type='checkbox']::after,
 .model-table .mt-col-show input[type='checkbox']::after {
   content: '';
   width: 9px;
@@ -116,38 +114,31 @@ html[data-theme='dark'] {
   clip-path: polygon(14% 47%, 0 61%, 36% 96%, 100% 22%, 85% 8%, 35% 68%);
 }
 
-.settings-provider-toggle input[type='checkbox']:checked,
 .model-table .mt-col-show input[type='checkbox']:checked {
   border-color: var(--violet);
   background: var(--violet);
 }
 
-.settings-provider-toggle input[type='checkbox']:checked::after,
 .model-table .mt-col-show input[type='checkbox']:checked::after {
   transform: scale(1);
 }
 
-.settings-provider-toggle input[type='checkbox']:focus-visible,
 .model-table .mt-col-show input[type='checkbox']:focus-visible {
   outline: 2px solid var(--violet);
   outline-offset: 2px;
 }
 
-html[data-theme='dark'] .settings-provider-toggle input[type='checkbox'],
 html[data-theme='dark'] .model-table .mt-col-show input[type='checkbox'] {
   /* Layer 13 paints every checkbox with !important; match its specificity. */
   background: rgba(255, 255, 255, .04) !important;
   border-color: rgba(255, 255, 255, .14) !important;
 }
 
-html[data-theme='dark'] .settings-provider-toggle input[type='checkbox']:checked,
 html[data-theme='dark'] .model-table .mt-col-show input[type='checkbox']:checked {
   background: var(--violet) !important;
   border-color: var(--violet) !important;
 }
 
-/* The label is the whole hit area, so give it a comfortable one on touch. */
-.settings-provider-toggle { gap: 8px; }
 
 /* ── 6. Native select chrome ──────────────────────────────────────────────
    Layer 20 gives the provider filter a themed border, background and radius
@@ -166,8 +157,6 @@ html[data-theme='dark'] .model-table .mt-col-show input[type='checkbox']:checked
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .settings-provider-toggle input[type='checkbox'],
-  .settings-provider-toggle input[type='checkbox']::after,
   .model-table .mt-col-show input[type='checkbox'],
   .model-table .mt-col-show input[type='checkbox']::after { transition: none; }
 }

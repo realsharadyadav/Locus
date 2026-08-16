@@ -450,7 +450,10 @@ def test_light_skips_quality_layer_and_thinking_uses_it(monkeypatch):
     with TestClient(app) as client:
         chat(client, question="A generic light question", reasoning_mode="light")
         assert calls == []
-        chat(client, question="A generic thinking question", reasoning_mode="thinking", file_ids=[])
+        # file_ids=None (search the whole library, empty here) rather than file_ids=[] (explicit
+        # no-files) — thinking/deep_summary with an explicit empty selection now goes to web
+        # research instead of the local quality-layer pipeline this test is checking.
+        chat(client, question="A generic thinking question", reasoning_mode="thinking", file_ids=None)
         assert calls == ["verify"]
 
 
@@ -480,36 +483,23 @@ def test_direct_chat_stream_emits_tokens_and_persists(monkeypatch):
     assert messages[-1]["content"] == "Hello there"
 
 
-def test_unrestricted_direct_chat_stream_uses_expert_mode(monkeypatch):
+def test_thinking_mode_with_empty_selection_researches_the_web(monkeypatch):
+    # An explicit empty file selection at High/Max effort means there's nothing local to read
+    # more of, so effort instead means researching the web rather than answering from the
+    # model's own memory (see _effective_web_search in main.py).
     captured = {}
 
-    def fake_stream(question, sources, history=None, model=None, allow_general_knowledge=True, reasoning_mode="light", guidance="", system_override=None, provider=None):
-        captured.update(reasoning_mode=reasoning_mode, provider=provider, model=model)
-        return iter(["Expert", " answer"]), model
+    def fake_agentic(question, model, progress, source_limit=5, history=None, answer_mode="light", force_web=False, web_research_fn=None, direct_answer_fn=None):
+        captured.update(answer_mode=answer_mode, force_web=force_web)
+        return {"answer": "Researched answer", "sources": [], "model": model, "plan": {}}
 
-    monkeypatch.setattr("backend.app.main.stream_answer", fake_stream)
-    with TestClient(app) as client:
-        with client.stream("POST", "/api/chat/direct-stream", json={"question": "go deep", "provider": "groq", "model": "test-model", "reasoning_mode": "unrestricted", "file_ids": []}) as response:
-            assert response.status_code == 200
-            events = [json.loads(line) for line in response.iter_lines() if line.strip()]
-
-    assert "".join(event["text"] for event in events if event["type"] == "token") == "Expert answer"
-    assert captured == {"reasoning_mode": "unrestricted", "provider": "groq", "model": "test-model"}
-
-
-def test_thinking_mode_with_empty_selection_uses_no_files(monkeypatch):
-    captured = {}
-
-    def fake_answer(question, plan, evidence, history, model, allow_general_knowledge, guidance, notify=lambda detail: None, on_token=None):
-        captured["evidence"] = evidence
-        return "General answer", model
-
-    monkeypatch.setattr("backend.app.main.answer_planned_question", fake_answer)
-    monkeypatch.setattr("backend.app.main.extract_shared_evidence", lambda *args, **kwargs: pytest.fail("No files were selected"))
+    monkeypatch.setattr("backend.app.main.run_agentic_pipeline", fake_agentic)
+    monkeypatch.setattr("backend.app.main.answer_planned_question", lambda *a, **k: pytest.fail("Empty selection at High effort should research the web, not run the local pipeline"))
     with TestClient(app) as client:
         result = chat(client, question="Explain recursion simply", reasoning_mode="thinking", file_ids=[])
-        assert result["sources"] == []
-        assert captured["evidence"] == []
+        assert result["answer"] == "Researched answer"
+        assert captured["answer_mode"] == "thinking"
+        assert captured["force_web"] is True
 
 
 def test_strict_mode_rejects_unsupported_question():
@@ -555,24 +545,6 @@ def test_non_search_prompt_does_not_auto_enable_web_research(monkeypatch):
     assert main_module.should_auto_web_search("Explain recursion simply", "light") is False
     assert main_module.should_auto_web_search("Search the web for React updates", "light") is True
     assert main_module.should_auto_web_search("under 5k bola tha tabular format", "light") is True
-
-
-def test_unrestricted_mode_can_use_web_search(monkeypatch):
-    captured = {}
-
-    def fake_web_research(question, model, progress, source_limit=5, history=None, answer_mode="web_research"):
-        captured.update(question=question, model=model, source_limit=source_limit, answer_mode=answer_mode)
-        return {"answer": "Unrestricted web answer", "sources": [], "model": model}
-
-    monkeypatch.setattr("backend.app.main.web_research", fake_web_research)
-    with TestClient(app) as client:
-        result = chat(client, question="Research freely", model="llama3.2:latest", reasoning_mode="unrestricted", web_search=True, web_source_limit=25)
-
-    assert result["answer"] == "Unrestricted web answer"
-    assert captured["question"] == "Research freely"
-    assert captured["model"] == "llama3.2:latest"
-    assert captured["answer_mode"] == "unrestricted"
-    assert 5 <= captured["source_limit"] <= 25  # LLM decides dynamically, clamped by user cap of 25
 
 
 def test_web_source_limit_is_validated():

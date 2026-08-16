@@ -81,8 +81,6 @@ def mock_llm(monkeypatch):
         lambda *a, **k: (iter(["Test answer"]), "test-model"))
     monkeypatch.setattr("backend.app.main.web_research",
         lambda *a, **k: {"answer": "Web answer", "sources": [], "model": "test-model"})
-    monkeypatch.setattr("backend.app.main.generate_unrestricted_answer",
-        lambda *a, **k: ("Unrestricted answer", "test-model"))
     monkeypatch.setattr("backend.app.main.repair_response",
         lambda question, answer, plan, missing, sources, model, allow_general_knowledge, shape_guidance="": "Repaired answer")
 
@@ -129,21 +127,11 @@ class TestModeSwitchingMidConversation:
             assert r2["conversation_id"] == cid
             assert r2["answer"] == "Web answer"
 
-    def test_light_to_unrestricted(self, monkeypatch):
-        """Switch light → unrestricted."""
-        with TestClient(app) as c:
-            r1 = chat(c, question="Simple question", reasoning_mode="light", file_ids=[])
-            cid = r1["conversation_id"]
-
-            r2 = chat(c, question="Expert analysis", conversation_id=cid, reasoning_mode="unrestricted", file_ids=[])
-            assert r2["conversation_id"] == cid
-            assert r2["answer"] == "Unrestricted answer"
-
     def test_all_modes_sequentially(self, monkeypatch):
-        """Go through all 6 modes in order."""
+        """Go through all 4 modes in order."""
         with TestClient(app) as c:
             s = c.post("/api/collections", json={"title": "Mode test"}).json()
-            f = _upload_text(c, s["id"], "tickets.csv", "id,summary\n1,Login issue\n2,Password reset")
+            f = _upload_text(c, s["id"], "notes.txt", "Login issue. Password reset.")
 
             r = chat(c, question="Start simple", reasoning_mode="light", file_ids=[])
             cid = r["conversation_id"]
@@ -160,12 +148,8 @@ class TestModeSwitchingMidConversation:
             r = chat(c, question="Search the web", conversation_id=cid, reasoning_mode="web_research")
             assert r["conversation_id"] == cid
 
-            # unrestricted
-            r = chat(c, question="Expert mode", conversation_id=cid, reasoning_mode="unrestricted", file_ids=[])
-            assert r["conversation_id"] == cid
-
             msgs = c.get(f"/api/chats/{cid}/messages").json()
-            assert len(msgs) == 10  # 5 pairs (skipped ticket_analysis since it requires 1 file only)
+            assert len(msgs) == 8  # 4 pairs
 
 
 # =====================================================================

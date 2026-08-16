@@ -938,9 +938,7 @@ html[data-theme='dark'] .chat-composer .composer-controls .knowledge-button.acti
 .mode-picker-trigger.mode-light { color: var(--muted); }
 .mode-picker-trigger.mode-thinking { border-color: rgba(167,139,250,.3) !important; color: #8b6fe0 !important; }
 .mode-picker-trigger.mode-deep_summary { border-color: rgba(96,165,250,.3) !important; color: #3d7dd6 !important; }
-.mode-picker-trigger.mode-ticket_analysis { border-color: rgba(52,211,153,.3) !important; color: #1f9d6f !important; }
 .mode-picker-trigger.mode-web_research { border-color: rgba(251,146,60,.3) !important; color: #d5720f !important; }
-.mode-picker-trigger.mode-unrestricted { border-color: rgba(255,107,107,.3) !important; color: #e04f4f !important; }
 .mode-picker-menu {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -988,9 +986,7 @@ html[data-theme='dark'] .chat-composer .composer-controls .knowledge-button.acti
 .mode-light { background: rgba(136,136,160,.12); color: var(--muted); }
 .mode-thinking { background: rgba(167,139,250,.14); color: #a78bfa; }
 .mode-deep_summary { background: rgba(96,165,250,.14); color: #60a5fa; }
-.mode-ticket_analysis { background: rgba(52,211,153,.14); color: #34d399; }
 .mode-web_research { background: rgba(251,146,60,.14); color: #fb923c; }
-.mode-unrestricted { background: rgba(255,107,107,.14); color: #ff6b6b; }
 
 /* ─── Input wrap for slash popup position ─── */
 .input-wrap {

@@ -62,19 +62,19 @@ and `PipelineActivity` renders stage/telemetry live -> answer persisted as a `Ch
 
 **Reasoning modes** (`backend/app/modes.py`, `MODE_CONFIG`): `light` (fast excerpt),
 `thinking` (full-file), `deep_summary` (section-by-section with coverage manifests),
-`ticket_analysis` (ITSM grouping via `ticket_taxonomy.py`), `web_research` (multi-round
-DDG search + synthesis), `unrestricted` (no guardrails — 7-strategy jailbreak pipeline with
-auto-rephrase-on-refusal in `llm.py`).
+`web_research` (multi-round
+DDG search + synthesis). The three user-facing modes are presented as an effort dial —
+**Normal** (`light`), **High** (`thinking`), **Max** (`deep_summary`) — in `src/lib/ask.js`.
 
 **Core backend pipeline files** — `main.py` (REST endpoints, job orchestration),
 `agentic_pipeline.py` (LLM planner, dynamic per-query `source_limit`, evidence validation),
-`llm.py` (provider clients, enhance/generate/verify/repair, unrestricted pipeline). See
+`llm.py` (provider clients, enhance/generate/verify/repair). See
 AGENTS.md's "Backend Files" table for the full file-by-file breakdown before editing any of
 these — the pipeline has several load-bearing behaviors (context budgeting, streaming,
 schema migration dialect-awareness) documented there as numbered lessons.
 
 **Frontend:** `App.jsx` is the shell/router; pages live in `src/pages/` (Home, Hub/Library,
-Explore/Ask, Settings, TicketAnalysis); `src/api.js` wraps the REST client; `src/lib/` and
+Explore/Ask, Settings); `src/api.js` wraps the REST client; `src/lib/` and
 `src/hooks/` hold cross-page helpers. `src/secret-chat/` is a self-contained module for
 Private Chats (host/guest rooms, SSE, presence, optional Telegram bridge) — see AGENTS.md's
 "Private chat rules" before touching it, the auth/ownership model is not obvious from the code
@@ -88,7 +88,7 @@ highest-numbered file.
 **Model selection rule:** Settings owns the one default, picked as a *model* from a single
 dropdown grouped by provider (the provider is derived and displayed, never chosen). It is saved
 as the `explore_ai` preference and resolved server-side by `backend/app/ai_defaults.py`. No
-other page picks a model — Ask, Ticket Analysis and Private Chats just show it. Settings can
+other page picks a model — Ask and Private Chats just show it. Settings can
 also probe models (`POST /api/llm/models/test`) and tag responding ones via `model_health`.
 
 **Model list rule:** never hardcode an Ollama model list. Always query `OLLAMA_URL/api/tags` at

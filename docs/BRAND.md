@@ -14,7 +14,6 @@
 | `home` | Home |
 | `hub` | Library |
 | `explore` | Ask |
-| `ticket-analysis` | Patterns |
 | `secret-chat` | Private |
 
 ## Voice
@@ -35,11 +34,10 @@
 |---|---|
 | Library | Knowledge hub |
 | Ask | Explore (user-facing) |
-| Patterns | TicketInsight |
 | Private | Secret chat |
 | Locus AI | MindMap AI |
 
-Internal route ids (`explore`, `hub`, `ticket-analysis`) stay stable for URLs and API compatibility.
+Internal route ids (`explore`, `hub`) stay stable for URLs and API compatibility.
 
 ## Storage migration
 

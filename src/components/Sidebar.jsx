@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   Library,
   MessagesSquare,
-  ChartNoAxesCombined,
   Fingerprint,
   Lock,
   Sun,
@@ -31,7 +30,6 @@ export const NAV_SECTIONS = [
   {
     label: 'Signals',
     items: [
-      { id: 'ticket-analysis', Icon: ChartNoAxesCombined, label: 'Patterns', accent: '205 92% 62%' },
       { id: 'secret-chat', Icon: Fingerprint, label: 'Private', accent: '341 85% 66%' },
       { id: 'secret-images', Icon: Lock, label: 'Secret Images', accent: '271 76% 68%' },
     ],

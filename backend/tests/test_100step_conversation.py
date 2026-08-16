@@ -80,11 +80,6 @@ def mock_llm(monkeypatch):
         "backend.app.main.web_research",
         lambda *a, **k: {"answer": "Web answer", "sources": [], "model": "test-model"},
     )
-    # Mock unrestricted answer
-    monkeypatch.setattr(
-        "backend.app.main.generate_unrestricted_answer",
-        lambda *a, **k: ("Unrestricted answer", "test-model"),
-    )
 
 
 # =====================================================================

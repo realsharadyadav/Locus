@@ -1,8 +1,8 @@
 /* 38 — one default model, chosen in one place.
  *
  * Settings now separates the two jobs that used to share a panel: picking the default the
- * whole app answers with, and ticking which providers/models stay in the catalogue. Ask and
- * Ticket Analysis lost their own pickers, so what they render here is a label, not a control. */
+ * whole app answers with, and ticking which providers/models stay in the catalogue. Ask lost
+ * its own picker, so what it renders here is a label, not a control. */
 
 .settings-section-head {
   display: flex;
@@ -12,6 +12,33 @@
 }
 .settings-section-head h3 { margin: 0; }
 .settings-section-head .settings-hint-text { margin: 0; }
+.settings-section-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-section-head-row h3 { flex-shrink: 0; }
+.settings-test-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.settings-test-all-btn:hover:not(:disabled) { border-color: var(--violet); color: var(--violet); }
+.settings-test-all-btn:disabled { cursor: default; opacity: .7; }
+.settings-test-all-btn .spin { animation: mt-spin 1s linear infinite; }
+html[data-theme='dark'] .settings-test-all-btn { background: rgba(16,22,30,.92); border-color: #30363d; }
 
 .settings-default-section {
   border-color: var(--violet);
@@ -43,6 +70,61 @@
 .settings-default-provider { margin-top: 12px; }
 .settings-default-provider strong { color: var(--ink); }
 
+/* Auto-select on failure: the toggle under the default picker, and the note that explains
+   the last automatic switch. The note is a surface-level callout, not an error — it simply
+   records that the default changed itself. */
+.settings-auto-select-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color .15s;
+}
+.settings-auto-select-toggle:hover { border-color: var(--violet); }
+.settings-auto-select-toggle input {
+  margin-top: 3px;
+  accent-color: var(--violet);
+  flex-shrink: 0;
+}
+.settings-auto-select-toggle span { display: flex; flex-direction: column; gap: 3px; }
+.settings-auto-select-toggle strong { font-size: 12.5px; color: var(--ink); }
+.settings-auto-select-toggle small { font-size: 11px; line-height: 1.5; color: var(--muted); }
+
+.settings-auto-switch-note {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--violet);
+  border-radius: 10px;
+  background: rgba(124, 92, 224, .08);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.settings-auto-switch-note strong { color: var(--violet); font-weight: 700; }
+.settings-auto-switch-note button {
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.settings-auto-switch-note button:hover { border-color: var(--violet); color: var(--violet); }
+html[data-theme='dark'] .settings-auto-switch-note { background: rgba(124, 92, 224, .14); }
+
 /* Test results in the model table. */
 .mt-col-status { white-space: nowrap; }
 .mt-status {
@@ -53,50 +135,5 @@
 .mt-status.ok { color: var(--green, #2f9e6f); }
 .mt-status.failed { color: var(--red, #c2483d); }
 .mt-status.untested { color: var(--muted); }
-.model-table-test {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.model-table-test .spin { animation: mt-spin 1s linear infinite; }
 @keyframes mt-spin { to { transform: rotate(360deg); } }
 
-.settings-model-header {
-  margin-top: 26px;
-}
-.settings-model-header h4 {
-  margin: 0;
-  font-size: 13px;
-}
-
-/* Ask header: what the answer will run on, stated rather than offered. */
-.chat-top-model {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 220px;
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--paper);
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 600;
-}
-.chat-top-model-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Ticket Analysis run settings: the model row is now read-only. */
-.tset-static-value {
-  padding: 7px 10px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}

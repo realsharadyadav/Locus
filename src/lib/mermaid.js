@@ -159,8 +159,8 @@ export function useMermaidRender(code) {
           // 'strict' HTML-encodes label text, which turns an intentional <br/> line break
           // inside a node label into the literal text "<br>" instead of a line break. 'loose'
           // fixes that but disables Mermaid's own sanitization entirely - unacceptable here
-          // since diagram source can come from an LLM answer (including unrestricted-mode
-          // output) or a summarized untrusted document, and the rendered SVG is inserted via
+          // since diagram source can come from an LLM answer or a summarized untrusted
+          // document, and the rendered SVG is inserted via
           // dangerouslySetInnerHTML. 'antiscript' is the middle ground Mermaid ships for
           // exactly this: HTML tags in labels (including <br/>) render, only <script> is
           // stripped.

@@ -55,19 +55,4 @@
   .app-shell.explore-active .composer-meta {
     justify-content: flex-start;
   }
-
-  .app-shell.explore-active .composer-knowledge-label {
-    display: none !important;
-  }
-
-  .app-shell.explore-active .composer-model-label {
-    display: inline !important;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
 }
-
-.composer-model-label { display: none; }

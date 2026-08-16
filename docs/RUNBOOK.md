@@ -90,7 +90,6 @@ Important settings:
   default `https://opencode.ai/zen/go/v1` endpoint without a code change
 - `SEMANTIC_RETRIEVAL_ENABLED`
 - `VECTOR_FALLBACK_PATH`
-- `TICKET_ANALYSIS_ENABLED`
 - `LOCUS_AUTH_PASSWORD`: unset (the default) leaves the API open, which is what local dev wants;
   set it to put the whole app behind a password
 - `LOCUS_TELEGRAM_API_ID`, `LOCUS_TELEGRAM_API_HASH`, `LOCUS_TELEGRAM_SESSION`: unset (the

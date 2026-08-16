@@ -15,7 +15,6 @@ import { ExplorePage } from './pages/ExplorePage';
 import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
-import TicketAnalysisPage from './pages/TicketAnalysisPage';
 import { clearSecretChatHost, PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
 import { secretImagesApi, SecretImagesPage } from './secret-images';
 
@@ -346,7 +345,7 @@ export function App({ initialSecretChatToken = null }) {
   if (!booted) return <SplashScreen progress={bootProgress} />;
 
   return (
-    <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'ask' ? 'explore-active' : ''} ${page === 'ticket-analysis' ? 'ticket-analysis-active' : ''} ${page === 'secret-chat' ? 'secretchat-active' : ''}`}>
+    <div className={`app-shell ${sidebarCompact ? 'sidebar-compact' : ''} ${page === 'ask' ? 'explore-active' : ''} ${page === 'secret-chat' ? 'secretchat-active' : ''}`}>
       <Sidebar
         page={page}
         setPage={(id) => navigate(id)}
@@ -372,7 +371,7 @@ export function App({ initialSecretChatToken = null }) {
         secretImagesConfigured={secretImagesConfigured}
       />
       <main>
-        {!['ask', 'ticket-analysis', 'secret-chat', 'secret-images'].includes(page) && (
+        {!['ask', 'secret-chat', 'secret-images'].includes(page) && (
           <Header
             query={query}
             openMenu={() => setMobileOpen(true)}
@@ -436,9 +435,6 @@ export function App({ initialSecretChatToken = null }) {
             historyCollapsed={historyCollapsed}
             setHistoryCollapsed={setHistoryCollapsed}
           />
-        )}
-        {page === 'ticket-analysis' && (
-          <TicketAnalysisPage files={files} openMenu={() => setMobileOpen(true)} />
         )}
         {page === 'secret-chat' && (
           <PrivateChatsPage

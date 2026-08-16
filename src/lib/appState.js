@@ -22,9 +22,8 @@ export const PROVIDER_META = {
 };
 export const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
 export const APP_DATA_CACHE_KEY = storageKey('last-data');
-export const APP_PAGES = ['home', 'library', 'ask', 'ticket-analysis', 'secret-chat', 'settings'];
+export const APP_PAGES = ['home', 'library', 'ask', 'secret-chat', 'settings'];
 export const normalizePageId = pageId => {
-  if (pageId === 'ticketinsight' || pageId === 'ticket-analysis-lab') return 'ticket-analysis';
   // Legacy route/page ids kept working for old bookmarks and shared links.
   if (pageId === 'hub') return 'library';
   if (pageId === 'explore') return 'ask';

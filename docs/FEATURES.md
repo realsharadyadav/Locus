@@ -1,7 +1,7 @@
 # Locus — What It Is and What It Does
 
 A research workspace for developers: upload documents, ask questions across them with a
-visible pipeline, group ticket data by problem pattern, and run private real-time chats that
+visible pipeline, and run private real-time chats that
 can reach people on Telegram. Single-workspace app (no user accounts yet), deployed on
 Render's free tier.
 
@@ -58,21 +58,10 @@ Locally everything runs on SQLite with zero setup. See `docs/RUNBOOK.md`.
 | `light` | Fast answer from the most relevant excerpts |
 | `thinking` | Full-file inspection, deeper reasoning |
 | `deep_summary` | Section-by-section summary with a coverage manifest and deterministic gap detection |
-| `ticket_analysis` | ITSM-style grouping of incidents and tickets |
 | `web_research` | Multi-round web search (DDG) with LLM-planned queries and synthesis |
-| `unrestricted` | No guardrails: 7 escalating strategies plus auto-rephrase on refusal |
 
 In web research the LLM decides how many sources to gather per query (3–200); the user's
 setting is only a cap.
-
-## Patterns (Ticket Analysis)
-
-- Upload a ticket export and group it by problem pattern.
-- Rule-based ITSM taxonomy (25 v2 rules + 9 legacy) with confidence scoring and record-type
-  detection, plus semantic clustering.
-- Selectable embedding method (tfidf / neural hash / hybrid) and clustering strategy
-  (taxonomy+semantic, agglomerative, kmeans, hdbscan-lite, kwikbucks).
-- Markdown report export, taxonomy rule editing, saved analysis history.
 
 ## Private Chats (Secret Chat)
 
@@ -115,9 +104,9 @@ Real-time one-to-one and small-group rooms, separate from the document workspace
 
 ## Model Controls
 
-- One default model, chosen in Settings, used by every module — Ask, Ticket Analysis and the
-  private-chat copilot. No page has its own picker; Ask and Ticket Analysis show which model
-  will answer, and link to Settings to change it.
+- One default model, chosen in Settings, used by every module — Ask and the private-chat
+  copilot. No page has its own picker; Ask shows which model will answer, and links to
+  Settings to change it.
 - Settings has two separate sections: **Default model** (one dropdown listing every model
   grouped by provider — the provider is read off the model you pick and shown as a label) and
   **Available providers & models** (which providers and models stay in the catalogue —

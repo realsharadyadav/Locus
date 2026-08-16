@@ -11,13 +11,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ENV_PATH = PROJECT_ROOT / ".env"
 load_dotenv(ENV_PATH)
 
-TICKET_ANALYSIS_ENABLED = os.getenv("TICKET_ANALYSIS_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
-TICKET_ANALYSIS_MIN_GROUP_SIZE = max(1, int(os.getenv("TICKET_ANALYSIS_MIN_GROUP_SIZE", "3")))
-TICKET_ANALYSIS_MAX_GROUPS = max(1, int(os.getenv("TICKET_ANALYSIS_MAX_GROUPS", "20")))
-TICKET_ANALYSIS_REPRESENTATIVE_TICKETS = max(1, int(os.getenv("TICKET_ANALYSIS_REPRESENTATIVE_TICKETS", "3")))
-TICKET_ANALYSIS_USE_EMBEDDINGS = os.getenv("TICKET_ANALYSIS_USE_EMBEDDINGS", "true").lower() in {"1", "true", "yes", "on"}
-TICKET_ANALYSIS_DEDUP_THRESHOLD = float(os.getenv("TICKET_ANALYSIS_DEDUP_THRESHOLD", "0.92"))
-TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD = float(os.getenv("TICKET_ANALYSIS_CLUSTER_SIMILARITY_THRESHOLD", "0.78"))
 SEMANTIC_RETRIEVAL_ENABLED = os.getenv("SEMANTIC_RETRIEVAL_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 # Used only as a last-resort fallback when LOCUS_DATABASE_URL isn't Postgres (pgvector is the
 # primary vector store — see vector_store.py).
