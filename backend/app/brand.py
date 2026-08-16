@@ -26,8 +26,11 @@ CREATOR_QUESTION_PATTERN = re.compile(
 # of the actual builder of this app. Caught separately from CREATOR_QUESTION_PATTERN above
 # because a direct name lookup gets a richer, more "customized" bio-style answer (see
 # CREATOR_BIO_ANSWERS) rather than the short "who built you" one-liners.
+# The surname is optional: in-app, "who is sharad" is the common phrasing and is no less
+# about the builder than the full name is.
+_CREATOR_FIRST, _CREATOR_LAST = BRAND_CREATOR.split()[0], BRAND_CREATOR.split()[-1]
 CREATOR_NAME_PATTERN = re.compile(
-    rf"\bwho(?:'s|\s+(?:is|was))\s+(the\s+)?{re.escape(BRAND_CREATOR)}\b",
+    rf"\bwho(?:'s|\s+(?:is|was))\s+(the\s+)?{re.escape(_CREATOR_FIRST)}(\s+{re.escape(_CREATOR_LAST)})?\b",
     re.IGNORECASE,
 )
 CAPABILITY_QUESTION_PATTERN = re.compile(

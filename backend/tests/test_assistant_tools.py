@@ -99,6 +99,21 @@ class TestDeterministicClassification:
         assert call is not None
         assert call["tool"] in ("get_settings", "get_model_health")
 
+    # Live-configuration questions used to match no pattern at all, so they fell through to the
+    # normal answer pipeline and the model truthfully said it could not see the configuration —
+    # even though get_settings already knew. Routing, not the tool, was the bug.
+    @pytest.mark.parametrize("question", [
+        "how many providers are configured and how many of them have responding model ?",
+        "which providers are configured",
+        "how many providers do i have",
+        "what providers are available",
+        "how many providers are set up",
+    ])
+    def test_provider_configuration_questions_reach_get_settings(self, question):
+        call = classify_platform_action(question, "test-model")
+        assert call is not None
+        assert call["tool"] == "get_settings"
+
     @pytest.mark.parametrize("question", [
         "Explain the quantum entanglement paper",
         "Summarize the attached PDF please",
@@ -242,6 +257,15 @@ class TestExecution:
             assert record["result"]["theme"] == "light"
             assert record["result"]["provider"]
             assert record["result"]["model"]
+
+    def test_get_settings_reports_configured_providers_and_health(self):
+        with SessionLocal() as db:
+            record = execute_action(db, "get_settings", {}, "ollama", "test-model")
+            # Ollama needs no API key, so at least one provider is always configured.
+            assert "ollama" in record["result"]["configured_providers"]
+            assert record["result"]["models_responding"] <= record["result"]["models_tested"]
+            assert "Providers configured:" in record["summary"]
+            assert "Model health:" in record["summary"]
 
     def test_get_model_health_with_nothing_tested(self):
         with SessionLocal() as db:

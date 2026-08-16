@@ -21,6 +21,7 @@ falls through to the normal answer pipeline instead of failing.
 """
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 
@@ -88,6 +89,8 @@ _GET_SETTINGS_PATTERN = re.compile(
     r"\b(settings?|config)\b.{0,25}\b(show|tell|what|check|dikha|dikhao|kya|batao|btao)\b|"
     r"\b(check|show|tell|dikha|dikhao)\b.{0,20}\b(settings?|config)\b|"
     r"\b(what\s+(are|is|do|did)|which)\b.{0,12}\b(my\s+)?(settings|config)\b|"
+    r"\b(how\s+many|which|what)\b.{0,25}\bproviders?\b|"
+    r"\bproviders?\b.{0,25}\b(configured|available|set\s?up|enabled|are\s+there)\b|"
     r"\b(model|provider|theme)\b.{0,20}\b(kya|what|hain|hai|kaun|konsa|kaunsa|am i|are you|is it)\b",
     re.I,
 )
@@ -390,13 +393,46 @@ def _execute_run_model_health_test(db: Session, current_provider: str, current_m
     return {"summary": summary, "result": {"provider": current_provider, "model": current_model, "ok": bool(outcome.get("ok")), "latency_ms": outcome.get("latency_ms", 0)}}
 
 
+def _configured_providers() -> list[str]:
+    """Providers usable right now: a key-based one needs its key in the environment, and
+    Ollama (no key) is always reachable in principle."""
+    return [
+        spec.id for spec in PROVIDERS.values()
+        if spec.api_key_env is None or os.environ.get(spec.api_key_env)
+    ]
+
+
 def _execute_get_settings(db: Session) -> dict:
     provider, model = preferred_ai(db)
     theme = _preference_value(db, THEME_PREFERENCE_KEY) or {}
     label = (PROVIDERS[provider].label if provider in PROVIDERS else provider)
     current_theme = theme.get("theme") or "dark"
-    summary = f"**Default model:** {label} · {model}.  \n**Theme:** {current_theme.title()}."
-    return {"summary": summary, "result": {"provider": provider, "model": model, "theme": current_theme}}
+    configured = _configured_providers()
+    labels = ", ".join(PROVIDERS[p].label for p in configured) or "none"
+    health = _preference_value(db, MODEL_HEALTH_PREFERENCE_KEY) or {}
+    tested = [entry for models in health.values() for entry in models.values()]
+    responding = sum(1 for entry in tested if entry.get("ok"))
+    health_line = (
+        f"{responding}/{len(tested)} tested models responding" if tested
+        else "no models tested yet — ask me to run a model health test"
+    )
+    summary = (
+        f"**Default model:** {label} · {model}.  \n"
+        f"**Providers configured:** {len(configured)} — {labels}.  \n"
+        f"**Model health:** {health_line}.  \n"
+        f"**Theme:** {current_theme.title()}."
+    )
+    return {
+        "summary": summary,
+        "result": {
+            "provider": provider,
+            "model": model,
+            "theme": current_theme,
+            "configured_providers": configured,
+            "models_tested": len(tested),
+            "models_responding": responding,
+        },
+    }
 
 
 def _execute_get_model_health(db: Session) -> dict:
