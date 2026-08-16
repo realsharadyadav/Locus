@@ -74,6 +74,48 @@ def test_migration_is_idempotent(legacy_schema):
     main_module._ensure_schema_columns()
 
 
+@pytest.fixture()
+def r2_era_secret_images(tmp_path, monkeypatch):
+    """A `secret_images` table from before the R2 -> disk rename: `r2_key`, no `file_path`.
+
+    This is the shape the deployed Postgres was actually in. The rename landed in the model
+    only, and create_all never alters an existing table, so the deployed column kept its old
+    name while the ORM started selecting the new one.
+    """
+    legacy_engine = create_engine(f"sqlite:///{tmp_path / 'r2.db'}")
+    Base.metadata.create_all(bind=legacy_engine)
+    inspector = inspect(legacy_engine)
+    for index in inspector.get_indexes("secret_images"):
+        if index.get("name"):
+            with legacy_engine.begin() as connection:
+                connection.execute(text(f"DROP INDEX IF EXISTS {index['name']}"))
+    with legacy_engine.begin() as connection:
+        connection.execute(text("ALTER TABLE secret_images DROP COLUMN data"))
+        connection.execute(text("ALTER TABLE secret_images RENAME COLUMN file_path TO r2_key"))
+    monkeypatch.setattr(main_module, "engine", legacy_engine)
+    yield legacy_engine
+    legacy_engine.dispose()
+
+
+def test_migration_renames_the_r2_era_column_and_survives_boot(r2_era_secret_images):
+    """The regression: the backfill selected `file_path` on a table that only had `r2_key`.
+
+    The failure took the whole app down at startup, and because the ADD COLUMN shared the
+    backfill's transaction, the rollback meant every later boot hit the identical error —
+    the deploy could never recover on its own.
+    """
+    main_module._ensure_schema_columns()
+    columns = {column["name"] for column in inspect(r2_era_secret_images).get_columns("secret_images")}
+    assert "file_path" in columns, "the r2_key -> file_path rename never reached the database"
+    assert "r2_key" not in columns
+    assert "data" in columns, "the ADD COLUMN was rolled back by a failing backfill"
+
+
+def test_migration_from_the_r2_era_is_idempotent(r2_era_secret_images):
+    main_module._ensure_schema_columns()
+    main_module._ensure_schema_columns()
+
+
 def test_migration_emits_no_sqlite_only_ddl():
     """Guards the actual regression: `DATETIME` and `DEFAULT 0/1` booleans break Postgres.
 

@@ -189,19 +189,34 @@ def _ensure_schema_columns():
                 connection.execute(text(ddl))
         if "via_ai" not in secret_chat_message_columns:
             connection.execute(text(f"ALTER TABLE secret_chat_messages ADD COLUMN via_ai BOOLEAN NOT NULL DEFAULT {FALSE}"))
+        # `r2_key` was renamed to `file_path` when Secret Images moved off R2 onto disk, but
+        # only in the model — create_all never alters an existing table, so every database
+        # that predates the rename still has the old column and the ORM's `file_path` selects
+        # fail against it. Rename it here before anything below touches the table.
+        if "file_path" not in secret_image_columns and "r2_key" in secret_image_columns:
+            connection.execute(text("ALTER TABLE secret_images RENAME COLUMN r2_key TO file_path"))
+            secret_image_columns = (secret_image_columns - {"r2_key"}) | {"file_path"}
         if "data" not in secret_image_columns:
             connection.execute(text(f"ALTER TABLE secret_images ADD COLUMN data {BLOB}"))
-            _backfill_secret_images_from_disk(connection)
+            _backfill_secret_images_from_disk(connection, secret_image_columns)
 
 
-def _backfill_secret_images_from_disk(connection) -> None:
+def _backfill_secret_images_from_disk(connection, secret_image_columns: set[str]) -> None:
     """Move any still-present disk files into the rows that reference them.
 
     Only does anything on a host that kept its filesystem across the upgrade —
     a local checkout. Where the disk was ephemeral the files are already gone,
     and those rows stay empty; `_prune_dataless_secret_images` clears them so the
     gallery does not advertise photos it cannot serve.
+
+    Takes the column set rather than probing, because this runs inside the same
+    transaction as the ADD COLUMN above: a failed statement here would abort that
+    transaction and roll the new column back, so every later boot would retry the
+    identical failure and never start. Selecting a column that isn't there is not
+    worth that, and a database with no path column has nothing to backfill from.
     """
+    if "file_path" not in secret_image_columns:
+        return
     rows = connection.execute(text("SELECT id, file_path FROM secret_images WHERE data IS NULL")).all()
     for image_id, file_path in rows:
         if not file_path:
