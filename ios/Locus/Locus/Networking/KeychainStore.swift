@@ -48,7 +48,20 @@ enum KeychainStore {
 /// Where the backend lives. Editable in Settings; read fresh for every request so a change
 /// applies immediately. Local http is dev-only (ATS exception is in the dev Info.plist).
 enum ServerConfig {
-    static let defaultBaseURL = "http://127.0.0.1:8000"
+    /// A phone has no localhost server, so a device build points at the deployed backend and
+    /// works the moment it is installed; the simulator keeps talking to the dev server on the
+    /// Mac. Either can be overridden in Settings (a phone on the same wifi can use the Mac's
+    /// LAN IP, for example).
+    static let productionBaseURL = "https://locus-backend-ewwe.onrender.com"
+
+    static var defaultBaseURL: String {
+        #if targetEnvironment(simulator)
+        return "http://127.0.0.1:8000"
+        #else
+        return productionBaseURL
+        #endif
+    }
+
     static let userDefaultsKey = "locus.serverURL"
 
     static var baseURL: String {
