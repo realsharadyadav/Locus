@@ -1,0 +1,677 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		025DA5705D7EB5BC51A8F3D6 /* ChatListDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C05102602913222F47EE96 /* ChatListDrawer.swift */; };
+		052BEECD147D37A19F69CDB8 /* LocusSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E79440B24E087234D114BB7A /* LocusSmokeUITests.swift */; };
+		0B0AEB204EB92E9CE4DA8D44 /* LibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D01F5EFBC5FDC6B34000D0D9 /* LibraryModel.swift */; };
+		12753B2D3BC41645DA21BD89 /* Markdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3150F394204B5442582E5054 /* Markdown.swift */; };
+		180F5C7125E419EEB8FF9950 /* PrivateChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D87749FDB28A0F22215E4CED /* PrivateChatsView.swift */; };
+		1914F85F0D51A62C76BA2AA2 /* MermaidView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFEFA903EDBA04A0EB066D21 /* MermaidView.swift */; };
+		1B7D60492E970D45CB76AAA3 /* LocusTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEA72AAFF3BBA7A4914995B /* LocusTheme.swift */; };
+		1DC2059A5D4293209D2BC7E0 /* PipelineActivityCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 505C2FD511E57E8E8BB0A18E /* PipelineActivityCard.swift */; };
+		1F860CC7FB613CCA3E56B249 /* HomeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52752239C897A347D3EDD3F9 /* HomeModel.swift */; };
+		224E6B5867553E11A4E10C50 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F3A5FEA9CC9C8D97E1BE41 /* AppState.swift */; };
+		22D4344AE427BF9E07DF8268 /* PrivateIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A11A30C92033EC447CF40AA /* PrivateIdentity.swift */; };
+		248139AE10A6F37335E90870 /* RoomModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3708F1D2EA96286CADE1922B /* RoomModel.swift */; };
+		3185631A3E2CBDB083440481 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40BB37118B4FC5830293AEC7 /* HomeView.swift */; };
+		39FCB8C0E7050B9161E600C6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E1C1367D937C33DF4F1FBE6 /* SettingsView.swift */; };
+		3B3F8DB5388B9A682BB11411 /* SideMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = A768F17674E1D16171BFF3A5 /* SideMenu.swift */; };
+		4603298E2C2F25C588D11CA2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9ABFC63C1246370B27F3BEBD /* Assets.xcassets */; };
+		49483EA725609362D7AB97A5 /* GuestsPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4265F326F0039075623A965F /* GuestsPanel.swift */; };
+		4FECFC5BAB9D3DDBD05AD742 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF8F7B0A7B3411D122B5DA7F /* Components.swift */; };
+		5E72A2E12EB75E2F2E971EB7 /* GlowBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46F74A6521B3C7EA03389BC /* GlowBackground.swift */; };
+		6B725B73318BBC55B9B668ED /* NewRoomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623AC7625785893CD3A40156 /* NewRoomSheet.swift */; };
+		749215FA35C5471682A1E57F /* PrivateChatsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3473CFB1514B65917A32FA /* PrivateChatsModel.swift */; };
+		7EA246917B95CB73D6FD95B6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8649E6545A70AAB951F973A /* LoginView.swift */; };
+		8748B2A3F764E65E90F16DBD /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A61BAD49F0FA9A2B0F2478B /* LibraryView.swift */; };
+		9D5C2B528BF34EDCDD66323E /* CopilotSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA56E1E13BB77E0839A2FDA /* CopilotSheet.swift */; };
+		9E357F7725D073B17F050456 /* AskModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21C5B08E79BFF9D1C1F8A8A3 /* AskModel.swift */; };
+		A7B886301175CFFF4CBB9626 /* FilePickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0951766BB678300FD37EDF2F /* FilePickerSheet.swift */; };
+		AC879E6D0D08C8CD839E9AAC /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5D9504AE14AA86C559AF06 /* APIClient.swift */; };
+		AEACF0DCFF03795D53A5B42E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71E796875AEF29522E679E3 /* KeychainStore.swift */; };
+		B5B2E3D19E5049C0FBDC889A /* FloatingComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF244270CECB0D015AFD5964 /* FloatingComposer.swift */; };
+		BDB1EEDF9AEFC0E8EC6A177A /* RoomOptionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3570F374A0FE3C64D1271DE /* RoomOptionsSheet.swift */; };
+		BE9BD42155453C8D83E375B5 /* Format.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40E4654469241C5E284BD7B4 /* Format.swift */; };
+		C014086A6D38905D5EF73571 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68058EF3E9FEB63C32F4EB9D /* APIModels.swift */; };
+		CAFCBBC0C8A651F9A6AF3496 /* mermaid.min.js in Resources */ = {isa = PBXBuildFile; fileRef = 0B5354B4C6957F7A2DEC7806 /* mermaid.min.js */; };
+		CB22892B835E59A99C4FA35D /* LocusApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCCEF7CD29A9C6F9C3E1472F /* LocusApp.swift */; };
+		CB744D4D6B5E79AF31E00AB4 /* AppShell.swift in Sources */ = {isa = PBXBuildFile; fileRef = 476E941D733E891E28856956 /* AppShell.swift */; };
+		CE4A025FE569DDF98EDCDFF7 /* PageScaffold.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AC4D5B8DCCE0A48D315CF41 /* PageScaffold.swift */; };
+		D162000BB09C714FC84BFA08 /* RoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF03B409C80CC1732069E791 /* RoomView.swift */; };
+		E4DF1E7552A42B44EE6EBE2E /* PipelineNotes.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0D357C965E0F7AB7790A69F /* PipelineNotes.swift */; };
+		E88BF654F33B92C283FF6A07 /* SecretImagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49B344A800919C12EFEDA5F2 /* SecretImagesView.swift */; };
+		F3740DDC321D877F088CDACA /* SettingsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3021471F682352A292826589 /* SettingsModel.swift */; };
+		F47A6297BD27A24CB05FA980 /* AskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4763397350DF5CADED338CC2 /* AskView.swift */; };
+		F68B121303D3BB0151B35896 /* SecretImagesModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF698CAA630A1295AE804F01 /* SecretImagesModel.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C34DCDDD96F4EB05E4117417 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB04EC8B4299D1D64DC4EDE5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4896638691C4AFF8C4B6701D;
+			remoteInfo = Locus;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0951766BB678300FD37EDF2F /* FilePickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePickerSheet.swift; sourceTree = "<group>"; };
+		0B5354B4C6957F7A2DEC7806 /* mermaid.min.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = mermaid.min.js; sourceTree = "<group>"; };
+		0BA56E1E13BB77E0839A2FDA /* CopilotSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotSheet.swift; sourceTree = "<group>"; };
+		0E1C1367D937C33DF4F1FBE6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		21C5B08E79BFF9D1C1F8A8A3 /* AskModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskModel.swift; sourceTree = "<group>"; };
+		3021471F682352A292826589 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
+		3150F394204B5442582E5054 /* Markdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Markdown.swift; sourceTree = "<group>"; };
+		3708F1D2EA96286CADE1922B /* RoomModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomModel.swift; sourceTree = "<group>"; };
+		40BB37118B4FC5830293AEC7 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		40E4654469241C5E284BD7B4 /* Format.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Format.swift; sourceTree = "<group>"; };
+		4265F326F0039075623A965F /* GuestsPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuestsPanel.swift; sourceTree = "<group>"; };
+		4763397350DF5CADED338CC2 /* AskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskView.swift; sourceTree = "<group>"; };
+		476E941D733E891E28856956 /* AppShell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppShell.swift; sourceTree = "<group>"; };
+		49B344A800919C12EFEDA5F2 /* SecretImagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretImagesView.swift; sourceTree = "<group>"; };
+		505C2FD511E57E8E8BB0A18E /* PipelineActivityCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineActivityCard.swift; sourceTree = "<group>"; };
+		52752239C897A347D3EDD3F9 /* HomeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeModel.swift; sourceTree = "<group>"; };
+		5A11A30C92033EC447CF40AA /* PrivateIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateIdentity.swift; sourceTree = "<group>"; };
+		623AC7625785893CD3A40156 /* NewRoomSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NewRoomSheet.swift; sourceTree = "<group>"; };
+		68058EF3E9FEB63C32F4EB9D /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		73FB5B7D276424050FE55E24 /* LocusUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = LocusUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		7AC4D5B8DCCE0A48D315CF41 /* PageScaffold.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageScaffold.swift; sourceTree = "<group>"; };
+		7B5D9504AE14AA86C559AF06 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		8A61BAD49F0FA9A2B0F2478B /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		9ABFC63C1246370B27F3BEBD /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A2C05102602913222F47EE96 /* ChatListDrawer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListDrawer.swift; sourceTree = "<group>"; };
+		A3570F374A0FE3C64D1271DE /* RoomOptionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomOptionsSheet.swift; sourceTree = "<group>"; };
+		A768F17674E1D16171BFF3A5 /* SideMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideMenu.swift; sourceTree = "<group>"; };
+		AEFB9A10F8784355D5344D95 /* Locus.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Locus.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF244270CECB0D015AFD5964 /* FloatingComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingComposer.swift; sourceTree = "<group>"; };
+		B46F74A6521B3C7EA03389BC /* GlowBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlowBackground.swift; sourceTree = "<group>"; };
+		B8649E6545A70AAB951F973A /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		BCCEF7CD29A9C6F9C3E1472F /* LocusApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocusApp.swift; sourceTree = "<group>"; };
+		BE7F27B06F0AA98E893C2E9B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		BF03B409C80CC1732069E791 /* RoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomView.swift; sourceTree = "<group>"; };
+		BF8F7B0A7B3411D122B5DA7F /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		CF3473CFB1514B65917A32FA /* PrivateChatsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateChatsModel.swift; sourceTree = "<group>"; };
+		CFEA72AAFF3BBA7A4914995B /* LocusTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocusTheme.swift; sourceTree = "<group>"; };
+		D01F5EFBC5FDC6B34000D0D9 /* LibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModel.swift; sourceTree = "<group>"; };
+		D87749FDB28A0F22215E4CED /* PrivateChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivateChatsView.swift; sourceTree = "<group>"; };
+		DFEFA903EDBA04A0EB066D21 /* MermaidView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MermaidView.swift; sourceTree = "<group>"; };
+		E0D357C965E0F7AB7790A69F /* PipelineNotes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PipelineNotes.swift; sourceTree = "<group>"; };
+		E71E796875AEF29522E679E3 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		E79440B24E087234D114BB7A /* LocusSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocusSmokeUITests.swift; sourceTree = "<group>"; };
+		EF698CAA630A1295AE804F01 /* SecretImagesModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecretImagesModel.swift; sourceTree = "<group>"; };
+		F9F3A5FEA9CC9C8D97E1BE41 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		04819CB404D166B850594890 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				3021471F682352A292826589 /* SettingsModel.swift */,
+				0E1C1367D937C33DF4F1FBE6 /* SettingsView.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		06A40F4AE45561D4957AE6E5 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				476E941D733E891E28856956 /* AppShell.swift */,
+				F9F3A5FEA9CC9C8D97E1BE41 /* AppState.swift */,
+				B8649E6545A70AAB951F973A /* LoginView.swift */,
+				7AC4D5B8DCCE0A48D315CF41 /* PageScaffold.swift */,
+				A768F17674E1D16171BFF3A5 /* SideMenu.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		09FA2828B4413889B24B867F /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				7B5D9504AE14AA86C559AF06 /* APIClient.swift */,
+				68058EF3E9FEB63C32F4EB9D /* APIModels.swift */,
+				E71E796875AEF29522E679E3 /* KeychainStore.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		1034C21D9930A5F35D463962 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AEFB9A10F8784355D5344D95 /* Locus.app */,
+				73FB5B7D276424050FE55E24 /* LocusUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		2F1A8F5C64E80396B36DC6EC /* Ask */ = {
+			isa = PBXGroup;
+			children = (
+				21C5B08E79BFF9D1C1F8A8A3 /* AskModel.swift */,
+				4763397350DF5CADED338CC2 /* AskView.swift */,
+				A2C05102602913222F47EE96 /* ChatListDrawer.swift */,
+				0951766BB678300FD37EDF2F /* FilePickerSheet.swift */,
+				AF244270CECB0D015AFD5964 /* FloatingComposer.swift */,
+				DFEFA903EDBA04A0EB066D21 /* MermaidView.swift */,
+				505C2FD511E57E8E8BB0A18E /* PipelineActivityCard.swift */,
+			);
+			path = Ask;
+			sourceTree = "<group>";
+		};
+		39D1E1A92FC48FF828B78A3E /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				2F1A8F5C64E80396B36DC6EC /* Ask */,
+				5670A7AD9586405401F90AB6 /* Home */,
+				8A168C104C6CA3E21E7EFA7F /* Library */,
+				501AB8B2FCFB35313B651BDE /* Private */,
+				9CB4A2605BD3E991B58F2A2B /* Secret */,
+				04819CB404D166B850594890 /* Settings */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		501AB8B2FCFB35313B651BDE /* Private */ = {
+			isa = PBXGroup;
+			children = (
+				0BA56E1E13BB77E0839A2FDA /* CopilotSheet.swift */,
+				4265F326F0039075623A965F /* GuestsPanel.swift */,
+				623AC7625785893CD3A40156 /* NewRoomSheet.swift */,
+				CF3473CFB1514B65917A32FA /* PrivateChatsModel.swift */,
+				D87749FDB28A0F22215E4CED /* PrivateChatsView.swift */,
+				5A11A30C92033EC447CF40AA /* PrivateIdentity.swift */,
+				3708F1D2EA96286CADE1922B /* RoomModel.swift */,
+				A3570F374A0FE3C64D1271DE /* RoomOptionsSheet.swift */,
+				BF03B409C80CC1732069E791 /* RoomView.swift */,
+			);
+			path = Private;
+			sourceTree = "<group>";
+		};
+		5670A7AD9586405401F90AB6 /* Home */ = {
+			isa = PBXGroup;
+			children = (
+				52752239C897A347D3EDD3F9 /* HomeModel.swift */,
+				40BB37118B4FC5830293AEC7 /* HomeView.swift */,
+			);
+			path = Home;
+			sourceTree = "<group>";
+		};
+		796058090ADB9656F1AC489F = {
+			isa = PBXGroup;
+			children = (
+				B9D7C7183910882434437EA5 /* Locus */,
+				88C72357FA5D8FFEC5FDDFC5 /* LocusUITests */,
+				1034C21D9930A5F35D463962 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		858E0C172D544D64D8E53E3C /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				BF8F7B0A7B3411D122B5DA7F /* Components.swift */,
+				B46F74A6521B3C7EA03389BC /* GlowBackground.swift */,
+				CFEA72AAFF3BBA7A4914995B /* LocusTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		88C72357FA5D8FFEC5FDDFC5 /* LocusUITests */ = {
+			isa = PBXGroup;
+			children = (
+				E79440B24E087234D114BB7A /* LocusSmokeUITests.swift */,
+			);
+			path = LocusUITests;
+			sourceTree = "<group>";
+		};
+		8A168C104C6CA3E21E7EFA7F /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				D01F5EFBC5FDC6B34000D0D9 /* LibraryModel.swift */,
+				8A61BAD49F0FA9A2B0F2478B /* LibraryView.swift */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
+		9CB4A2605BD3E991B58F2A2B /* Secret */ = {
+			isa = PBXGroup;
+			children = (
+				EF698CAA630A1295AE804F01 /* SecretImagesModel.swift */,
+				49B344A800919C12EFEDA5F2 /* SecretImagesView.swift */,
+			);
+			path = Secret;
+			sourceTree = "<group>";
+		};
+		B9D7C7183910882434437EA5 /* Locus */ = {
+			isa = PBXGroup;
+			children = (
+				9ABFC63C1246370B27F3BEBD /* Assets.xcassets */,
+				BE7F27B06F0AA98E893C2E9B /* Info.plist */,
+				BCCEF7CD29A9C6F9C3E1472F /* LocusApp.swift */,
+				06A40F4AE45561D4957AE6E5 /* App */,
+				39D1E1A92FC48FF828B78A3E /* Features */,
+				C5C307C228F749142FC04B91 /* Lib */,
+				09FA2828B4413889B24B867F /* Networking */,
+				FA27A5BC6D7A370C663C36F1 /* Resources */,
+				858E0C172D544D64D8E53E3C /* Theme */,
+			);
+			path = Locus;
+			sourceTree = "<group>";
+		};
+		C5C307C228F749142FC04B91 /* Lib */ = {
+			isa = PBXGroup;
+			children = (
+				40E4654469241C5E284BD7B4 /* Format.swift */,
+				3150F394204B5442582E5054 /* Markdown.swift */,
+				E0D357C965E0F7AB7790A69F /* PipelineNotes.swift */,
+			);
+			path = Lib;
+			sourceTree = "<group>";
+		};
+		FA27A5BC6D7A370C663C36F1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0B5354B4C6957F7A2DEC7806 /* mermaid.min.js */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4896638691C4AFF8C4B6701D /* Locus */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 499F5785D4491853643B4C0D /* Build configuration list for PBXNativeTarget "Locus" */;
+			buildPhases = (
+				3D126E6D0964BF8D319384BC /* Sources */,
+				DD475AF090311C77FAF727EA /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Locus;
+			packageProductDependencies = (
+			);
+			productName = Locus;
+			productReference = AEFB9A10F8784355D5344D95 /* Locus.app */;
+			productType = "com.apple.product-type.application";
+		};
+		54F38C8317FB3757358B2EBD /* LocusUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3B534D105C419153FDD9DC1F /* Build configuration list for PBXNativeTarget "LocusUITests" */;
+			buildPhases = (
+				71247B7960ED58D704AFDC6B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DC8669A2F8C3CDEAADC5C59D /* PBXTargetDependency */,
+			);
+			name = LocusUITests;
+			packageProductDependencies = (
+			);
+			productName = LocusUITests;
+			productReference = 73FB5B7D276424050FE55E24 /* LocusUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EB04EC8B4299D1D64DC4EDE5 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					4896638691C4AFF8C4B6701D = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					54F38C8317FB3757358B2EBD = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+						TestTargetID = 4896638691C4AFF8C4B6701D;
+					};
+				};
+			};
+			buildConfigurationList = E114DA24E8222F8A31A01840 /* Build configuration list for PBXProject "Locus" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 796058090ADB9656F1AC489F;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 1034C21D9930A5F35D463962 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4896638691C4AFF8C4B6701D /* Locus */,
+				54F38C8317FB3757358B2EBD /* LocusUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DD475AF090311C77FAF727EA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4603298E2C2F25C588D11CA2 /* Assets.xcassets in Resources */,
+				CAFCBBC0C8A651F9A6AF3496 /* mermaid.min.js in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		3D126E6D0964BF8D319384BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AC879E6D0D08C8CD839E9AAC /* APIClient.swift in Sources */,
+				C014086A6D38905D5EF73571 /* APIModels.swift in Sources */,
+				CB744D4D6B5E79AF31E00AB4 /* AppShell.swift in Sources */,
+				224E6B5867553E11A4E10C50 /* AppState.swift in Sources */,
+				9E357F7725D073B17F050456 /* AskModel.swift in Sources */,
+				F47A6297BD27A24CB05FA980 /* AskView.swift in Sources */,
+				025DA5705D7EB5BC51A8F3D6 /* ChatListDrawer.swift in Sources */,
+				4FECFC5BAB9D3DDBD05AD742 /* Components.swift in Sources */,
+				9D5C2B528BF34EDCDD66323E /* CopilotSheet.swift in Sources */,
+				A7B886301175CFFF4CBB9626 /* FilePickerSheet.swift in Sources */,
+				B5B2E3D19E5049C0FBDC889A /* FloatingComposer.swift in Sources */,
+				BE9BD42155453C8D83E375B5 /* Format.swift in Sources */,
+				5E72A2E12EB75E2F2E971EB7 /* GlowBackground.swift in Sources */,
+				49483EA725609362D7AB97A5 /* GuestsPanel.swift in Sources */,
+				1F860CC7FB613CCA3E56B249 /* HomeModel.swift in Sources */,
+				3185631A3E2CBDB083440481 /* HomeView.swift in Sources */,
+				AEACF0DCFF03795D53A5B42E /* KeychainStore.swift in Sources */,
+				0B0AEB204EB92E9CE4DA8D44 /* LibraryModel.swift in Sources */,
+				8748B2A3F764E65E90F16DBD /* LibraryView.swift in Sources */,
+				CB22892B835E59A99C4FA35D /* LocusApp.swift in Sources */,
+				1B7D60492E970D45CB76AAA3 /* LocusTheme.swift in Sources */,
+				7EA246917B95CB73D6FD95B6 /* LoginView.swift in Sources */,
+				12753B2D3BC41645DA21BD89 /* Markdown.swift in Sources */,
+				1914F85F0D51A62C76BA2AA2 /* MermaidView.swift in Sources */,
+				6B725B73318BBC55B9B668ED /* NewRoomSheet.swift in Sources */,
+				CE4A025FE569DDF98EDCDFF7 /* PageScaffold.swift in Sources */,
+				1DC2059A5D4293209D2BC7E0 /* PipelineActivityCard.swift in Sources */,
+				E4DF1E7552A42B44EE6EBE2E /* PipelineNotes.swift in Sources */,
+				749215FA35C5471682A1E57F /* PrivateChatsModel.swift in Sources */,
+				180F5C7125E419EEB8FF9950 /* PrivateChatsView.swift in Sources */,
+				22D4344AE427BF9E07DF8268 /* PrivateIdentity.swift in Sources */,
+				248139AE10A6F37335E90870 /* RoomModel.swift in Sources */,
+				BDB1EEDF9AEFC0E8EC6A177A /* RoomOptionsSheet.swift in Sources */,
+				D162000BB09C714FC84BFA08 /* RoomView.swift in Sources */,
+				F68B121303D3BB0151B35896 /* SecretImagesModel.swift in Sources */,
+				E88BF654F33B92C283FF6A07 /* SecretImagesView.swift in Sources */,
+				F3740DDC321D877F088CDACA /* SettingsModel.swift in Sources */,
+				39FCB8C0E7050B9161E600C6 /* SettingsView.swift in Sources */,
+				3B3F8DB5388B9A682BB11411 /* SideMenu.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		71247B7960ED58D704AFDC6B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				052BEECD147D37A19F69CDB8 /* LocusSmokeUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DC8669A2F8C3CDEAADC5C59D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4896638691C4AFF8C4B6701D /* Locus */;
+			targetProxy = C34DCDDD96F4EB05E4117417 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		14F24361BAF1BF5528F22776 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.locus.ios.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Locus;
+			};
+			name = Release;
+		};
+		28BC1FD1E1ADCF31A64625B3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		7FE184EA7F574C71EE5B684D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Locus/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.locus.ios;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		99E7112DC3789C83E2A09317 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		BC388FAE8A56E67403A13E4B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.locus.ios.uitests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Locus;
+			};
+			name = Debug;
+		};
+		EC219525ECF2D2F87B9312BB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Locus/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.locus.ios;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.10;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3B534D105C419153FDD9DC1F /* Build configuration list for PBXNativeTarget "LocusUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				BC388FAE8A56E67403A13E4B /* Debug */,
+				14F24361BAF1BF5528F22776 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		499F5785D4491853643B4C0D /* Build configuration list for PBXNativeTarget "Locus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EC219525ECF2D2F87B9312BB /* Debug */,
+				7FE184EA7F574C71EE5B684D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E114DA24E8222F8A31A01840 /* Build configuration list for PBXProject "Locus" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99E7112DC3789C83E2A09317 /* Debug */,
+				28BC1FD1E1ADCF31A64625B3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EB04EC8B4299D1D64DC4EDE5 /* Project object */;
+}

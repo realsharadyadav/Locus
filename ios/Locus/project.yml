@@ -1,0 +1,47 @@
+name: Locus
+options:
+  bundleIdPrefix: com.locus
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Locus:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Locus
+    info:
+      path: Locus/Info.plist
+      properties:
+        CFBundleDisplayName: Locus
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.locus.ios
+        SWIFT_VERSION: "5.10"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: NO
+  LocusUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: LocusUITests
+    dependencies:
+      - target: Locus
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.locus.ios.uitests
+        SWIFT_VERSION: "5.10"
+        TEST_TARGET_NAME: Locus
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        GENERATE_INFOPLIST_FILE: YES

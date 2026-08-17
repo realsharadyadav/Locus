@@ -18,5 +18,18 @@ __pycache__/
 *.log
 tmp/
 .claude/settings.local.json
+
+# Playwright MCP tool artifacts
+.playwright-mcp/
+
+# iOS / Xcode
+ios/**/build/
+ios/**/DerivedData/
+DerivedData/
+*.xcuserdata/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+
 Just for taking refrence - dont write any code in this/
 khoj_reference_policy.md
