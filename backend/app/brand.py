@@ -14,11 +14,28 @@ BRAND_CREATOR = "Sharad Yadav"
 # model grounded its answer in that instead, and some reasoning modes (e.g. "Thinking") route
 # through code paths that never see the system prompt with the note at all. Deterministic
 # pattern matching guarantees the joke actually shows up every time, in every mode.
+# "who'?s?" alone missed the most natural phrasing of all — "who **is** your developer" —
+# because it required your/the immediately after "who". The role list also now covers owner,
+# author, programmer and engineer, and a Hinglish "kisne banaya" form: this app is used in
+# Hindi-English as much as English, and the question is just as common there.
 CREATOR_QUESTION_PATTERN = re.compile(
-    r"\bwho'?s?\s+(your|the)\s+(creator|maker|developer|dev|founder|builder)\b"
+    # "your X" always refers to the assistant, so the widest role list is safe there.
+    # "the X" is only matched for app-shaped roles: "who is the author/owner" is far more
+    # likely to be about an uploaded document than about this app.
+    r"\bwho(?:'s|s|\s+(?:is|are|was|were))?\s+your\s+"
+    r"(creator|maker|developer|dev|founder|builder|owner|author|programmer|engineer|architect)\b"
+    r"|\bwho(?:'s|s|\s+(?:is|are|was|were))?\s+the\s+"
+    # Either it names this app, or the question ends there ("who is the founder?"), which in
+    # an in-app assistant means us. "who is the founder of Tesla" deliberately falls through.
+    r"(creator|maker|developer|dev|founder|builder)"
+    r"(?:\s+(?:of\s+)?(?:this\s+)?(?:app|locus|site|you)\b|(?=[\s?.!,]*$))"
     r"|\b(who|which\s+company|what\s+company)\b[^?.!]{0,25}"
-    r"\b(built|build|made|make|creat(?:e|ed)|develop(?:ed)?|design(?:ed)?|coded|code|wrote|write|behind)\b"
-    r"[^?.!]{0,20}\b(you|u|locus|this\s+app|this\s+site|this\s+thing)\b",
+    r"\b(built|build|made|make|creat(?:e|ed)|develop(?:ed)?|design(?:ed)?|coded|code|wrote|write"
+    r"|programm?(?:ed)?|own(?:s|ed)?|behind)\b"
+    r"[^?.!]{0,20}\b(you|u|locus|this\s+app|this\s+site|this\s+thing)\b"
+    r"|\b(made|built|created|developed|designed)\s+by\s+(whom|who)\b"
+    r"|\bkis(?:ne|ke)\b[^?.!]{0,25}\b(banaya|banai|bnaya|develop|create)\w*\b"
+    r"|\b(banaya|bnaya)\s+kisne\b",
     re.IGNORECASE,
 )
 # There's an unrelated, fairly well-known Indian politician who shares the builder's name
@@ -46,12 +63,20 @@ CREATOR_JOKE_ANSWERS = [
     f"One person: {BRAND_CREATOR}. Zero co-founders. Several sleepless nights. That's the whole origin story.",
     f"{BRAND_CREATOR} built me, solo, fueled by caffeine and some genuinely questionable sleep decisions.",
     f"Built end-to-end by {BRAND_CREATOR}, who coded me instead of sleeping — a very indie-developer move.",
+    f"{BRAND_CREATOR}, solo. He shipped an iPhone app for me too — because one codebase clearly wasn't enough of a commitment. 📱",
+    f"All {BRAND_CREATOR}. Frontend, backend, the vector search, the iOS app — one person wearing every hat, badly stacked. 🎩",
+    f"{BRAND_CREATOR} built me alone, then kept redesigning my buttons because they were 'too big'. He was right, annoyingly.",
+    f"Me? {BRAND_CREATOR}'s doing. He argues with me about UI padding and usually wins. 😄",
+    f"{BRAND_CREATOR} — the kind of developer who reads the Human Interface Guidelines for fun and then measures every tap target against them.",
 ]
 CREATOR_BIO_ANSWERS = [
     f"Not the Indian politician (1947–2023) the internet will try to hand you — this {BRAND_CREATOR} is the solo developer who built Locus, currently very much alive and running mostly on caffeine and stubbornness.",
     f"There's more than one {BRAND_CREATOR} out there. The one who matters here built this entire app by himself, one late-night commit at a time — no cabinet position, just a code editor.",
     f"{BRAND_CREATOR}: solo builder of Locus, professional coffee enthusiast, and — no relation whatsoever to the politician who shares his name.",
     f"The {BRAND_CREATOR} behind Locus isn't a public figure — just one developer who decided building an AI knowledge app alone at 3am sounded like a great idea.",
+    f"{BRAND_CREATOR} — solo developer, occasional insomniac, and the reason this app has a native iPhone client nobody asked him to build. 📱",
+    f"This {BRAND_CREATOR} writes the backend, the web app and the iOS app himself, then tests everything on his own phone at midnight. No team, no standups, no excuses.",
+    f"{BRAND_CREATOR}: the human behind Locus. Ships fast, refactors his own buttons for being a few points too big, and drinks more coffee than is strictly advisable. ☕",
 ]
 CAPABILITY_ANSWER_INTRO = (
     "Here's what I can do:\n\n"

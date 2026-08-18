@@ -40,9 +40,33 @@ def test_unrelated_questions_do_not_match_creator_name(question):
     "who made locus",
     "who's your creator",
     "which company built this app",
+    # "who'?s?" alone never allowed the spelled-out verb, so the most natural phrasing of
+    # all used to fall through to the LLM and answer with whatever it felt like.
+    "who is your developer",
+    "who is the founder",
+    "who is your owner",
+    "who programmed you",
+    "who owns locus",
+    "made by whom",
+    # Asked in Hinglish just as often as English.
+    "tumhe kisne banaya",
+    "kisne banaya hai tumhe",
 ])
 def test_creator_questions_match(question):
     assert CREATOR_QUESTION_PATTERN.search(question)
+
+
+@pytest.mark.parametrize("question", [
+    # "the <role>" must not swallow questions about an uploaded document or the wider world.
+    "who is the author of this PDF",
+    "who is the owner of this contract",
+    "who is the founder of Tesla",
+    "who is the creator of Bitcoin",
+    "who is the CEO of Google",
+    "who wrote War and Peace",
+])
+def test_unrelated_questions_do_not_match_creator(question):
+    assert not CREATOR_QUESTION_PATTERN.search(question)
 
 
 def test_creator_name_pattern_tracks_the_brand_creator_constant():
