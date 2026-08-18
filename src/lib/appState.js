@@ -22,11 +22,13 @@ export const PROVIDER_META = {
 };
 export const AI_PREFERENCE_STORAGE_KEY = storageKey('explore-ai');
 export const APP_DATA_CACHE_KEY = storageKey('last-data');
-export const APP_PAGES = ['home', 'library', 'ask', 'secret-chat', 'settings'];
+export const APP_PAGES = ['ask', 'library', 'secret-chat', 'settings'];
 export const normalizePageId = pageId => {
   // Legacy route/page ids kept working for old bookmarks and shared links.
   if (pageId === 'hub') return 'library';
   if (pageId === 'explore') return 'ask';
+  // Home is gone; Ask is the landing page now, so old /home links land there.
+  if (pageId === 'home') return 'ask';
   return pageId;
 };
 

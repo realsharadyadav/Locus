@@ -12,7 +12,6 @@ import { SplashScreen } from './components/SplashScreen';
 import { ToastStack } from './components/Toast';
 import { AI_PREFERENCE_STORAGE_KEY, APP_DATA_CACHE_KEY, APP_PAGES, normalizePageId, readCachedAppData } from './lib/appState';
 import { ExplorePage } from './pages/ExplorePage';
-import { HomePage } from './pages/HomePage';
 import { HubPage } from './pages/HubPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { clearSecretChatHost, PrivateChatsPage, useSecretChatRoute, useSecretChatUnread } from './secret-chat';
@@ -25,7 +24,7 @@ export function App({ initialSecretChatToken = null }) {
   // Whether this deployment has a password at all — Settings only offers a sign
   // out when there is a session to end.
   const [authRequired, setAuthRequired] = useState(false);
-  const [page, setPage] = useState('home');
+  const [page, setPage] = useState('ask');
   const [query, setQuery] = useState('');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCompact, setSidebarCompact] = useState(false);
@@ -247,15 +246,15 @@ export function App({ initialSecretChatToken = null }) {
     if (secretChatToken) return;
     if (!preferencesLoaded) return;
     const path = window.location.pathname;
-    const pageFromUrl = normalizePageId(path === '/' ? 'home' : path.replace(/^\//, ''));
+    const pageFromUrl = normalizePageId(path === '/' ? 'ask' : path.replace(/^\//, ''));
     if (APP_PAGES.includes(pageFromUrl)) {
       setPage(pageFromUrl);
-      const canonicalPath = pageFromUrl === 'home' ? '/' : `/${pageFromUrl}`;
+      const canonicalPath = pageFromUrl === 'ask' ? '/' : `/${pageFromUrl}`;
       if (path !== canonicalPath) window.history.replaceState({}, '', canonicalPath);
     }
     const onPopState = () => {
       const p = window.location.pathname;
-      const next = normalizePageId(p === '/' ? 'home' : p.replace(/^\//, ''));
+      const next = normalizePageId(p === '/' ? 'ask' : p.replace(/^\//, ''));
       if (APP_PAGES.includes(next)) setPage(next);
     };
     window.addEventListener('popstate', onPopState);
@@ -267,7 +266,7 @@ export function App({ initialSecretChatToken = null }) {
     setPage(resolvedPage);
     if (options.storeId) setHubFocusStoreId(options.storeId);
     if (options.create) setCreateOpen(true);
-    const path = resolvedPage === 'home' ? '/' : `/${resolvedPage}`;
+    const path = resolvedPage === 'ask' ? '/' : `/${resolvedPage}`;
     window.history.pushState({}, '', path);
   };
 
@@ -432,16 +431,6 @@ export function App({ initialSecretChatToken = null }) {
         )}
         {apiError && (
           <button className="api-banner" onClick={loadData}>{apiError} · Retry</button>
-        )}
-        {page === 'home' && (
-          <HomePage
-            stores={collections}
-            files={files}
-            chats={chats}
-            loading={loading}
-            onNavigate={navigate}
-            onOpenChat={id => { navigate('ask'); setExploreChatId(id); }}
-          />
         )}
         {page === 'library' && (
           <HubPage

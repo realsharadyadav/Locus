@@ -80,16 +80,6 @@ struct LibraryView: View {
             .padding(.bottom, LocusMetrics.bottomClearance)
         }
         .task { await model.loadIfNeeded() }
-        // Home's quick actions hand off through AppState: "Create library" opens the sheet,
-        // "Upload" opens the first library's detail so there is somewhere to put the file.
-        .onChange(of: app.libraryIntent) { _, intent in
-            guard let intent else { return }
-            app.libraryIntent = nil
-            switch intent {
-            case .create: showsCreate = true
-            case .upload: openStore = model.stores.first
-            }
-        }
         .sheet(isPresented: $showsCreate) {
             CreateLibrarySheet { title, description, color in
                 await model.createStore(title: title, description: description, color: color)

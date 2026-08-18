@@ -66,7 +66,6 @@ struct SideMenu: View {
             .padding(.bottom, 10)
 
             sectionLabel("Workspace")
-            row(.home, "square.grid.2x2.fill")
             row(.library, "books.vertical.fill", badge: libraryCount)
             row(.ask, "bubble.left.and.bubble.right.fill")
 

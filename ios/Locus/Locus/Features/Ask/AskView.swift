@@ -20,11 +20,6 @@ struct AskView: View {
             await model.loadIfNeeded()
         }
         .onChange(of: app.defaultModelLabel) { _, label in model.app_defaultModelLabel = label }
-        .onChange(of: app.pendingChatId) { _, chatId in
-            guard let chatId else { return }
-            app.pendingChatId = nil
-            Task { await model.open(chatId: chatId) }
-        }
         .sheet(isPresented: $showsChats) {
             ChatListDrawer(
                 chats: model.chats,

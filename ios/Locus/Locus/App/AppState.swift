@@ -1,13 +1,12 @@
 import SwiftUI
 
 enum AppTab: Int, CaseIterable, Identifiable {
-    case home, ask, library, privateChats, secret
+    case ask, library, privateChats, secret
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .home: return "Home"
         case .ask: return "Ask"
         case .library: return "Library"
         case .privateChats: return "Private"
@@ -17,18 +16,12 @@ enum AppTab: Int, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .home: return "house.fill"
         case .ask: return "bubble.left.and.bubble.right.fill"
         case .library: return "books.vertical.fill"
         case .privateChats: return "touchid"
         case .secret: return "lock.fill"
         }
     }
-}
-
-enum LibraryIntent: Equatable, Sendable {
-    case create
-    case upload
 }
 
 struct ToastMessage: Equatable, Sendable {
@@ -47,17 +40,12 @@ final class AppState {
     }
 
     var auth: AuthState = .checking
-    var tab: AppTab = .home
+    var tab: AppTab = .ask
     var showsSettings = false
     var scheme: LocusScheme = .dark
     var toast: ToastMessage?
     var serverOnline: Bool?
 
-    /// Cross-page intents. Home's quick actions and recent-chat rows set these; the
-    /// destination page consumes and clears them when it lands (Library in Phase 6,
-    /// Ask in Phase 2).
-    var libraryIntent: LibraryIntent?
-    var pendingChatId: Int?
 
     /// Live default model label, refreshed after boot and whenever Settings changes it.
     var defaultModelLabel: String = ""

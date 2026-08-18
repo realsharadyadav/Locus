@@ -4,7 +4,6 @@ import {
   PanelLeftOpen,
   Settings2,
   X,
-  LayoutDashboard,
   Library,
   MessagesSquare,
   Fingerprint,
@@ -22,7 +21,6 @@ export const NAV_SECTIONS = [
   {
     label: 'Workspace',
     items: [
-      { id: 'home', Icon: LayoutDashboard, label: 'Home', accent: '166 84% 55%' },
       { id: 'library', Icon: Library, label: 'Library', accent: '38 94% 60%' },
       { id: 'ask', Icon: MessagesSquare, label: 'Ask', accent: '255 88% 74%' },
     ],

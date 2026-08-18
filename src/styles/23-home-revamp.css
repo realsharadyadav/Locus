@@ -1,32 +1,9 @@
-/* Home dashboard revamp */
-.stat-grid article { cursor: pointer; }
-.stat-grid article:focus-visible {
-  outline: 2px solid var(--violet);
-  outline-offset: 2px;
-}
-.stat-icon { color: var(--muted); margin-bottom: 8px; }
-
+/* Shared surfaces that outlived the Home dashboard this file was written for. */
 .panel-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-}
-.panel-view-all {
-  background: none;
-  border: 0;
-  padding: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--violet);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.panel-view-all:hover { text-decoration: underline; }
-
-@media (max-width: 680px) {
-  .quick-actions button { min-height: 44px; }
-  .panel-row { min-height: 44px; }
 }
 
 /* ═══ Chat surfaces: mobile keyboard + scroll containment ═══

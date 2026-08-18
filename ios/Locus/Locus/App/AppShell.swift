@@ -17,8 +17,6 @@ struct AppShell: View {
 
             // Pages — kept alive, hidden with opacity so state survives tab switches.
             ZStack {
-                HomeView()
-                    .locusPageVisibility(active: app.tab == .home)
                 AskView()
                     .locusPageVisibility(active: app.tab == .ask)
                 LibraryView()
