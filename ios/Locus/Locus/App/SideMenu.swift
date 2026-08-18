@@ -9,7 +9,7 @@ struct SideMenu: View {
     /// Live library count, shown as a badge like the web sidebar.
     var libraryCount: Int?
 
-    private let width: CGFloat = 288
+    private let width: CGFloat = 252
     @State private var drag: CGFloat = 0
 
     var body: some View {
@@ -62,8 +62,8 @@ struct SideMenu: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 66)
-            .padding(.bottom, 22)
+            .padding(.top, 64)
+            .padding(.bottom, 10)
 
             sectionLabel("Workspace")
             row(.home, "square.grid.2x2.fill")
@@ -96,17 +96,17 @@ struct SideMenu: View {
                         }
                         .foregroundStyle(app.scheme == scheme ? palette.heading : palette.muted)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
+                        .padding(.vertical, 8)
                         .background(app.scheme == scheme ? palette.accentSoft : Color.clear)
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(6)
+            .padding(4)
             .background(palette.glassFillSoft)
             .clipShape(Capsule())
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
 
             Button {
                 LocusHaptics.light()
@@ -116,16 +116,17 @@ struct SideMenu: View {
                 HStack(spacing: 12) {
                     iconTile("slider.horizontal.3", active: false)
                     Text("Settings")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(palette.text)
                     Spacer()
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                .frame(minHeight: LocusMetrics.minimumTapTarget)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.bottom, 26)
+            .padding(.bottom, 18)
         }
     }
 
@@ -134,9 +135,9 @@ struct SideMenu: View {
             .font(.system(size: 11, weight: .bold))
             .tracking(1.4)
             .foregroundStyle(palette.subtle)
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+            .padding(.bottom, 4)
     }
 
     private func row(_ tab: AppTab, _ systemImage: String, title: String? = nil, badge: Int? = nil) -> some View {
@@ -149,7 +150,7 @@ struct SideMenu: View {
             HStack(spacing: 12) {
                 iconTile(systemImage, active: active)
                 Text(title ?? tab.title)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(active ? palette.heading : palette.text)
                 Spacer()
                 if let badge {
@@ -162,8 +163,9 @@ struct SideMenu: View {
                         .clipShape(Capsule())
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(minHeight: LocusMetrics.minimumTapTarget)
             .background(active ? palette.accentSoft : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .padding(.horizontal, 6)
@@ -174,11 +176,13 @@ struct SideMenu: View {
 
     private func iconTile(_ systemImage: String, active: Bool) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 14, weight: .medium))
+            .symbolRenderingMode(.monochrome)
+            .frame(width: 17, height: 17)
             .foregroundStyle(active ? .white : palette.muted)
-            .frame(width: 38, height: 38)
+            .frame(width: 32, height: 32)
             .background(active ? AnyShapeStyle(palette.accentGradient) : AnyShapeStyle(palette.glassFillSoft))
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private func close() {
