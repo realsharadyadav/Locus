@@ -46,6 +46,9 @@ struct FloatingComposer<Chips: View>: View {
                             .background(palette.glassFillSoft)
                             .clipShape(Circle())
                             .overlay(Circle().strokeBorder(palette.glassEdgeSoft, lineWidth: 1))
+                            .frame(width: LocusMetrics.minimumTapTarget,
+                                   height: LocusMetrics.minimumTapTarget)
+                            .contentShape(Circle())
                     }
                 }
 
@@ -73,6 +76,9 @@ struct FloatingComposer<Chips: View>: View {
                                 : AnyShapeStyle(canSend ? AnyShapeStyle(palette.accentGradient) : AnyShapeStyle(palette.glassFillSoft))
                         )
                         .clipShape(Circle())
+                        .frame(width: LocusMetrics.minimumTapTarget,
+                               height: LocusMetrics.minimumTapTarget)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .disabled(!busy && !canSend)
@@ -163,6 +169,10 @@ struct ComposerIconButton: View {
                             lineWidth: 1
                         )
                     )
+                    // Chrome is drawn at 32×30; only the hit area grows to 44.
+                    .frame(minWidth: LocusMetrics.minimumTapTarget,
+                           minHeight: LocusMetrics.minimumTapTarget)
+                    .contentShape(Capsule())
                 if let badge, badge > 0 {
                     Text("\(badge)")
                         .font(.system(size: 8, weight: .bold))

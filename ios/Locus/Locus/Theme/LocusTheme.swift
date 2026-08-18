@@ -123,16 +123,22 @@ enum LocusMetrics {
     /// Bottom breathing room. With navigation moved into the side menu there is no dock to
     /// clear, so this is just the home-indicator gap — the rest of the screen is content.
     static let bottomClearance: CGFloat = 26
+    /// Apple's minimum comfortable tap target. Controls may *draw* smaller than this, but
+    /// their hit area must not — a 30pt icon button is a missed tap on a phone.
+    static let minimumTapTarget: CGFloat = 44
     static let cardRadius: CGFloat = 20
     static let buttonRadius: CGFloat = 14
 }
 
+/// Built on the system text styles rather than fixed point sizes, so every heading, body and
+/// caption follows Dynamic Type. The sizes still land close to the web's scale at the default
+/// setting; they grow with the reader's preference instead of staying pinned.
 enum LocusFont {
-    static func kicker() -> Font { .system(size: 11, weight: .bold) }
-    static func title() -> Font { .system(size: 30, weight: .bold) }
-    static func section() -> Font { .system(size: 19, weight: .bold) }
-    static func body() -> Font { .system(size: 15, weight: .regular) }
-    static func bodySemibold() -> Font { .system(size: 15, weight: .semibold) }
-    static func caption() -> Font { .system(size: 12, weight: .medium) }
-    static func micro() -> Font { .system(size: 10, weight: .semibold) }
+    static func kicker() -> Font { .caption2.weight(.bold) }
+    static func title() -> Font { .title.weight(.bold) }
+    static func section() -> Font { .title3.weight(.bold) }
+    static func body() -> Font { .subheadline }
+    static func bodySemibold() -> Font { .subheadline.weight(.semibold) }
+    static func caption() -> Font { .caption.weight(.medium) }
+    static func micro() -> Font { .caption2.weight(.semibold) }
 }

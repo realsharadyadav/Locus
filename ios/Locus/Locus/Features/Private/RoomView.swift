@@ -11,6 +11,11 @@ struct RoomView: View {
     @State private var showsCopilot = false
     @State private var confirmClear = false
     @State private var confirmDelete = false
+    @State private var showsTelegram = false
+    /// Only offered when the server actually has a Telegram account connected — without one
+    /// the link call cannot resolve a contact.
+    @State private var bridgeStatus: SecretChatBridgeStatus?
+    @State private var roomBridge: SecretChatBridgeRead?
     private let onLeave: () -> Void
 
     init(token: String, onLeave: @escaping () -> Void) {
@@ -34,7 +39,10 @@ struct RoomView: View {
 
             header
         }
-        .task { await model.open() }
+        .task {
+            await model.open()
+            await refreshBridge()
+        }
         .onDisappear {
             model.close()
             onLeave()
@@ -61,6 +69,15 @@ struct RoomView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showsTelegram) {
+            if let bridgeStatus {
+                TelegramConnectSheet(token: model.token, status: bridgeStatus) {
+                    Task { await refreshBridge() }
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
         .confirmationDialog("Clear every message?", isPresented: $confirmClear, titleVisibility: .visible) {
             Button("Clear chat", role: .destructive) {
                 LocusHaptics.warning()
@@ -82,6 +99,12 @@ struct RoomView: View {
         } message: {
             Text("The link stops working and every message is removed.")
         }
+    }
+
+    private func refreshBridge() async {
+        bridgeStatus = try? await APIClient.shared.secretChatBridgeStatus()
+        guard bridgeStatus?.configured == true else { return }
+        roomBridge = try? await APIClient.shared.secretChatBridge(model.token, hostKey: PrivateIdentity.hostKey)
     }
 
     // MARK: - Header
@@ -110,6 +133,12 @@ struct RoomView: View {
                 Spacer()
                 Menu {
                     Button { showsGuests = true } label: { Label("Guests", systemImage: "person.2.fill") }
+                    if bridgeStatus?.configured == true {
+                        Button { showsTelegram = true } label: {
+                            Label(roomBridge.map { "Telegram · \($0.displayName)" } ?? "Connect Telegram",
+                                  systemImage: "paperplane.fill")
+                        }
+                    }
                     Button { showsCopilot = true } label: { Label("Reply copilot", systemImage: "sparkles") }
                     Button { showsOptions = true } label: { Label("Chat options", systemImage: "slider.horizontal.3") }
                     if let session = model.session,

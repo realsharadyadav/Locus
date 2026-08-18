@@ -107,12 +107,16 @@ struct AskView: View {
                         suggestionChips
                     }
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.top, 56)
                 .padding(.bottom, 150)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .scrollIndicators(.hidden)
+            // Swiping the transcript puts the keyboard away, and a tap anywhere in it
+            // dismisses outright — typing should not trap you behind the keyboard.
+            .scrollDismissesKeyboard(.interactively)
+            .locusDismissKeyboardOnTap()
             .onChange(of: model.messages.count) { _, _ in
                 withAnimation(.easeOut(duration: 0.25)) {
                     proxy.scrollTo(model.messages.last?.id, anchor: .bottom)
@@ -363,9 +367,9 @@ private struct MessageBubble: View {
                     sources
                 }
             }
+            // No card around an answer: it is the page's content, not a panel on top of it,
+            // so it runs the full width and reads like a document.
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .locusCard()
         }
     }
 

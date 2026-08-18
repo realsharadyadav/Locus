@@ -155,11 +155,11 @@ struct SecretImagesView: View {
                         .font(.system(size: 14, weight: .bold))
                 }
                 Text(model.uploading ? "Adding…" : "Add photo")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .semibold))
             }
             .foregroundStyle(.white)
-            .padding(.horizontal, 18)
-            .padding(.vertical, 13)
+            .padding(.horizontal, 15)
+            .frame(minHeight: LocusMetrics.minimumTapTarget)
             .background(palette.accentGradient)
             .clipShape(Capsule())
             .shadow(color: palette.accent.opacity(0.4), radius: 16, y: 8)

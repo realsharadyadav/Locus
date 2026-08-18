@@ -29,6 +29,19 @@ struct AppShell: View {
                     .locusPageVisibility(active: app.tab == .secret)
             }
 
+            // Without cards, page content scrolls right up under the floating buttons, so a
+            // short fade from the canvas colour keeps them legible without boxing the content.
+            VStack {
+                LinearGradient(
+                    colors: [palette.canvasTop, palette.canvasTop.opacity(0)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(height: 108)
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
+                Spacer()
+            }
+
             // The only persistent chrome: a floating glass hamburger.
             VStack {
                 HStack {

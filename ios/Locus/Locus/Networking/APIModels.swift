@@ -529,6 +529,31 @@ struct SecretChatAutopilotPending: Decodable, Sendable {
     let pending: SecretChatAutopilotDraft?
 }
 
+/// A room bridged to someone on an outside messenger.
+struct SecretChatBridgeRead: Decodable, Sendable {
+    let platform: String
+    let phone: String
+    let peerName: String
+    let peerUsername: String
+    let createdAt: Date?
+    let lastOutboundAt: Date?
+    let lastInboundAt: Date?
+    let lastError: String
+
+    /// What to call the person on the other side.
+    var displayName: String { peerName.isEmpty ? phone : peerName }
+
+    enum CodingKeys: String, CodingKey {
+        case platform, phone
+        case peerName = "peer_name"
+        case peerUsername = "peer_username"
+        case createdAt = "created_at"
+        case lastOutboundAt = "last_outbound_at"
+        case lastInboundAt = "last_inbound_at"
+        case lastError = "last_error"
+    }
+}
+
 /// Presence heartbeat response. The participant list comes back detailed for the host and
 /// public for a guest, and `room` carries option changes made from another device.
 struct SecretChatPresenceResponse: Decodable, Sendable {

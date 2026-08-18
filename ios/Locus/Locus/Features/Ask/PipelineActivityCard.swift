@@ -62,13 +62,13 @@ struct PipelineActivityCard: View {
     }
 
     var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 12) {
-                header
-                if expanded { trace } else { thinking }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // Inline like the answer it becomes — no card, so a question in flight and the reply
+        // that replaces it occupy the same full-width column.
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            if expanded { trace } else { thinking }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .task(id: startedAt) {
             while !Task.isCancelled {
                 elapsed = max(0, Int(Date().timeIntervalSince(startedAt)))

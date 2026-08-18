@@ -27,6 +27,7 @@
 		4FECFC5BAB9D3DDBD05AD742 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF8F7B0A7B3411D122B5DA7F /* Components.swift */; };
 		5E72A2E12EB75E2F2E971EB7 /* GlowBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46F74A6521B3C7EA03389BC /* GlowBackground.swift */; };
 		6B725B73318BBC55B9B668ED /* NewRoomSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 623AC7625785893CD3A40156 /* NewRoomSheet.swift */; };
+		6D2AA9E88675BB085D446864 /* TelegramConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26DEA31C83D03C8F2D3B125A /* TelegramConnectSheet.swift */; };
 		749215FA35C5471682A1E57F /* PrivateChatsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3473CFB1514B65917A32FA /* PrivateChatsModel.swift */; };
 		7EA246917B95CB73D6FD95B6 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8649E6545A70AAB951F973A /* LoginView.swift */; };
 		8748B2A3F764E65E90F16DBD /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A61BAD49F0FA9A2B0F2478B /* LibraryView.swift */; };
@@ -67,6 +68,7 @@
 		0BA56E1E13BB77E0839A2FDA /* CopilotSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopilotSheet.swift; sourceTree = "<group>"; };
 		0E1C1367D937C33DF4F1FBE6 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		21C5B08E79BFF9D1C1F8A8A3 /* AskModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AskModel.swift; sourceTree = "<group>"; };
+		26DEA31C83D03C8F2D3B125A /* TelegramConnectSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TelegramConnectSheet.swift; sourceTree = "<group>"; };
 		3021471F682352A292826589 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsModel.swift; sourceTree = "<group>"; };
 		3150F394204B5442582E5054 /* Markdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Markdown.swift; sourceTree = "<group>"; };
 		3708F1D2EA96286CADE1922B /* RoomModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomModel.swift; sourceTree = "<group>"; };
@@ -189,6 +191,7 @@
 				3708F1D2EA96286CADE1922B /* RoomModel.swift */,
 				A3570F374A0FE3C64D1271DE /* RoomOptionsSheet.swift */,
 				BF03B409C80CC1732069E791 /* RoomView.swift */,
+				26DEA31C83D03C8F2D3B125A /* TelegramConnectSheet.swift */,
 			);
 			path = Private;
 			sourceTree = "<group>";
@@ -416,6 +419,7 @@
 				F3740DDC321D877F088CDACA /* SettingsModel.swift in Sources */,
 				39FCB8C0E7050B9161E600C6 /* SettingsView.swift in Sources */,
 				3B3F8DB5388B9A682BB11411 /* SideMenu.swift in Sources */,
+				6D2AA9E88675BB085D446864 /* TelegramConnectSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

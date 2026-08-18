@@ -17,6 +17,19 @@ extension View {
     func locusCard(cornerRadius: CGFloat = LocusMetrics.cardRadius) -> some View {
         modifier(LocusCardModifier(cornerRadius: cornerRadius))
     }
+
+    /// Tap anywhere in this view to put the keyboard away. A plain `onTapGesture` would
+    /// swallow taps meant for buttons inside, so this runs alongside them.
+    func locusDismissKeyboardOnTap() -> some View {
+        simultaneousGesture(
+            TapGesture().onEnded {
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil, from: nil, for: nil
+                )
+            }
+        )
+    }
 }
 
 private struct LocusCardModifier: ViewModifier {
@@ -70,6 +83,11 @@ struct GlassCircleButton: View {
                 .clipShape(Circle())
                 .locusGlass(in: Circle())
                 .overlay(Circle().strokeBorder(palette.glassEdge, lineWidth: 1))
+                // The drawn circle can be smaller than a finger; the tappable area cannot.
+                // 44pt is Apple's minimum, and the extra is invisible padding around the glass.
+                .frame(width: max(size, LocusMetrics.minimumTapTarget),
+                       height: max(size, LocusMetrics.minimumTapTarget))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(label ?? systemImage.replacingOccurrences(of: ".", with: " ")))
@@ -101,6 +119,8 @@ struct PillChip: View {
             .clipShape(Capsule())
             .locusGlass(in: Capsule())
             .overlay(Capsule().strokeBorder(active ? palette.accent.opacity(0.55) : palette.glassEdgeSoft, lineWidth: 1))
+            .frame(minHeight: LocusMetrics.minimumTapTarget)
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }

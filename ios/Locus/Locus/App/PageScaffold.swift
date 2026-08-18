@@ -7,18 +7,12 @@ struct PageScaffold<Content: View>: View {
     let kicker: String
     let title: String
     let subtitle: String
-    /// Home shows the Locus mark above the kicker, like the web hero's welcome badge.
-    var showsLogo: Bool = false
     @ViewBuilder var content: Content
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    if showsLogo {
-                        LocusLogo(size: 44)
-                            .padding(.bottom, 6)
-                    }
                     Text(kicker.uppercased())
                         .font(LocusFont.kicker())
                         .tracking(2)
@@ -36,7 +30,7 @@ struct PageScaffold<Content: View>: View {
 
                 content
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.bottom, LocusMetrics.bottomClearance)
             .frame(maxWidth: .infinity, alignment: .leading)
         }

@@ -618,6 +618,37 @@ actor APIClient {
                            body: SecretChatAutopilotDecisionBody(hostKey: hostKey, draftId: draftId, action: action))
     }
 
+    /// This room's bridge, or nil when it isn't connected to anyone.
+    func secretChatBridge(_ token: String, hostKey: String) async throws -> SecretChatBridgeRead? {
+        try await send(SecretChatBridgeRead?.self, path: "/secret-chat/\(token)/bridge",
+                       query: ["host_key": hostKey])
+    }
+
+    struct SecretChatBridgeLinkBody: Encodable, Sendable {
+        let hostKey: String
+        let platform: String
+        let phone: String
+        let greeting: String
+
+        enum CodingKeys: String, CodingKey {
+            case platform, phone, greeting
+            case hostKey = "host_key"
+        }
+    }
+
+    /// Points the room at a phone number. Host-only — it messages from the host's own account.
+    func secretChatLinkBridge(_ token: String, hostKey: String, phone: String,
+                              greeting: String) async throws -> SecretChatBridgeRead {
+        try await send(SecretChatBridgeRead.self, path: "/secret-chat/\(token)/bridge", method: "PUT",
+                       body: SecretChatBridgeLinkBody(hostKey: hostKey, platform: "telegram",
+                                                      phone: phone, greeting: greeting))
+    }
+
+    func secretChatUnlinkBridge(_ token: String, hostKey: String) async throws {
+        try await sendVoid(path: "/secret-chat/\(token)/bridge", method: "DELETE",
+                           query: ["host_key": hostKey])
+    }
+
     func secretChatBridgeStatus() async throws -> SecretChatBridgeStatus {
         try await send(SecretChatBridgeStatus.self, path: "/secret-chat/bridge/status")
     }

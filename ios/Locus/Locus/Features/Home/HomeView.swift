@@ -17,8 +17,7 @@ struct HomeView: View {
             title: model.isEmpty ? "Welcome to Locus" : greeting,
             subtitle: model.isEmpty
                 ? "Upload files to a library, then ask a question."
-                : "Your second brain is ready — ask it anything.",
-            showsLogo: true
+                : "Your second brain is ready — ask it anything."
         ) {
             if model.loadingContent {
                 skeletons
